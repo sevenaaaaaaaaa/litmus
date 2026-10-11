@@ -1,42 +1,173 @@
 /* ─────────────────────────────────────────────────────────────────────────
- * ThirdC Studio · tokens.css
+ * 鹿蕊 Litmus · tokens.css
  * 契约来源：OpenFlow 前台设计系统（oklch / 零 hex / 弹簧缓动 / 圆角四档 / 玻璃）
  *
- * 本版重点：**深色不再纯黑**——暗色底从 19% L 提到 26% L，层级用亮度差表达，
- * 而不是靠把背景压黑。亮色为暖纸感。默认跟随系统（data-theme=auto 由 JS 落定）。
+ * 配色体系 v2（2026-10-12，见 docs/spec/design-system.md「配色体系 v2」）
+ *
+ *   层级 = 明度阶梯，不靠饱和度、不靠压黑：
+ *     bg-0 < bg-1 < surface-1 < surface-2 < surface-3      （五级表面，k = 0…4）
+ *     暗色  L(k) = 22.5% + 3.2%·k        C(k) = .007 + .0008·k  h(k) = 70 + 2·k
+ *           ——越"浮起"越亮、越暖一点（Arc 的温度感），步距等差、色度压低（Linear 的克制）
+ *     亮色  L(k) = 100% − 0.65%·(4−k)^1.5  C(k) = .016·(4−k)/4    h = 84
+ *           ——纸面最深、浮层趋向纯白、色度随高度褪尽（Things 的留白与纸感）
+ *   文字四级 text-1…4，边框两级 border-1/2，强调主副 accent / accent-2，
+ *   语义四色 ok / warn / danger / info，各配 -soft 底。
+ *
+ *   对比度纪律（server/tests/palette.rs 在 cargo test 里强制）：
+ *     text-1/2/3、accent、accent-2、语义色 对五级表面全部 ≥ 4.5:1（WCAG AA 正文）；
+ *     语义色/强调色压在自己的 -soft 底上仍 ≥ 4.5:1；on-accent 压在 accent 上 ≥ 4.5:1；
+ *     text-4 只用于禁用态/占位/装饰（WCAG 1.4.3 豁免），仍保证 ≥ 3:1。
+ *
+ *   强调色两版（html[data-accent]，⌘K「切换强调色」）：
+ *     默认 = 石蕊双色：accent 蓝（碱）+ accent-2 石蕊红（酸），渐变经紫（中性）——"显色见真"
+ *     blue = 经典蓝：accent 蓝 + accent-2 堇紫，同色系克制演进
+ *
+ *   旧 token 名（--bg/--surface/--fg/--muted/--faint/--border…）保留为别名，
+ *   第 62 款阅读风格预设与插件照常覆盖它们，零破坏。
  * ─────────────────────────────────────────────────────────────────────── */
 
 @font-face{font-family:"Space Grotesk";src:url("fonts/space-grotesk-400.woff2") format("woff2");font-weight:100 900;font-display:swap}
-/* ── 亮色 · 暖纸 ── */
+
+/* ── 亮色 · 暖纸（原语）── */
 :root,[data-theme="light"]{
-  --bg: oklch(97.4% .012 85);
-  --bg-soft: oklch(95.2% .015 84);
-  --bg-deep: oklch(92.6% .018 83);
-  --surface: oklch(100% 0 0/.74);
-  --surface-strong: oklch(100% 0 0/.93);
-  --fg: oklch(24% .022 70);
-  --muted: oklch(47% .018 72);
-  --faint: oklch(53% .016 76);
-  --border: oklch(88% .012 82);
-  --border-strong: oklch(79% .018 80);
-  --border-soft: oklch(88% .012 82/.6);
-  --hover: oklch(24% .02 70/.055);
-  --hover-strong: oklch(24% .02 70/.11);
-  --accent: oklch(54% .17 258);
-  --accent-strong: oklch(48% .17 258);
-  --accent-soft: oklch(54% .17 258/.13);
+  /* 表面五级：L(k)=100−0.65·(4−k)^1.5 */
+  --bg-0: oklch(94.8% .016 84);
+  --bg-1: oklch(96.6% .012 84);
+  --surface-1: oklch(98.2% .008 84);
+  --surface-2: oklch(99.4% .004 84);
+  --surface-3: oklch(100% 0 0);
+  /* 文字四级 */
+  --text-1: oklch(22% .022 70);
+  --text-2: oklch(40% .02 72);
+  --text-3: oklch(50% .018 74);
+  --text-4: oklch(58% .016 76);
+  /* 边框两级（取文字色的透明度，压在任何表面上都成立） */
+  --border-1: oklch(22% .022 70/.12);
+  --border-2: oklch(22% .022 70/.24);
+  --hover: oklch(22% .02 70/.05);
+  --hover-strong: oklch(22% .02 70/.10);
+  /* 强调：主 = 石蕊蓝 */
+  --accent: oklch(52% .18 258);
+  --accent-strong: oklch(46% .18 258);
+  --accent-soft: oklch(52% .18 258/.12);
   --on-accent: oklch(100% 0 0);
-  --ok: oklch(56% .16 152);        --ok-soft: oklch(56% .16 152/.13);
-  --warn: oklch(64% .15 72);       --warn-soft: oklch(64% .15 72/.15);
-  --danger: oklch(55% .2 25);      --danger-soft: oklch(55% .2 25/.12);
+  /* 强调：副 = 石蕊红（默认版）——只用于 AI/品牌显色，永不表示错误 */
+  --accent-2: oklch(53% .2 12);
+  --accent-2-soft: oklch(53% .2 12/.12);
+  --on-accent-2: oklch(100% 0 0);
+  /* 语义四色 */
+  --ok: oklch(49% .13 152);      --ok-soft: oklch(49% .13 152/.12);
+  --warn: oklch(52% .12 62);     --warn-soft: oklch(52% .12 62/.12);
+  --danger: oklch(51% .19 29);   --danger-soft: oklch(51% .19 29/.12);   --on-danger: oklch(100% 0 0);
+  --info: oklch(50% .11 220);    --info-soft: oklch(50% .11 220/.12);
+  /* 玻璃与氛围 */
   --glass: oklch(100% 0 0/.55);
   --glass-bright: oklch(100% 0 0/.72);
   --glass-border: oklch(100% 0 0/.7);
-  --blob-a: oklch(76% .12 262/.34);
-  --blob-b: oklch(74% .13 305/.26);
-  --blob-c: oklch(78% .11 200/.24);
+  --blob-a: oklch(76% .12 262/.30);
+  --blob-b: oklch(76% .11 350/.20);
+  --blob-c: oklch(78% .11 200/.22);
   --shadow: 0 22px 56px -26px oklch(38% .05 80/.30);
   --shadow-sm: 0 10px 26px -14px oklch(38% .05 80/.22);
+  --node-shadow: 0 16px 40px -22px oklch(38% .05 80/.32);
+  --grid-dot: oklch(22% .02 70/.12);
+  --edge: oklch(52% .18 258/.34);
+  --edge-soft: oklch(22% .02 70/.14);
+  --axis: oklch(22% .02 70/.28);
+  --type-query: oklch(52% .16 305);
+  color-scheme: light;
+}
+
+/* ── 暗色 · 石墨（原语；不是纯黑，层级靠等差明度）── */
+[data-theme="dark"]{
+  /* 表面五级：L(k)=22.5+3.2·k */
+  --bg-0: oklch(22.5% .007 70);
+  --bg-1: oklch(25.7% .0078 72);
+  --surface-1: oklch(28.9% .0086 74);
+  --surface-2: oklch(32.1% .0094 76);
+  --surface-3: oklch(35.3% .0102 78);
+  --text-1: oklch(96% .006 85);
+  --text-2: oklch(81% .01 80);
+  --text-3: oklch(73% .012 80);
+  --text-4: oklch(62% .012 80);
+  --border-1: oklch(96% .006 85/.11);
+  --border-2: oklch(96% .006 85/.22);
+  --hover: oklch(96% .006 85/.07);
+  --hover-strong: oklch(96% .006 85/.13);
+  --accent: oklch(76% .13 256);
+  --accent-strong: oklch(83% .11 256);
+  --accent-soft: oklch(76% .13 256/.16);
+  --on-accent: oklch(22% .03 260);
+  --accent-2: oklch(77% .14 10);
+  --accent-2-soft: oklch(77% .14 10/.16);
+  --on-accent-2: oklch(22% .03 10);
+  --ok: oklch(78% .14 152);      --ok-soft: oklch(78% .14 152/.16);
+  --warn: oklch(80% .12 75);     --warn-soft: oklch(80% .12 75/.16);
+  --danger: oklch(76% .15 29);   --danger-soft: oklch(76% .15 29/.16);   --on-danger: oklch(22% .03 29);
+  --info: oklch(78% .11 220);    --info-soft: oklch(78% .11 220/.16);
+  --glass: oklch(35.3% .0102 78/.55);
+  --glass-bright: oklch(40% .011 78/.66);
+  --glass-border: oklch(96% .006 85/.16);
+  --blob-a: oklch(62% .12 262/.18);
+  --blob-b: oklch(60% .13 350/.12);
+  --blob-c: oklch(62% .11 200/.12);
+  --shadow: 0 24px 58px -26px oklch(0% 0 0/.55);
+  --shadow-sm: 0 10px 26px -14px oklch(0% 0 0/.45);
+  --node-shadow: 0 16px 40px -22px oklch(0% 0 0/.6);
+  --grid-dot: oklch(96% .006 85/.10);
+  --edge: oklch(76% .13 256/.42);
+  --edge-soft: oklch(96% .006 85/.16);
+  --axis: oklch(96% .006 85/.28);
+  --type-query: oklch(76% .13 305);
+  color-scheme: dark;
+}
+
+/* ── 强调色 B 版 · 经典蓝：副色换堇紫（同色系演进，对照用）── */
+[data-accent="blue"]{
+  --accent-2: oklch(51% .17 300);
+  --accent-2-soft: oklch(51% .17 300/.12);
+  --on-accent-2: oklch(100% 0 0);
+  --blob-b: oklch(74% .13 305/.24);
+}
+[data-theme="dark"][data-accent="blue"]{
+  --accent-2: oklch(76% .12 300);
+  --accent-2-soft: oklch(76% .12 300/.16);
+  --on-accent-2: oklch(22% .03 300);
+  --blob-b: oklch(62% .14 305/.16);
+}
+
+/* ── 派生与别名（两主题共用；只引用原语，不写新色值）── */
+:root{
+  /* 石蕊渐变：红（酸）→ 紫（中性）→ 蓝（碱）；oklch 插值走紫色短弧，不发灰 */
+  --accent-grad: linear-gradient(in oklch 125deg, var(--accent-2), var(--accent));
+  --accent-grad-soft: linear-gradient(in oklch 125deg,
+    color-mix(in oklab, var(--accent-2) 16%, transparent), color-mix(in oklab, var(--accent) 16%, transparent));
+  --ring: var(--accent);
+  --selection: color-mix(in oklab, var(--accent) 26%, transparent);
+
+  /* 旧名 → 新阶梯（预设/插件覆盖这些名字即可整体换肤） */
+  --bg: var(--bg-1);
+  --bg-deep: var(--bg-0);
+  --bg-soft: var(--bg-0);                 /* 凹陷：输入框 / 侧列 / 代码 */
+  --surface: color-mix(in oklab, var(--surface-1) 88%, transparent);   /* 玻璃面板：侧栏 / 检查器 */
+  --surface-strong: color-mix(in oklab, var(--surface-3) 96%, transparent); /* 浮层：菜单 / 弹窗 / 选中 */
+  --fg: var(--text-1);
+  --muted: var(--text-2);
+  --faint: var(--text-3);
+  --border: var(--border-1);
+  --border-strong: var(--border-2);
+  --border-soft: color-mix(in oklab, var(--border-1) 60%, transparent);
+
+  /* 画布 / 对话 / 数据类型 */
+  --node-bg: color-mix(in oklab, var(--surface-2) 94%, transparent);
+  --node-bg-active: var(--surface-3);
+  --chat-bg: color-mix(in oklab, var(--bg-1) 86%, transparent);
+  --col-bg: color-mix(in oklab, var(--surface-1) 55%, transparent);
+  --col-head: color-mix(in oklab, var(--surface-2) 82%, transparent);
+  --type-doc: var(--accent);
+  --type-capture: var(--ok);
+  --type-asset: var(--warn);
+
   /* 圆角四 token（ui-redesign.md §2，别无他选）：内嵌小件 / 常规控件 / 容器 / 胶囊 */
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
   /* 外壳几何：顶栏通栏 48px；底栏（对话+状态合一）44px */
@@ -50,69 +181,7 @@
   --font-mono: "JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
   --ease-spring: cubic-bezier(.32,.72,0,1);
   --ease-out: cubic-bezier(.22,1,.36,1);
-
-  /* ThirdC 画布 / 对话 / 数据类型 */
-  --node-bg: oklch(100% 0 0/.86);
-  --node-bg-active: oklch(100% 0 0/.98);
   --node-w: 300px;
-  --node-shadow: 0 16px 40px -22px oklch(38% .05 80/.32);
-  --chat-bg: color-mix(in oklab, var(--bg) 86%, transparent);
-  --grid-dot: oklch(24% .02 70/.12);
-  --edge: oklch(54% .17 258/.34);
-  --edge-soft: oklch(24% .02 70/.14);
-  --col-bg: oklch(100% 0 0/.42);
-  --col-head: oklch(100% 0 0/.6);
-  --type-doc: oklch(54% .17 258);
-  --type-capture: oklch(56% .16 152);
-  --type-asset: oklch(64% .15 72);
-  --type-query: oklch(58% .16 305);
-  --axis: oklch(24% .02 70/.28);
-  color-scheme: light;
 }
 
-/* ── 暗色 · 石墨（不是纯黑）── */
-[data-theme="dark"]{
-  --bg: oklch(26% .012 75);
-  --bg-soft: oklch(29.5% .013 75);
-  --bg-deep: oklch(23% .012 75);
-  --surface: oklch(35% .014 75/.62);
-  --surface-strong: oklch(40% .016 75/.86);
-  --fg: oklch(95% .006 85);
-  --muted: oklch(77% .012 80);
-  --faint: oklch(70% .012 80);
-  --border: oklch(100% 0 0/.14);
-  --border-strong: oklch(100% 0 0/.26);
-  --border-soft: oklch(100% 0 0/.09);
-  --hover: oklch(95% .006 85/.08);
-  --hover-strong: oklch(95% .006 85/.15);
-  --accent: oklch(78% .12 258);
-  --accent-strong: oklch(84% .11 258);
-  --accent-soft: oklch(78% .12 258/.18);
-  --on-accent: oklch(22% .03 260);
-  --ok: oklch(78% .14 152); --ok-soft: oklch(78% .14 152/.18);
-  --warn: oklch(80% .12 75); --warn-soft: oklch(80% .12 75/.19);
-  --danger: oklch(76% .15 25); --danger-soft: oklch(76% .15 25/.18);
-  --glass: oklch(38% .014 75/.5);
-  --glass-bright: oklch(44% .014 75/.64);
-  --glass-border: oklch(100% 0 0/.18);
-  --blob-a: oklch(66% .13 262/.24);
-  --blob-b: oklch(62% .14 305/.20);
-  --blob-c: oklch(64% .12 200/.18);
-  --shadow: 0 24px 58px -26px oklch(0% 0 0/.5);
-  --shadow-sm: 0 10px 26px -14px oklch(0% 0 0/.42);
-  --node-bg: oklch(33% .014 75/.86);
-  --node-bg-active: oklch(39% .016 75/.94);
-  --node-shadow: 0 16px 40px -22px oklch(0% 0 0/.55);
-  --chat-bg: color-mix(in oklab, var(--bg) 84%, transparent);
-  --grid-dot: oklch(95% .006 85/.12);
-  --edge: oklch(78% .12 258/.40);
-  --edge-soft: oklch(95% .006 85/.16);
-  --col-bg: oklch(31% .013 75/.5);
-  --col-head: oklch(36% .014 75/.7);
-  --type-doc: oklch(78% .12 258);
-  --type-capture: oklch(78% .14 152);
-  --type-asset: oklch(80% .12 75);
-  --type-query: oklch(76% .14 305);
-  --axis: oklch(95% .006 85/.30);
-  color-scheme: dark;
-}
+::selection{background:var(--selection)}
