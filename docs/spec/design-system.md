@@ -122,3 +122,33 @@ server/web/index.html   <style> 只放本页独有部件
 旧 token 名全部保留为别名（测试 `every_legacy_token_still_resolves` 守住），62 款阅读风格预设与插件
 覆盖 `--bg/--fg/--accent…` 的方式不变。新原语（`surface-1…3`、`text-4`、`info`）不随预设变化，属有意为之：
 它们是壳的骨架，不是阅读皮肤。
+
+## 图标与字体纪律（2026-10-12 · 工艺品化 PR②）
+
+### 图标：一套线性家族
+
+- 唯一来源是 `index.html` 里的 `IC` 表 + `iconSvg(name, size)`：24 网格、圆端点圆拐角、`currentColor`；
+  笔画统一由 `--icon-stroke: 2`（tokens.css）控制，`svg.ic` 与各容器的 `svg{stroke-width}` 都读它。
+- 静态标记写 `<i data-ic="名" data-ics="尺寸">`，启动时注水；动态 HTML 直接拼 `iconSvg()`。
+- 本次补齐 31 个图标（x / check / more / cmd / chevL / chevR / expand / spark / graph / quote / link / edit / move /
+  folderPlus / copy / send / table / target / inbox / key / user / mail / film / book / square / branch / note / clip / long / code），
+  替换掉 chrome 里全部 emoji：关闭 ✕ ×21、⋯、⌘ 底栏钮、🕸 图谱、编辑器工具栏、导出八格、右键菜单 41 项、
+  画布文件夹节点（📁 → 节点头线性 folder 图标）、空态按钮、Agent 工具步骤 ✓/✕、AI 动词 ✦ → spark。
+- 仍保留的字符：键盘记号 ⌘⇧↩（排印，不是图标）、外链 ↗、状态行里的 ✓/✗ 文字、写进用户文件的内容
+  （📄 附件链接、🎙 录音）、62 款阅读风格的标题装饰（属"降级为装饰"，也在导出管线里）。
+- `server/tests/craft.rs`：静态标记零象形符号；每个 `data-ic` / `iconSvg('…')` / 菜单 `{icon:'…'}` 都在 IC 表里。
+
+### 字体排印：五级字号 × 行高配对
+
+| token | 字号 | 行高 | 用途 |
+|---|---|---|---|
+| `--fs-1` | 11px | 1.45 | 微注：路径、计数、mono 标签、徽章 |
+| `--fs-2` | 12.5px | 1.5 | 次要界面：按钮、菜单、侧栏条目 |
+| `--fs-3` | 13.5px | 1.6 | 界面正文（body 默认）、对话、卡片正文 |
+| `--fs-4` | 15px | 1.5 | 强调与面板标题、快记输入 |
+| `--fs-5` | 19px | 1.3 | 展示标题：空态、引导、日历 |
+
+- 原先 `<style>` 与静态标记里 19 种裸 px 字号（8.5…23）按"最近一级"归并到五级；`font:` 简写同时带上配对行高，
+  长文阅读处（编辑器 1.8、memo 1.75）保留显式行高。`craft.rs` 禁止再出现裸 px 字号。
+- 数字等宽：路径、计数、日期、分数、金额、计时器、表格单元一律 `font-variant-numeric: tabular-nums`，滚动/刷新时不跳。
+- 标题类统一 `letter-spacing: -.01em`，Space Grotesk 在大字号下更紧致。
