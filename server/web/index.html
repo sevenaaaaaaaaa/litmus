@@ -2699,6 +2699,18 @@ async function openDoc(path){
     if(currentFormat==='text'&&!isJsonPath(path)){const body=$('d-body');body.classList.remove('view');body.classList.add('edit');}
     else if(!dr.classList.contains('wide')){const body=$('d-body');body.classList.remove('edit');body.classList.add('view');}
     addDocTab(path);syncEditorToolbar();
+    if(window.__pendingAnchor){
+      const pa=window.__pendingAnchor;window.__pendingAnchor='';
+      setTimeout(()=>{
+        try{
+          const doc=$('preview').contentDocument;
+          const el=doc.getElementById(pa)||doc.querySelector('[data-anchor="'+pa+'"]');
+          if(el){el.scrollIntoView({block:'center'});
+            el.style.outline='2px solid var(--accent)';el.style.borderRadius='4px';
+            setTimeout(()=>{el.style.outline='';},1800);}
+        }catch{}
+      },380);
+    }
     /* 侧栏树定位到当前文档并记住（随库同步到其他设备） */
     if(mode==='studio'||mode==='organize'){saveTreeUI({lastDoc:path});locateInTree(path);}
     /* 协作 presence + 评论 */
@@ -3208,7 +3220,9 @@ function sanitizeA2ui(html){
 }
 function handleA2uiActivate(e){
   const v=e.target.closest('[data-doc]');
-  if(v){e.preventDefault();openDoc(v.dataset.doc);return}
+  if(v){e.preventDefault();
+    if(v.dataset.anchor)window.__pendingAnchor=v.dataset.anchor; // 引用回链:打开后滚到锚点块
+    openDoc(v.dataset.doc);return}
   const b=e.target.closest('[data-action]');
   if(!b)return;
   api('/a2ui/action',{method:'POST',json:{type:'a2ui-action',name:b.dataset.action,sourceComponentId:b.dataset.component,context:{}}})
@@ -6819,7 +6833,7 @@ function docCtxItems(path){
     isCsv?{label:'📊 转为 Markdown 表格',fn:()=>csvToTableDoc(path)}:null,
     'sep',
     {label:'ℹ️ 属性',fn:()=>showDocProps(path)},
-    {label:'⬇️ 下载原文件',fn:()=>{location.href=BASE+'/doc/raw?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(path);}},
+    {label:'⬇️ 下载原文件',fn:()=>downloadDocRaw(path)},
     'sep',
     {label:'🗑 移入回收站',danger:true,fn:async()=>{
       if(!(await uiConfirm('移入回收站？'+path+'\n（可在 ⌘K「回收站」恢复）',{ok:'移入回收站'})))return;
@@ -6854,6 +6868,25 @@ function folderCtxItems(name){
     'sep',
     {label:'ℹ️ 文件夹属性',fn:()=>showDirProps(dir)},
   ];
+}
+/* 下载原文件：fetch+blob,绝不导航离页(旧 location.href 写法在报错时
+   会用错误 JSON 页整个替换 app,回不去只能重启) */
+async function downloadDocRaw(path){
+  try{
+    const res=await fetch(BASE+'/doc/raw?path='+encodeURIComponent(path),{headers:{authorization:'Bearer '+token}});
+    if(!res.ok){
+      let msg='HTTP '+res.status;
+      try{msg=(await res.json()).error||msg}catch{}
+      throw new Error(msg);
+    }
+    const blob=await res.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=path.split('/').pop();
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    toast('已开始下载 '+path.split('/').pop(),'ok');
+  }catch(e){toast('下载失败：'+e.message,'err');}
 }
 async function renameDoc(path){
   const name=path.split('/').pop();

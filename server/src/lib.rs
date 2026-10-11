@@ -2730,6 +2730,24 @@ mod tests {
         assert!(body.contains("来源") && body.contains("[[a]]") && body.contains("## b"), "{body}");
     }
 
+    #[test]
+    fn citation_surface_protocol() {
+        let cands = vec![("Notes/a.md".into(), 0.83), ("Notes/b.md".into(), 0.41)];
+        // 守协议:有标注 → 无警告
+        let cited = append_citation_surface("结论甲〔来源:Notes/a.md〕", &cands);
+        assert!(cited.contains("```a2ui"), "来源必须是 A2UI surface:{}", cited);
+        assert!(!cited.contains("未按协议标注"));
+        assert!(cited.contains("\"Link\"") && cited.contains("Notes/a.md"), "来源卡必须带 Link 回链：{}", cited);
+        // 不守协议:零标注 → 警告
+        let uncited = append_citation_surface("结论甲", &cands);
+        assert!(uncited.contains("未按协议标注"));
+        assert!(uncited.contains("\"Link\""));
+        // 无候选 → 明说
+        let none = append_citation_surface("结论", &[]);
+        assert!(none.contains("未检索到库内相关来源"));
+        assert!(!none.contains("\"Link\""));
+    }
+
     #[tokio::test]
     async fn docs_lists_filenames_without_sync() {
         let (app, token, dir) = test_router();
@@ -3061,6 +3079,28 @@ async fn chat_stream(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
             format!("{message}\n\n[相关记忆]\n{}", mem.join("\n"))
         };
 
+        // 引用回链候选：混合检索 top5（机制⑤：来源必然出现在答案旁）
+        let cite_candidates: Vec<(String, f64)> = {
+            match server.kernel.lock() {
+                Ok(mut k) => {
+                    let _ = k.sync_throttled();
+                    k.search_hybrid(&message, 5).unwrap_or_default()
+                }
+                Err(_) => Vec::new(),
+            }
+        };
+        let mut enriched = enriched;
+        if !cite_candidates.is_empty() {
+            let list: Vec<String> = cite_candidates
+                .iter()
+                .map(|(p, _)| format!("- {p}"))
+                .collect();
+            enriched.push_str(&format!(
+                "\n\n[引用协议] 库内检索到以下可能相关文档：\n{}\n凡参考了库内内容的结论，行尾标注〔来源:路径〕；若均不相关则不要引用。\n",
+                list.join("\n")
+            ));
+        }
+
         let result = match ai {
             Some(cfg) if !cfg.base_url.is_empty() => {
                 let tx_step = tx.clone();
@@ -3092,9 +3132,10 @@ async fn chat_stream(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         }
         match result {
             Ok(out) => {
+                let reply = append_citation_surface(&out.reply, &cite_candidates);
                 let _ = tx.send(ev(
                     "reply",
-                    json!({ "mode": out.mode, "reply": out.reply }),
+                    json!({ "mode": out.mode, "reply": reply }),
                 ));
                 let _ = tx.send(ev("done", json!({
                     "ok": true,
@@ -3113,6 +3154,46 @@ async fn chat_stream(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         rx.recv().await.map(|item| (item, rx))
     });
     Sse::new(out).into_response()
+}
+
+// ---------- AI 引用回链（协议级反幻觉，product-principles 机制⑤） ----------
+
+/// 回复后校验并附加 A2UI 来源块：
+/// - 有候选且回复含〔来源:…〕标注 → 来源卡（Link 组件，data-doc 回链）
+/// - 有候选但零标注 → 附加 ⚠ 提示（模型未按协议标注，来源仅作对照）
+/// - 无候选 → 附加"本次回答无库内来源"卡
+/// 无论模型守不守协议，**来源必然出现在答案旁边**——反幻觉是结构保证，不是提示词祈祷。
+pub fn append_citation_surface(reply: &str, candidates: &[(String, f64)]) -> String {
+    use serde_json::json;
+    let cited = reply.contains("〔来源") || reply.contains("[来源") || reply.contains("(来源");
+    let mut lines: Vec<String> = Vec::new();
+    let mut ids: Vec<String> = Vec::new();
+    let mut comp = |lines: &mut Vec<String>, ids: &mut Vec<String>, id: &str, component: Value| {
+        lines.push(json!({"surfaceUpdate": {"components": [{"id": id, "component": component}]}}).to_string());
+        ids.push(id.to_string());
+    };
+    comp(&mut lines, &mut ids, "h", json!({"Text": {"usageHint": "h4", "text": {"literalString": "📎 库内来源"}}}));
+    if candidates.is_empty() {
+        comp(&mut lines, &mut ids, "none", json!({"Text": {"text": {"literalString": "本次回答未检索到库内相关来源——结论请自行核实"}}}));
+    } else {
+        if !cited {
+            comp(&mut lines, &mut ids, "warn", json!({"Text": {"usageHint": "caption", "text": {"literalString": "⚠️ 模型未按协议标注〔来源〕——以下为自动检索候选，仅供参考"}}}));
+        }
+        for (i, (path, score)) in candidates.iter().take(5).enumerate() {
+            let lid = format!("lnk{i}");
+            let lbl = format!("lbl{i}");
+            let meta = format!("meta{i}");
+            let label = path.rsplit('/').next().unwrap_or(path).to_string();
+            comp(&mut lines, &mut ids, &lid, json!({"Link": {"doc": {"literalString": path}, "child": &lbl}}));
+            comp(&mut lines, &mut ids, &lbl, json!({"Text": {"text": {"literalString": label}}}));
+            comp(&mut lines, &mut ids, &meta, json!({"Text": {"usageHint": "caption", "text": {"literalString": format!("{path} · 相关度 {score:.2}")}}}));
+        }
+    }
+    // root 的 explicitList 指向全部组件 id（后写覆盖前写，root 放最后）
+    let root_line = json!({"surfaceUpdate": {"components": [{"id": "root", "component": {"Column": {"children": {"explicitList": ids}}}}]}});
+    lines.push(root_line.to_string());
+    let jsonl = lines.join("\n");
+    format!("{reply}\n\n```a2ui\n{jsonl}\n```\n")
 }
 
 // ---------- 发布（本地预览产物） ----------

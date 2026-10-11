@@ -214,6 +214,19 @@ impl A2uiStream {
                     label
                 )
             }
+            // Link：库内回链（AI 引用来源卡）。宿主点击 data-doc 打开文档、
+            // data-anchor（^anchor 名或 b{index}）滚动到块——协议级反幻觉的出口。
+            "Link" => {
+                let label = child("child");
+                let doc = p("doc").map(|v| self.resolve(s, v)).unwrap_or_default();
+                let anchor = p("anchor").map(|v| self.resolve(s, v)).unwrap_or_default();
+                format!(
+                    "<a class=\"a2ui-link\" href=\"#\" data-doc=\"{}\" data-anchor=\"{}\">{}</a>",
+                    esc(&doc),
+                    esc(&anchor),
+                    label
+                )
+            }
             "TextField" => {
                 let label = text("label");
                 let value = text("text");
@@ -365,6 +378,8 @@ pub const A2UI_CSS: &str = r#"
 .a2ui-card{background:var(--surface,oklch(100% 0 0/.86));border:1px solid var(--border,oklch(88% .012 82));
   border-radius:var(--r-md,18px);padding:16px;box-shadow:var(--shadow-sm,0 10px 26px -14px oklch(38% .05 80/.22))}
 .a2ui-caption{color:var(--muted,#666);font-size:13px}
+.a2ui-link{display:inline-block;border:1px solid var(--border,oklch(88% .012 82));background:var(--surface,oklch(100% 0 0/.86));color:var(--fg,#222);border-radius:10px;padding:6px 12px;font:500 12.5px var(--font-body,system-ui);cursor:pointer;text-decoration:none}
+.a2ui-link:hover{border-color:var(--accent,oklch(54% .17 258));color:var(--accent,oklch(54% .17 258))}
 .a2ui-btn{border:1px solid var(--border,oklch(88% .012 82));background:var(--accent,oklch(54% .17 258));
   color:var(--on-accent,#fff);border-radius:12px;padding:8px 14px;font:600 13px var(--font-body,system-ui);cursor:pointer}
 .a2ui-btn:hover{filter:brightness(1.06)}
@@ -450,6 +465,22 @@ mod tests {
         assert!(doc.contains("data-catalog=\"https://a2ui.org/specification/v0_8/"));
         assert!(doc.contains(".a2ui-card"));
         assert!(doc.contains("<title>个人卡片</title>"));
+    }
+
+    #[test]
+    fn link_component_emits_doc_backlink() {
+        let jsonl = r#"{"surfaceUpdate":{"components":[{"id":"root","component":{"Column":{"children":{"explicitList":["t","lnk"]}}}}]}}
+{"surfaceUpdate":{"components":[{"id":"t","component":{"Text":{"usageHint":"h4","text":{"literalString":"来源 2 条"}}}}]}}
+{"surfaceUpdate":{"components":[{"id":"lnk","component":{"Link":{"doc":{"literalString":"Notes/笔记.md"},"anchor":{"literalString":"b3"},"child":"lbl"}}}]}}
+{"surfaceUpdate":{"components":[{"id":"lbl","component":{"Text":{"text":{"literalString":"打开原文"}}}}]}}
+{"beginRendering":{"root":"root"}}"#;
+        let mut st = A2uiStream::new();
+        for l in jsonl.lines() { st.push_line(l).unwrap(); }
+        let html = st.render().unwrap();
+        assert!(html.contains("data-doc=\"Notes/笔记.md\""), "回链要带 data-doc：{html}");
+        assert!(html.contains("data-anchor=\"b3\""));
+        assert!(html.contains("打开原文"));
+        assert!(!html.contains("href=\"Notes/"), "Link 不直接导航,由宿主接管");
     }
 
     #[test]

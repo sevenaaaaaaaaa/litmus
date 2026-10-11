@@ -496,12 +496,19 @@ pub fn to_html(doc: &DocModel) -> String {
         // 自包含文档里标题也是 H1：人类可读、agent 可解析、往返一致
         body.push_str(&format!("<h1>{}</h1>\n", esc(doc.title.as_deref().unwrap_or(""))));
     }
-    for b in &doc.blocks {
+    for (bi, b) in doc.blocks.iter().enumerate() {
+        // 块锚点 id（b{index}）：AI 引用回链的滚动目标（product-principles 机制⑤）。
+        // 显式 ^anchor 的块同时带 data-anchor 名。
+        let anchor_name = doc.anchors.get(bi).cloned().flatten();
+        let id_attr = match &anchor_name {
+            Some(a) => format!(" id=\"b{bi}\" data-anchor=\"{}\"", esc(a)),
+            None => format!(" id=\"b{bi}\""),
+        };
         match b {
-            Block::Paragraph { text, .. } => body.push_str(&format!("<p>{}</p>\n", esc(text))),
+            Block::Paragraph { text, .. } => body.push_str(&format!("<p{id_attr}>{}</p>\n", esc(text))),
             Block::Heading { level, text, .. } => {
                 let l = (*level).clamp(1, 6);
-                body.push_str(&format!("<h{l}>{}</h{l}>\n", esc(text)))
+                body.push_str(&format!("<h{l}{id_attr}>{}</h{l}>\n", esc(text)))
             }
             Block::Code { lang, text, .. } => {
                 let cls = lang
@@ -512,12 +519,12 @@ pub fn to_html(doc: &DocModel) -> String {
             }
             Block::Quote { lines, .. } => {
                 let inner: String = lines.iter().map(|l| format!("<p>{}</p>", esc(l))).collect();
-                body.push_str(&format!("<blockquote>{inner}</blockquote>\n"))
+                body.push_str(&format!("<blockquote{id_attr}>{inner}</blockquote>\n"))
             }
             Block::List { ordered, items, .. } => {
                 let (open, close) = if *ordered { ("ol", "ol") } else { ("ul", "ul") };
                 let inner: String = items.iter().map(|i| format!("<li>{}</li>", esc(i))).collect();
-                body.push_str(&format!("<{open}>{inner}</{close}>\n"))
+                body.push_str(&format!("<{open}{id_attr}>{inner}</{close}>\n"))
             }
             Block::Table { header, rows, .. } => {
                 let th: String = header.iter().map(|h| format!("<th>{}</th>", esc(h))).collect();
@@ -529,7 +536,7 @@ pub fn to_html(doc: &DocModel) -> String {
                     })
                     .collect();
                 body.push_str(&format!(
-                    "<table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>\n"
+                    "<table{id_attr}><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>\n"
                 ))
             }
             Block::Divider { .. } => body.push_str("<hr>\n"),
@@ -748,7 +755,7 @@ tc:block raw -->
         assert!(html.contains("application/ld+json"));
         assert!(html.contains("&lt;script&gt;"), "必须转义脚本");
         assert!(!html.contains("<script>alert"), "不得注入原始脚本");
-        assert!(html.contains("<table>"));
+        assert!(html.contains("<table id="), "表格要带块锚点 id:{}", html);
         assert!(html.contains("language-rust"));
         assert!(html.contains("<title>标题</title>"));
     }
