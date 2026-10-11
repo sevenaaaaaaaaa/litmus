@@ -370,25 +370,25 @@ fn esc(s: &str) -> String {
 
 /// 与 ThirdC token 契约一致的 A2UI 渲染样式（零 hex）。
 pub const A2UI_CSS: &str = r#"
-.a2ui{font-family:var(--font-body,system-ui);color:var(--fg,#222);margin:0;padding:20px}
+.a2ui{font-family:var(--font-body,system-ui);color:var(--fg,oklch(24% 0 0));margin:0;padding:20px}
 .a2ui-surface{display:block;margin:0 0 18px}
 .a2ui-col{display:flex;flex-direction:column;gap:10px}
 .a2ui-row{display:flex;flex-direction:row;gap:10px;align-items:center;flex-wrap:wrap}
 .a2ui-list{display:flex;flex-direction:column;gap:8px}
 .a2ui-card{background:var(--surface,oklch(100% 0 0/.86));border:1px solid var(--border,oklch(88% .012 82));
   border-radius:var(--r-md,18px);padding:16px;box-shadow:var(--shadow-sm,0 10px 26px -14px oklch(38% .05 80/.22))}
-.a2ui-caption{color:var(--muted,#666);font-size:13px}
-.a2ui-link{display:inline-block;border:1px solid var(--border,oklch(88% .012 82));background:var(--surface,oklch(100% 0 0/.86));color:var(--fg,#222);border-radius:10px;padding:6px 12px;font:500 12.5px var(--font-body,system-ui);cursor:pointer;text-decoration:none}
+.a2ui-caption{color:var(--muted,oklch(51% 0 0));font-size:13px}
+.a2ui-link{display:inline-block;border:1px solid var(--border,oklch(88% .012 82));background:var(--surface,oklch(100% 0 0/.86));color:var(--fg,oklch(24% 0 0));border-radius:10px;padding:6px 12px;font:500 12.5px var(--font-body,system-ui);cursor:pointer;text-decoration:none}
 .a2ui-link:hover{border-color:var(--accent,oklch(54% .17 258));color:var(--accent,oklch(54% .17 258))}
 .a2ui-btn{border:1px solid var(--border,oklch(88% .012 82));background:var(--accent,oklch(54% .17 258));
-  color:var(--on-accent,#fff);border-radius:12px;padding:8px 14px;font:600 13px var(--font-body,system-ui);cursor:pointer}
+  color:var(--on-accent,oklch(100% 0 0));border-radius:12px;padding:8px 14px;font:600 13px var(--font-body,system-ui);cursor:pointer}
 .a2ui-btn:hover{filter:brightness(1.06)}
 .a2ui-field{display:flex;flex-direction:column;gap:5px;font-size:13px}
 .a2ui-field input{padding:8px 10px;border-radius:10px;border:1px solid var(--border,oklch(88% .012 82));background:transparent;color:inherit}
 .a2ui-img{max-width:100%;border-radius:12px;display:block}
 .a2ui-hr{border:none;border-top:1px solid var(--border,oklch(88% .012 82));margin:8px 0}
 .a2ui-icon{font-size:18px}
-.a2ui-unknown{border:1px dashed var(--border-strong,oklch(79% .018 80));border-radius:12px;padding:10px;color:var(--muted,#666);font:12px var(--font-mono,monospace)}
+.a2ui-unknown{border:1px dashed var(--border-strong,oklch(79% .018 80));border-radius:12px;padding:10px;color:var(--muted,oklch(51% 0 0));font:12px var(--font-mono,monospace)}
 .a2ui-missing{color:var(--danger,oklch(55% .2 25));font:12px var(--font-mono,monospace)}
 "#;
 

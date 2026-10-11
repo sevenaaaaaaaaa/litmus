@@ -131,3 +131,16 @@ fn transitions_use_the_motion_family() {
     }
     assert!(bad.is_empty(), "transition 出现裸时长（应改用 --dur-1…5）：\n{}", bad.join("\n"));
 }
+
+#[test]
+fn backdrop_blur_has_two_tiers_only() {
+    // 毛玻璃半径只有两档：--blur-1（遮罩）/ --blur-2（玻璃表面）
+    let mut bad = Vec::new();
+    for (i, _) in INDEX.match_indices("backdrop-filter:") {
+        let decl: String = INDEX[i + 16..].chars().take_while(|&c| c != ';' && c != '}' && c != '\'' && c != '`').collect();
+        if decl.contains("blur(") && !(decl.contains("blur(var(--blur-1))") || decl.contains("blur(var(--blur-2))")) {
+            bad.push(decl);
+        }
+    }
+    assert!(bad.is_empty(), "backdrop-filter 出现两档之外的模糊半径：{bad:?}");
+}
