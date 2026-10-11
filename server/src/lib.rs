@@ -206,6 +206,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/boards", get(boards_list).post(boards_create))
         .route("/boards/{name}", axum::routing::delete(boards_delete))
         .route("/doc/move", post(move_doc))
+        .route("/dir", post(create_dir_ep))
         .route("/doc/copy", post(copy_doc))
         .route("/doc/raw", get(raw_doc))
         .route("/asset-file", get(asset_file))
@@ -1631,6 +1632,36 @@ async fn get_doc(
         }
         Err(e) => err(StatusCode::NOT_FOUND, e).into_response(),
     }
+}
+
+/// 新建文件夹（Notes/ 下；文件真相：目录就是普通目录）。
+async fn create_dir_ep(
+    State(st): State<Arc<AppState>>,
+    h: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let path = req.get("path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    if !kernel_core::is_safe_doc_path(&path) {
+        return err(StatusCode::BAD_REQUEST, "path must be under Notes/").into_response();
+    }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let abs = root.join(&path);
+    if abs.exists() {
+        return err(StatusCode::CONFLICT, "目录或文件已存在").into_response();
+    }
+    std::fs::create_dir_all(&abs).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e)).ok();
+    if !abs.is_dir() {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "创建失败").into_response();
+    }
+    // 目录无内容变更，不 bump 数据代数；前端 refreshAll 直接重拉树/画布
+    Json(json!({ "written": path })).into_response()
 }
 
 /// 复制文档（文件真相的平凡操作：读源文件字节 → put_doc 到新路径）。
@@ -4806,9 +4837,7 @@ async fn tree(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespons
                 let kids = walk(&p, root);
                 let files = count_docs_immediate(&p);
                 let count = kids.iter().map(|k| k.count).sum::<usize>() + files;
-                if count == 0 {
-                    continue;
-                }
+                // 空目录也保留——文件真相：Finder 显示空文件夹，树同样显示
                 out.push(N {
                     name,
                     path: p

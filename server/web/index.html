@@ -3605,6 +3605,7 @@ const CMDS=[
     renderA2ui(el,A2UI_DEMO,'A2UI 示例');
   }],
   ['凭证库','sec',()=>{closeAll();openSecrets();}],
+  ['新建文件夹','nd',()=>{closeAll();createFolder(browsePath==='Notes'?'Notes':browsePath);}],
   ['连接器管理','c',async()=>{closeAll();await openConnPanel();}],
   ['退出登录','out',()=>{
     localStorage.removeItem('thirdc_token');localStorage.removeItem('thirdc_user');
@@ -6780,12 +6781,26 @@ function docCtxItems(path){
     }},
   ].filter(Boolean);
 }
+async function createFolder(parentDir){
+  const base=(parentDir&&parentDir!=='Notes')?parentDir:'Notes';
+  const name=await uiPrompt(`在 ${base} 下新建文件夹`, '新建文件夹');
+  if(!name)return;
+  const clean=name.trim().replace(/[/\\:*?"<>|]/g,'-');
+  if(!clean)return;
+  try{
+    await api('/dir',{method:'POST',json:{path:base+'/'+clean}});
+    toast('已创建 '+base+'/'+clean,'ok');
+    browsePath=base;
+    await refreshAll();
+  }catch(e){toast('创建失败：'+e.message,'err')}
+}
 function folderCtxItems(name){
   const dir=(browsePath&&browsePath!=='Notes')?browsePath:(name&&name!=='Notes'?('Notes/'+name):'Notes');
   return [
-    {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(dir);toast('已复制 '+dir,'ok');}},
     {label:'📂 在画布中打开',fn:()=>{browsePath=dir;loadGraph();}},
+    {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(dir);toast('已复制 '+dir,'ok');}},
     'sep',
+    {label:'📁 新建子文件夹…',fn:()=>createFolder(dir)},
     {label:'📋 粘贴文档到此处',fn:()=>pasteDocInto(dir)},
     {label:'📥 导入并转码…',fn:()=>filePickerTranscode(dir)},
     'sep',
@@ -6962,6 +6977,18 @@ document.getElementById('canvas').addEventListener('contextmenu',e=>{
     const id=nodeEl.dataset.id,n=graph.nodes.find(x=>x.id===id);
     if(!n)return;
     selected=id;selectNode(id);
+    if(n.kind==='folder'){
+      openCtx(e.clientX,e.clientY,[
+        {label:'📂 在画布中打开',fn:()=>{browsePath=n.path;loadGraph();}},
+        {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(n.path);toast('已复制','ok');}},
+        'sep',
+        {label:'📁 新建子文件夹…',fn:()=>createFolder(n.path)},
+        {label:'📥 导入并转码到此…',fn:()=>filePickerTranscode(n.path)},
+        'sep',
+        {label:'🎯 聚焦此节点',fn:()=>$b('ins-focus').click()},
+      ]);
+      return;
+    }
     openCtx(e.clientX,e.clientY,[
       {label:'📝 打开编辑',fn:()=>openDoc(n.path)},
       ...docCtxItems(n.path).filter(it=>it!=='sep'&&it.label&&it.label.includes('回收站')===false),
@@ -6975,6 +7002,7 @@ document.getElementById('canvas').addEventListener('contextmenu',e=>{
   }else{
     openCtx(e.clientX,e.clientY,[
       {label:'＋ 新建文档',fn:newDoc},
+      {label:'📁 新建文件夹…',fn:()=>createFolder(browsePath==='Notes'?'Notes':browsePath)},
       {label:'📥 导入并转码…',fn:()=>filePickerTranscode()},
       {label:'📋 粘贴文档',fn:()=>pasteDocInto(browsePath==='Notes'?'Notes':browsePath)},
       'sep',
@@ -6992,7 +7020,15 @@ document.getElementById('canvas').addEventListener('contextmenu',e=>{
 document.getElementById('rail-list').addEventListener('contextmenu',e=>{
   const leaf=e.target.closest('.tree-leaf');
   const row=e.target.closest('.tree-row');
-  if(!leaf&&!row)return;
+  if(!leaf&&!row){
+    // 树空白处右键：根目录级动作
+    e.preventDefault();
+    openCtx(e.clientX,e.clientY,[
+      {label:'📁 新建文件夹…',fn:()=>createFolder('Notes')},
+      {label:'📝 新建文档',fn:newDoc},
+    ]);
+    return;
+  }
   e.preventDefault();
   if(leaf){
     const path=leaf.title||'';
