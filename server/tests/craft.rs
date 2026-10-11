@@ -105,3 +105,29 @@ fn every_icon_reference_exists() {
     }
     assert!(missing.is_empty(), "引用了不存在的图标：{missing:?}");
 }
+
+#[test]
+fn transitions_use_the_motion_family() {
+    // 壳里的 transition 时长只能来自 --dur-1…5（0s 作为"立即"放行）；循环类 animation 不受此限
+    let s = shell();
+    let style = &s[s.find("<style>").unwrap()..s.find("</style>").unwrap()];
+    let mut bad = Vec::new();
+    for (i, _) in style.match_indices("transition:") {
+        let decl: String = style[i + 11..].chars().take_while(|&c| c != ';' && c != '}').collect();
+        let b = decl.as_bytes();
+        for (k, _) in decl.match_indices('s') {
+            // 形如 ".2s" / "1s"：s 前是数字、后面不是字母
+            let prev_digit = k > 0 && b[k - 1].is_ascii_digit();
+            let next_alpha = b.get(k + 1).is_some_and(|c| c.is_ascii_alphabetic() || *c == b'-');
+            if prev_digit && !next_alpha {
+                let start = decl[..k].rfind(|c: char| !(c.is_ascii_digit() || c == '.')).map_or(0, |p| p + 1);
+                let num = &decl[start..k];
+                if num.parse::<f64>().map_or(true, |v| v != 0.0) {
+                    bad.push(format!("transition:{decl}"));
+                    break;
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "transition 出现裸时长（应改用 --dur-1…5）：\n{}", bad.join("\n"));
+}
