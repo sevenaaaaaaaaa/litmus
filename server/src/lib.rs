@@ -987,12 +987,27 @@ async fn list_docs_api(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl In
         Ok(d) => d,
         Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };
+    let root = k.vault.root.clone();
+    drop(k);
     let arr: Vec<Value> = docs
         .iter()
         .filter_map(|p| p.to_str())
         .map(|p| {
             let name = p.rsplit('/').next().unwrap_or(p);
-            json!({ "path": p, "title": title_from_filename(name), "tags": [] })
+            // 标签：frontmatter + 正文 #行内（读头 4KB，与 memo 同模式；视图/检索共用）
+            use std::io::Read;
+            let mut buf = [0u8; 4096];
+            let n = std::fs::File::open(root.join(p))
+                .and_then(|mut f| f.read(&mut buf))
+                .unwrap_or(0);
+            let head = String::from_utf8_lossy(&buf[..n]);
+            let mtime = std::fs::metadata(root.join(p))
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            json!({ "path": p, "title": title_from_filename(name), "tags": extract_memo_tags(&head), "mtime": mtime })
         })
         .collect();
     Json(json!({ "docs": arr })).into_response()
@@ -4667,7 +4682,7 @@ fn is_junk_name(name: &str) -> bool {
 
 fn is_doc_file(path: &std::path::Path) -> bool {
     path.extension().map_or(false, |x| {
-        matches!(x.to_string_lossy().as_ref(), "md" | "html" | "htm")
+        matches!(x.to_string_lossy().as_ref(), "md" | "html" | "htm" | "view")
     })
 }
 

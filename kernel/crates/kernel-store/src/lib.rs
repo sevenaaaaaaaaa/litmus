@@ -476,7 +476,7 @@ pub fn new_doc_id() -> String {
 
 /// 原样文本（verbatim）文档：代码 / 结构化文本，字节级往返，不做 Markdown 规范化。
 pub const VERBATIM_EXTS: &[&str] = &[
-    "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "json", "jsonc", "yaml", "yml", "toml", "ini",
+    "py", "js", "mjs", "cjs", "ts", "jsx", "tsx", "json", "jsonc", "view", "yaml", "yml", "toml", "ini",
     "cfg", "conf", "css", "scss", "less", "sh", "bash", "zsh", "fish", "rs", "go", "c", "h",
     "cpp", "hpp", "java", "kt", "swift", "rb", "php", "sql", "xml", "csv", "tsv", "log", "txt",
 ];

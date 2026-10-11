@@ -520,6 +520,30 @@ body[data-mode="organize"] #canvas{cursor:crosshair}
 #mh-filter{display:flex;gap:6px;align-items:center;padding:10px 22px 0;font-size:12px;color:var(--faint)}
 #mh-filter .on{color:var(--accent);cursor:pointer;text-decoration:underline}
 
+/* ── .view 视图文件：视图即文件（数据分离，Obsidian Bases 同构）── */
+#viewfile{position:fixed;inset:0;z-index:var(--z-overlay);display:none;flex-direction:column;background:var(--bg)}
+#viewfile.open{display:flex}
+#vf-top{display:flex;align-items:center;gap:12px;padding:0 20px;height:60px;border-bottom:1px solid var(--border)}
+#vf-top .t{font:700 15px var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#vf-top .src{font-size:11.5px;color:var(--faint);font-family:var(--font-mono)}
+#vf-top .sp{flex:1}
+.vf-switch{display:flex;gap:2px;background:var(--bg-soft);border-radius:var(--r-pill);padding:3px}
+.vf-switch button{border:none;background:transparent;color:var(--muted);padding:6px 14px;border-radius:var(--r-pill);font:600 12px var(--font-body);cursor:pointer}
+.vf-switch button.on{background:var(--surface);color:var(--fg);box-shadow:var(--shadow-sm)}
+#vf-body{flex:1;overflow:auto;padding:18px 22px}
+.vf-kanban{display:flex;gap:14px;align-items:flex-start}
+.vf-col{flex:1;min-width:230px;background:var(--bg-soft);border-radius:var(--r-lg);padding:10px}
+.vf-col h4{margin:2px 4px 10px;font:700 12.5px var(--font-body);color:var(--muted);display:flex;justify-content:space-between}
+.vf-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:9px 12px;margin-bottom:8px;cursor:pointer;box-shadow:var(--shadow-sm)}
+.vf-card:hover{border-color:var(--accent)}
+.vf-card .nm{font:600 12.5px var(--font-body);color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vf-card .mt{font-size:10.5px;color:var(--faint);margin-top:3px;font-family:var(--font-mono)}
+.vf-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.vf-table th{text-align:left;padding:8px 10px;color:var(--faint);font:600 11px var(--font-mono);border-bottom:1px solid var(--border)}
+.vf-table td{padding:8px 10px;border-bottom:1px solid var(--border)}
+.vf-table tr:hover td{background:var(--bg-soft)}
+.vf-empty{padding:40px;text-align:center;color:var(--faint);font-size:13px}
+
 /* 左簇弹层：最近使用（纵向清单）· 固定板（Apple dock 式横向放大） */
 .dock-pop{position:fixed;z-index:58;display:none;flex-direction:column;min-width:264px;max-width:380px;padding:8px;border-radius:var(--r-lg);
   background:var(--surface-strong);border:1px solid var(--border);box-shadow:var(--shadow)}
@@ -1368,6 +1392,24 @@ button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon
   </div>
 </div>
 
+<!-- .view 视图文件渲染器：视图即文件 -->
+<div id="viewfile" role="dialog" aria-label="视图">
+  <div id="vf-top">
+    <span class="t" id="vf-title"></span>
+    <span class="src" id="vf-src"></span>
+    <span class="sp"></span>
+    <div class="vf-switch" id="vf-switch">
+      <button data-vf="kanban">看板</button>
+      <button data-vf="table">表格</button>
+      <button data-vf="list">列表</button>
+    </div>
+    <button class="icon-btn" id="vf-edit" title="编辑源 JSON（抽屉）"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+    <button class="icon-btn" id="vf-save" title="保存视图文件 ⌘S"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></button>
+    <button class="icon-btn" id="vf-close" title="关闭 Esc">✕</button>
+  </div>
+  <div id="vf-body"></div>
+</div>
+
 <div class="peers-pop" id="peers-pop"></div>
 
 <div class="overlay" id="conflow-ov"><div class="panel" style="width:min(640px,94vw)">
@@ -2136,12 +2178,14 @@ $('nodes').addEventListener('dblclick',e=>{
   const el=e.target.closest('.node');if(!el)return;
   const n=graph.nodes.find(x=>x.id===el.dataset.id);
   if(n&&n.kind==='folder'){browsePath=n.path;loadGraph();}
+  else if(n&&isViewPath(n.path)){openViewFile(n.path);}
   else if(n&&n.kind!=='asset')openDoc(n.path);
   else if(n)toast('附件：'+n.mime);
 });
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();return;}
   if((e.metaKey||e.ctrlKey)&&e.key==='.'){e.preventDefault();abShow();return;}
+  if(e.key==='Escape'&&$('viewfile').classList.contains('open')){closeViewFile();return;}
   if(e.key==='Escape'&&$('memo-hub').classList.contains('open')){closeMemoHub();return;}
   if(e.key==='Escape'&&$('actionbar')&&$('actionbar').classList.contains('on')){abHide();return;}
   if(e.key==='Escape'){closeTopFloat();return;}
@@ -3606,6 +3650,7 @@ const CMDS=[
   }],
   ['凭证库','sec',()=>{closeAll();openSecrets();}],
   ['新建文件夹','nd',()=>{closeAll();createFolder(browsePath==='Notes'?'Notes':browsePath);}],
+  ['新建视图（看板/表格）','vw2',()=>{closeAll();createViewFile('folder',browsePath==='Notes'?'':browsePath.replace(/^Notes\/?/,''));}],
   ['连接器管理','c',async()=>{closeAll();await openConnPanel();}],
   ['退出登录','out',()=>{
     localStorage.removeItem('thirdc_token');localStorage.removeItem('thirdc_user');
@@ -6756,8 +6801,10 @@ let fileClip=''; // 进程内文件剪贴板（复制文档路径，粘贴=重�
 
 function docCtxItems(path){
   const isCsv=/\.csv$/i.test(path);
+  const isView=isViewPath(path);
   return [
-    {label:'📝 打开',fn:()=>openDoc(path)},
+    isView?{label:'📊 打开视图',fn:()=>openViewFile(path)}:{label:'📝 打开',fn:()=>openDoc(path)},
+    ...(isView?[{label:'✏️ 编辑源 JSON',fn:()=>openDoc(path)}]:[]),
     {label:'✏️ 重命名…',fn:()=>renameDoc(path)},
     {label:'📂 移动到…',fn:()=>moveDocTo(path)},
     {label:'📑 复制一份',fn:()=>duplicateDoc(path)},
@@ -6801,6 +6848,7 @@ function folderCtxItems(name){
     {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(dir);toast('已复制 '+dir,'ok');}},
     'sep',
     {label:'📁 新建子文件夹…',fn:()=>createFolder(dir)},
+    {label:'📊 新建视图（看板/表格）…',fn:()=>createViewFile('folder',dir.replace(/^Notes\/?/,''))},
     {label:'📋 粘贴文档到此处',fn:()=>pasteDocInto(dir)},
     {label:'📥 导入并转码…',fn:()=>filePickerTranscode(dir)},
     'sep',
@@ -7003,6 +7051,7 @@ document.getElementById('canvas').addEventListener('contextmenu',e=>{
     openCtx(e.clientX,e.clientY,[
       {label:'＋ 新建文档',fn:newDoc},
       {label:'📁 新建文件夹…',fn:()=>createFolder(browsePath==='Notes'?'Notes':browsePath)},
+      {label:'📊 新建视图（看板/表格）…',fn:()=>createViewFile('folder',browsePath==='Notes'?'':browsePath.replace(/^Notes\/?/,''))},
       {label:'📥 导入并转码…',fn:()=>filePickerTranscode()},
       {label:'📋 粘贴文档',fn:()=>pasteDocInto(browsePath==='Notes'?'Notes':browsePath)},
       'sep',
@@ -7292,6 +7341,124 @@ $('p-all')?.remove();
 const pAllBtn=document.createElement('button');pAllBtn.className='act';pAllBtn.textContent='整库 PPT';
 pAllBtn.onclick=()=>window.open(`${BASE}/presentation?token=${encodeURIComponent(token)}`,'_blank');
 $('p-exit').parentNode.insertBefore(pAllBtn,$('p-exit'));
+
+/* ───────── .view 视图文件：视图即文件（数据在 Markdown，视图是投影） ───────── */
+function isViewPath(p){return /\.view$/i.test(p||'')}
+let vfState=null; // {path, cfg, docs}
+async function openViewFile(path){
+  try{
+    const d=await api('/doc?path='+encodeURIComponent(path));
+    let cfg;
+    try{ cfg=JSON.parse(d.source); }
+    catch(e){ toast('视图文件 JSON 无效：'+e.message,'err'); return openDoc(path); }
+    cfg=normalizeViewCfg(cfg);
+    vfState={path,cfg};
+    $('vf-title').textContent=cfg.title||path.split('/').pop().replace(/\.view$/i,'');
+    $('vf-src').textContent=path;
+    $('viewfile').classList.add('open');
+    await renderViewFile();
+  }catch(e){ toast('打开视图失败：'+e.message,'err'); }
+}
+function closeViewFile(){ $('viewfile').classList.remove('open'); vfState=null; }
+$('vf-close')&&($('vf-close').onclick=closeViewFile);
+$('vf-edit')&&($('vf-edit').onclick=()=>{ if(vfState){ const p=vfState.path; closeViewFile(); openDoc(p); } });
+$('vf-save')&&($('vf-save').onclick=async()=>{ if(!vfState)return; await saveViewFile(); toast('视图已保存','ok'); });
+$('vf-switch')&&($('vf-switch').onclick=e=>{
+  const b=e.target.closest('button[data-vf]');if(!b||!vfState)return;
+  vfState.cfg.view=b.dataset.vf;renderViewFile();
+});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'&&vfState&&$('viewfile').classList.contains('open')){e.preventDefault();saveViewFile().then(()=>toast('视图已保存','ok'));}
+  if(e.key==='Escape'&&$('viewfile').classList.contains('open')){closeViewFile();return;}
+});
+function normalizeViewCfg(c){
+  const src=c.source||{};
+  return {
+    v:1,
+    title:c.title||'',
+    source:{ type:src.type||'folder', value:src.value||'' },
+    view:['kanban','table','list'].includes(c.view)?c.view:'kanban',
+    groupBy:c.groupBy||'collection',
+    tag:c.tag||'',
+    sort:c.sort||'mtime',
+  };
+}
+async function viewDocs(){
+  const {cfg}=vfState;
+  if(!(window.__fullDocs&&window.__fullDocs.length)){try{await loadDocsFull()}catch{}}
+  const all=window.__fullDocs||[];
+  if(cfg.source.type==='folder'){
+    const pre=cfg.source.value?('Notes/'+cfg.source.value.replace(/^\/+|\/+$/g,'').replace(/^Notes\/?/,'')):'Notes';
+    return all.filter(d=>d.path.startsWith(pre+'/'));
+  }
+  if(cfg.source.type==='tag'){
+    const t=cfg.tag||cfg.source.value;
+    return all.filter(d=>(d.tags||[]).includes(t));
+  }
+  if(cfg.source.type==='query'){
+    try{ const r=await api('/search?q='+encodeURIComponent(cfg.source.value||''));
+      const hits=r.hits||[];
+      const byPath=new Map(all.map(d=>[d.path,d]));
+      return hits.map(h=>byPath.get(h.path)).filter(Boolean);
+    }catch{ return []; }
+  }
+  return [];
+}
+function viewGroupOf(d,cfg){
+  if(cfg.groupBy==='tag'){
+    const t=cfg.tag||(cfg.source.type==='tag'?cfg.source.value:'');
+    return (d.tags||[]).includes(t)?t:'未打标';
+  }
+  return d.path.split('/').slice(1,-1).pop()||'(根)';
+}
+async function renderViewFile(){
+  const {cfg}=vfState;
+  $('vf-switch').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.vf===cfg.view));
+  const body=$('vf-body');
+  body.innerHTML='<div class="vf-empty">加载数据…</div>';
+  const docs=await viewDocs();
+  const norm=docs.map(d=>({...d,_t:(d.title||d.path.split('/').pop())}));
+  norm.sort((a,b)=>cfg.sort==='title'?a._t.localeCompare(b._t):(b.mtime||0)-(a.mtime||0));
+  if(!norm.length){body.innerHTML='<div class="vf-empty">视图没有命中文档——调整来源（source）或先写点内容</div>';return}
+  if(cfg.view==='kanban'){
+    const groups={};
+    norm.forEach(d=>{const g=viewGroupOf(d,cfg);(groups[g]=groups[g]||[]).push(d);});
+    const keys=Object.keys(groups).sort();
+    body.innerHTML='<div class="vf-kanban">'+keys.map(g=>`<div class="vf-col"><h4><span></span><b>${groups[g].length}</b></h4>`+
+      groups[g].map(d=>`<div class="vf-card" data-p="${d.path}"><div class="nm"></div><div class="mt">${memoDate(d.mtime||0)}${(d.tags||[]).length?' · #'+d.tags.slice(0,2).join(' #'):''}</div></div>`).join('')+'</div>').join('')+'</div>';
+    body.querySelectorAll('.vf-col h4 span').forEach((el,i)=>el.textContent=keys[i]);
+    body.querySelectorAll('.vf-kanban .vf-card').forEach(el=>{
+      const d=norm.find(x=>x.path===el.dataset.p);
+      if(d)el.querySelector('.nm').textContent=d._t;
+    });
+  }else if(cfg.view==='table'){
+    body.innerHTML='<table class="vf-table"><thead><tr><th>标题</th><th>路径</th><th>修改</th><th>标签</th></tr></thead><tbody>'+
+      norm.map(d=>`<tr data-p="${d.path}"><td class="nm"></td><td style="color:var(--faint);font-family:var(--font-mono);font-size:11px">${d.path}</td><td>${memoDate(d.mtime||0)}</td><td>${(d.tags||[]).map(t=>'#'+t).join(' ')||'—'}</td></tr>`).join('')+'</tbody></table>';
+    body.querySelectorAll('td.nm').forEach((el,i)=>el.textContent=norm[i]._t);
+  }else{
+    body.innerHTML=norm.map(d=>`<div class="vf-card" data-p="${d.path}" style="max-width:640px"><div class="nm"></div><div class="mt">${memoDate(d.mtime||0)} · ${d.path}</div></div>`).join('');
+    body.querySelectorAll('.vf-card .nm').forEach((el,i)=>el.textContent=norm[i]._t);
+  }
+  body.querySelectorAll('[data-p]').forEach(el=>{el.onclick=()=>openDoc(el.dataset.p);});
+}
+async function saveViewFile(){
+  if(!vfState)return;
+  await api('/doc?path='+encodeURIComponent(vfState.path),{method:'PUT',body:JSON.stringify(vfState.cfg,null,2),headers:{'content-type':'text/plain'}});
+}
+async function createViewFile(sourceType,sourceValue,groupBy){
+  const name=await uiPrompt('视图名称（将保存为 <目录>/名称.view）','新视图');
+  if(!name)return;
+  const clean=name.trim().replace(/[/\\:*?"<>|]/g,'-')||'视图';
+  const dir=(typeof browsePath==='string'&&browsePath!=='Notes')?browsePath:'Notes';
+  const path=dir+'/'+clean+'.view';
+  const cfg=normalizeViewCfg({ source:{type:sourceType,value:sourceValue}, view:'kanban', groupBy:groupBy||(sourceType==='tag'?'tag':'collection'), tag:sourceType==='tag'?sourceValue:'' });
+  try{
+    await api('/doc?path='+encodeURIComponent(path),{method:'PUT',body:JSON.stringify(cfg,null,2),headers:{'content-type':'text/plain'}});
+    await refreshAll();
+    openViewFile(path);
+    toast('视图已创建 '+path,'ok');
+  }catch(e){toast('创建失败：'+e.message,'err')}
+}
 
 /* ───────── Memos Hub：三栏全功能（dock-memohub 进入；Esc 关） ───────── */
 const mhState={tag:null,month:null,q:''};
