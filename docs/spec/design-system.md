@@ -60,3 +60,65 @@ server/web/index.html   <style> 只放本页独有部件
 | 新增 token | — | `--bg-deep` `--col-bg` `--col-head` `--axis`（看板/时间线用） |
 
 仍是全 oklch、零 hex、弹簧缓动、圆角三档。
+
+## 配色体系 v2（2026-10-12 · 工艺品化 PR①）
+
+> 判据：任何一屏截图色彩层次 ≥4 级可见；对比度全部过 WCAG AA；oklch 零 hex。
+> 三条都由 `server/tests/palette.rs` 在 `cargo test` 里强制，不靠肉眼复核。
+
+### 层级 = 明度阶梯
+
+五级表面 `bg-0 < bg-1 < surface-1 < surface-2 < surface-3`（k = 0…4），用公式而不是挑色：
+
+| 主题 | 明度 L(k) | 色度 C(k) | 色相 h(k) | 借鉴 |
+|---|---|---|---|---|
+| 暗（主场景） | 22.5% + 3.2%·k | .007 + .0008·k | 70 + 2·k | Linear 的等差克制；越浮起越暖一点（Arc 的温度） |
+| 亮 | 100% − 0.65%·(4−k)^1.5 | .016·(4−k)/4 | 84 | Things 的纸感：纸面最深，浮层趋白、色度褪尽 |
+
+壳的落位（截图里可数出的层次）：
+
+| 层 | token | 承载 |
+|---|---|---|
+| 框 | `bg-0` | 顶栏、底栏、移动导航；输入框/侧列等凹陷处（`--bg-soft`） |
+| 底 | `bg-1` | 画布、Memo Hub/视图文件底（`--bg`） |
+| 面 | `surface-1` | 侧栏、检查器、抽屉（`--surface` 玻璃） |
+| 物 | `surface-2` | 画布节点（`--node-bg`） |
+| 浮 | `surface-3` | 菜单、弹窗、选中态（`--surface-strong`） |
+
+文字四级 `text-1…4`（旧名 `--fg/--muted/--faint` 映射前三级，`text-4` 只给占位符与禁用态），
+边框两级 `border-1/2`（文字色的透明度，压在任何表面上都成立），语义四色 `ok/warn/danger/info` 各配 `-soft`，
+新增 `--on-danger`、`--ring`、`--selection`。
+
+### 对比度纪律（测试矩阵：亮/暗 × 两版强调色）
+
+- `text-1/2/3`、`accent(-strong)`、`accent-2`、语义色 对五级表面全部 ≥ 4.5:1；
+- 彩色文字压在自己的 `-soft` 底上 ≥ 4.5:1（徽章、标签、选中态）；
+- `on-accent / on-accent-2 / on-danger` 压在对应底色上 ≥ 4.5:1；
+- `text-4` 属 WCAG 1.4.3 豁免（占位/禁用/装饰），仍保证 ≥ 3:1；
+- 暗色相邻表面级差 ≥ 1.08:1，保证在截图里可分辨。
+
+### 强调色两版：石蕊双色 vs 经典蓝
+
+主色都是石蕊蓝（`accent`，链接/选中/焦点环不变），差别只在副色 `accent-2` 与渐变 `--accent-grad`：
+
+| | A · 石蕊双色（默认） | B · 经典蓝（`html[data-accent="blue"]`） |
+|---|---|---|
+| 副色 | 石蕊红 h≈10（遇酸显红） | 堇紫 h≈300（同色系演进） |
+| 渐变 | 红 → 紫 → 蓝，oklch 插值走紫色短弧（石蕊的中性色恰好是紫） | 堇 → 蓝，安静 |
+| 用在哪 | 只用于"显色"瞬间：AI 动词、Agent 署名与思考光、Magic 星标、启动环、光晕 | 同左 |
+
+石蕊红**永不表示错误**：与 `--danger`（h≈29）色相相隔 ≥12°，测试强制；报错一律走 `--danger`。
+切换：⌘K「切换强调色」，存 `localStorage.thirdc_accent`，启动脚本在首帧前落定，无闪烁。
+
+![强调色 A/B 对照](../img/craft/accent-ab.png)
+
+前后对照（上：v1，下：v2）：
+
+![暗色 v1 → v2](../img/craft/palette-v2-dark.png)
+![亮色 v1 → v2](../img/craft/palette-v2-light.png)
+
+### 兼容
+
+旧 token 名全部保留为别名（测试 `every_legacy_token_still_resolves` 守住），62 款阅读风格预设与插件
+覆盖 `--bg/--fg/--accent…` 的方式不变。新原语（`surface-1…3`、`text-4`、`info`）不随预设变化，属有意为之：
+它们是壳的骨架，不是阅读皮肤。
