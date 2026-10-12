@@ -2738,6 +2738,11 @@ mod tests {
         assert!(cited.contains("```a2ui"), "来源必须是 A2UI surface:{}", cited);
         assert!(!cited.contains("未按协议标注"));
         assert!(cited.contains("\"Link\"") && cited.contains("Notes/a.md"), "来源卡必须带 Link 回链：{}", cited);
+        // 必须能被渲染器真正出图（含 beginRendering），否则来源卡在对话里只剩"渲染失败"
+        let block = cited.split("```a2ui\n").nth(1).unwrap().split("\n```").next().unwrap();
+        let html = kernel_a2ui::render_jsonl_fragment(block).expect("来源 surface 必须可渲染");
+        assert!(html.contains("data-doc=\"Notes/a.md\""), "{html}");
+        assert_eq!(html.matches(">a.md<").count(), 1, "来源标题只应出现在 Link 内一次：{html}");
         // 不守协议:零标注 → 警告
         let uncited = append_citation_surface("结论甲", &cands);
         assert!(uncited.contains("未按协议标注"));
@@ -3172,12 +3177,12 @@ pub fn append_citation_surface(reply: &str, candidates: &[(String, f64)]) -> Str
         lines.push(json!({"surfaceUpdate": {"components": [{"id": id, "component": component}]}}).to_string());
         ids.push(id.to_string());
     };
-    comp(&mut lines, &mut ids, "h", json!({"Text": {"usageHint": "h4", "text": {"literalString": "📎 库内来源"}}}));
+    comp(&mut lines, &mut ids, "h", json!({"Text": {"usageHint": "h4", "text": {"literalString": "库内来源"}}}));
     if candidates.is_empty() {
         comp(&mut lines, &mut ids, "none", json!({"Text": {"text": {"literalString": "本次回答未检索到库内相关来源——结论请自行核实"}}}));
     } else {
         if !cited {
-            comp(&mut lines, &mut ids, "warn", json!({"Text": {"usageHint": "caption", "text": {"literalString": "⚠️ 模型未按协议标注〔来源〕——以下为自动检索候选，仅供参考"}}}));
+            comp(&mut lines, &mut ids, "warn", json!({"Text": {"usageHint": "caption", "text": {"literalString": "模型未按协议标注〔来源〕——以下为自动检索候选，仅供参考"}}}));
         }
         for (i, (path, score)) in candidates.iter().take(5).enumerate() {
             let lid = format!("lnk{i}");
@@ -3189,9 +3194,13 @@ pub fn append_citation_surface(reply: &str, candidates: &[(String, f64)]) -> Str
             comp(&mut lines, &mut ids, &meta, json!({"Text": {"usageHint": "caption", "text": {"literalString": format!("{path} · 相关度 {score:.2}")}}}));
         }
     }
-    // root 的 explicitList 指向全部组件 id（后写覆盖前写，root 放最后）
+    // root 的 explicitList 指向全部顶层组件 id（后写覆盖前写，root 放最后）。
+    // Link 的文字子组件（lbl*）只属于 Link，若也挂到 root 会在卡片外再渲染一遍
+    ids.retain(|id| !id.starts_with("lbl"));
     let root_line = json!({"surfaceUpdate": {"components": [{"id": "root", "component": {"Column": {"children": {"explicitList": ids}}}}]}});
     lines.push(root_line.to_string());
+    // 没有 beginRendering，渲染器会按协议拒绝出图（"no surface"）——来源卡曾因此在对话里显示为渲染失败
+    lines.push(json!({"beginRendering": {"root": "root"}}).to_string());
     let jsonl = lines.join("\n");
     format!("{reply}\n\n```a2ui\n{jsonl}\n```\n")
 }
