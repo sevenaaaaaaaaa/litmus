@@ -149,9 +149,9 @@
 :root{
   /* 石蕊渐变：红（酸）→ 紫（中性）→ 蓝（碱）；oklch 插值走紫色短弧，不发灰 */
   --accent-grad: linear-gradient(in oklch 125deg, var(--accent-2), var(--accent));
-  /* 品牌标：石蕊显色（酸红 → 中性紫 → 碱蓝），不随主题/强调色变化；与 docs/brand/litmus-icon.svg 同源 */
-  --logo-grad: linear-gradient(to top right, oklch(62% .2 14), oklch(54% .19 318) 52%, oklch(60% .17 258));
-  --logo-ink: oklch(99% .005 85);
+  /* 品牌标：石蕊蓝（单色同色系演进），与 accent 同族；与 docs/brand/litmus-icon.svg 同源 */
+  --logo-grad: linear-gradient(135deg, oklch(56% .18 252), oklch(47% .17 258) 52%, oklch(42% .16 264));
+  --logo-ink: oklch(98% .006 250);
   --accent-grad-soft: linear-gradient(in oklch 125deg,
     color-mix(in oklab, var(--accent-2) 16%, transparent), color-mix(in oklab, var(--accent) 16%, transparent));
   --ring: var(--accent);
@@ -182,8 +182,8 @@
 
   /* 圆角四 token（ui-redesign.md §2，别无他选）：内嵌小件 / 常规控件 / 容器 / 胶囊 */
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
-  /* 外壳几何：顶栏通栏 48px；底栏（对话+状态合一）44px */
-  --chrome-h: 48px; --dock-h: 44px;
+  /* 外壳几何：顶栏通栏 56px；底栏（对话+状态合一）56px */
+  --chrome-h: 56px; --dock-h: 56px;
   /* 层级九档（ui-redesign.md §2）：画布 < 侧栏 < 顶栏 < 底栏 < 抽屉 < 浮层 < 展示 < 通知 < 右键 */
   --z-canvas:0; --z-rail:20; --z-chrome:30; --z-drawer:50;
   --z-dock:40; --z-overlay:200; --z-present:300; --z-toast:400; --z-ctx:500;

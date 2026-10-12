@@ -1,24 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- 鹿蕊 Litmus 应用图标：石蕊显色渐变（酸红 → 中性紫 → 碱蓝）上的一枝鹿蕊。
+  <!-- 鹿蕊 Litmus 应用图标：石蕊蓝单色渐变上的一枝鹿蕊。
        鹿蕊（石蕊地衣）分叉如鹿角，也是知识的分叉——一根主干、两次分枝、四个节点。
        桌面图标由 scripts/gen_icons.py 按同一几何生成。 -->
   <defs>
-    <linearGradient id="litmus" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="oklch(62% .2 14)"/>
-      <stop offset=".52" stop-color="oklch(54% .19 318)"/>
-      <stop offset="1" stop-color="oklch(60% .17 258)"/>
+    <linearGradient id="litmus" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="oklch(56% .18 252)"/>
+      <stop offset=".52" stop-color="oklch(47% .17 258)"/>
+      <stop offset="1" stop-color="oklch(42% .16 264)"/>
     </linearGradient>
     <radialGradient id="glow" cx=".5" cy=".18" r=".8">
-      <stop offset="0" stop-color="oklch(100% 0 0)" stop-opacity=".22"/>
+      <stop offset="0" stop-color="oklch(100% 0 0)" stop-opacity=".18"/>
       <stop offset="1" stop-color="oklch(100% 0 0)" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="1024" height="1024" rx="228" fill="url(#litmus)"/>
   <rect width="1024" height="1024" rx="228" fill="url(#glow)"/>
-  <g fill="none" stroke="oklch(99% .005 85)" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="oklch(98% .006 250)" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
     <path d="M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262"/>
   </g>
-  <g fill="oklch(99% .005 85)">
+  <g fill="oklch(98% .006 250)">
     <circle cx="318" cy="272" r="46"/><circle cx="418" cy="262" r="46"/><circle cx="588" cy="232" r="46"/><circle cx="708" cy="262" r="46"/>
   </g>
 </svg>

@@ -44,12 +44,12 @@ def oklch(l: float, c: float, h: float) -> tuple[int, int, int]:
     return tuple(enc(v) for v in lin)  # type: ignore[return-value]
 
 
-STOPS = [  # 对角：左下酸红 → 中性紫 → 右上碱蓝（与 litmus-icon.svg 一致）
-    (0.00, oklch(0.62, 0.20, 14)),
-    (0.52, oklch(0.54, 0.19, 318)),
-    (1.00, oklch(0.60, 0.17, 258)),
+STOPS = [  # 同色系蓝色渐变：左上浅蓝 → 右下深蓝（与 litmus-icon.svg 一致）
+    (0.00, oklch(0.56, 0.18, 252)),
+    (0.52, oklch(0.47, 0.17, 258)),
+    (1.00, oklch(0.42, 0.16, 264)),
 ]
-INK = oklch(0.99, 0.005, 85)
+INK = oklch(0.98, 0.006, 250)
 
 
 def _lerp(c0, c1, t):
@@ -57,19 +57,19 @@ def _lerp(c0, c1, t):
 
 
 def gradient(size: int) -> Image.Image:
-    """对角三段渐变 + 顶部柔光（radial，白 22% → 0）。"""
+    """同色系蓝色渐变 + 顶部柔光（radial，白 18% → 0）。"""
     img = Image.new("RGB", (size, size))
     px = img.load()
     n = size - 1
     for y in range(size):
         for x in range(size):
-            t = (x + (n - y)) / (2 * n)
+            t = (x + y) / (2 * n)
             for (t0, c0), (t1, c1) in zip(STOPS, STOPS[1:]):
                 if t <= t1:
                     col = _lerp(c0, c1, (t - t0) / (t1 - t0))
                     break
             dx, dy = x / n - 0.5, y / n - 0.18
-            g = max(0.0, 1 - math.hypot(dx, dy) / 0.8) * 0.22
+            g = max(0.0, 1 - math.hypot(dx, dy) / 0.8) * 0.18
             px[x, y] = tuple(round(v + (255 - v) * g) for v in col)
     return img
 
