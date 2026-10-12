@@ -43,7 +43,13 @@ html.desktop #chrome button,html.desktop #chrome input,html.desktop #chrome nav,
 .brand{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 4px;border:none;background:transparent;border-radius:var(--r-md);
   font-family:var(--font-display);font-weight:700;color:var(--fg);cursor:pointer;flex:0 0 auto}
 .brand:hover{background:var(--glass)}
-.brand .mark{width:26px;height:26px;border-radius:var(--r-md);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-size:var(--fs-2)}
+/* 品牌标 .lmark：石蕊渐变底 + 鹿蕊枝（单色字形走遮罩，任何尺寸同一几何） */
+.lmark{display:block;position:relative;flex:none;border-radius:var(--r-md);background:var(--logo-grad);overflow:hidden;
+  box-shadow:inset 0 1px 0 oklch(100% 0 0/.22),0 1px 2px oklch(0% 0 0/.18)}
+.lmark::before{content:"";position:absolute;inset:0;background:radial-gradient(80% 80% at 50% 18%,oklch(100% 0 0/.22),transparent)}
+.lmark::after{content:"";position:absolute;inset:16%;background:var(--logo-ink);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='182 182 664 664'%3E%3Cg fill='none' stroke='black' stroke-width='62' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262'/%3E%3C/g%3E%3Cg%3E%3Ccircle cx='318' cy='272' r='48'/%3E%3Ccircle cx='418' cy='262' r='48'/%3E%3Ccircle cx='588' cy='232' r='48'/%3E%3Ccircle cx='708' cy='262' r='48'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='182 182 664 664'%3E%3Cg fill='none' stroke='black' stroke-width='62' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262'/%3E%3C/g%3E%3Cg%3E%3Ccircle cx='318' cy='272' r='48'/%3E%3Ccircle cx='418' cy='262' r='48'/%3E%3Ccircle cx='588' cy='232' r='48'/%3E%3Ccircle cx='708' cy='262' r='48'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat}
+.brand .mark{width:26px;height:26px}
 .brand .bname{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand .chev{width:13px;height:13px;stroke:var(--faint);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
 /* ⌘K 搜索位（身份区）：检索与命令的唯一入口 */
@@ -772,8 +778,7 @@ body[data-view="timeline"] .node:hover,body[data-view="kanban"] .node:hover{tran
 .envelope{width:280px;padding:24px;border-radius:var(--r-lg);background:var(--surface-strong);border:1px solid var(--border);
   box-shadow:var(--shadow);text-align:center;opacity:0;animation:env-open var(--dur-4) var(--ease-spring) 1.2s both;cursor:pointer}
 @keyframes env-open{from{opacity:0;transform:scale(.85) translateY(20px)}to{opacity:1;transform:none}}
-.envelope .seal{width:44px;height:44px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;
-  font-size:var(--fs-5);margin:0 auto 14px;font-weight:800}
+.envelope .seal{width:44px;height:44px;border-radius:50%;margin:0 auto 14px}
 .envelope .link{font-family:var(--font-mono);font-size:var(--fs-2);color:var(--accent);word-break:break-all;padding:8px;background:var(--hover);border-radius:var(--r-sm);margin:10px 0}
 .envelope .hint{font-size:var(--fs-1);color:var(--faint)}
 
@@ -843,11 +848,12 @@ body[data-view="timeline"] .node:hover,body[data-view="kanban"] .node:hover{tran
 .ob-upd ul{margin:0;padding-left:18px;color:var(--muted);font-size:var(--fs-2);line-height:1.9}
 .ob-upd li::marker{color:var(--accent)}
 /* ── 启动动效 ── */
-#boot .ring{width:64px;height:64px;border-radius:50%;margin:0 auto 18px;position:relative;
+#boot .ring{width:64px;height:64px;border-radius:50%;margin:0 auto 18px;position:relative}
+#boot .ring::before{content:"";position:absolute;inset:0;border-radius:50%;
   background:conic-gradient(in oklch from 0deg, transparent 0deg, var(--accent-2) 70deg, var(--accent) 140deg, transparent 240deg);
   animation:spin 1.1s linear infinite}
-#boot .ring::after{content:"3C";position:absolute;inset:5px;border-radius:50%;background:var(--bg);
-  color:var(--accent);display:grid;place-items:center;font:800 var(--fs-5)/var(--lh-5) var(--font-display)}
+#boot .ring::after{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--bg)}
+#boot .ring .lmark{position:absolute;inset:15px;z-index:1;border-radius:var(--r-sm)}
 #boot-bar{position:relative;overflow:hidden}
 #boot-bar::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,oklch(100% 0 0/.35),transparent);
   animation:sweep 1.3s var(--ease-out) infinite}
@@ -1280,7 +1286,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 <div id="hintbar"></div>
 <div id="boot" style="position:fixed;inset:0;z-index:var(--z-overlay);display:grid;place-items:center;background:var(--bg)">
   <div style="text-align:center">
-    <div class="ring"></div>
+    <div class="ring"><span class="lmark"></span></div>
     <div style="font-family:var(--font-display);font-size:var(--fs-5);font-weight:700;margin-bottom:4px">鹿蕊 <span style="font-size:var(--fs-3);color:var(--muted);font-weight:600">Litmus</span></div>
       <div style="font-size:var(--fs-1);color:var(--faint);margin-bottom:6px">林下 Understory 出品</div>
     <div id="boot-msg" style="color:var(--faint);font-size:var(--fs-2);font-family:var(--font-mono);min-height:18px">正在连接内核…</div>
@@ -1329,7 +1335,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 <header id="chrome" data-tauri-drag-region="deep">
   <!-- 身份区：库名（Web 端与桌面红绿灯同位起排）+ ⌘K 检索 -->
   <button class="brand" id="brand" title="切换知识库 / 工作区">
-    <span class="mark" style="background:oklch(24% .02 265)"><svg viewBox="0 0 64 64" style="width:18px;height:18px;display:block"><g transform="rotate(-18 32 32)"><rect x="8" y="24" width="34" height="18" rx="6" fill="oklch(94.3% .003 265)" opacity=".38"/><rect x="38" y="24" width="20" height="18" rx="6" fill="oklch(77% .153 157)"/><path d="M47 41v-8M47 36c0-4-2.4-5.6-5.6-6.4M47 33.6c0-3.6 2.4-5.2 5.4-6" stroke="oklch(26.5% .016 269)" stroke-width="3.4" stroke-linecap="round" fill="none"/></g></svg></span><span class="bname" id="brand-name">鹿蕊</span>
+    <span class="mark lmark" aria-hidden="true"></span><span class="bname" id="brand-name">鹿蕊</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
   </button>
     <button class="search-pill dock-legacy" id="search-btn" title="检索与命令（⌘K）">
@@ -1794,7 +1800,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <div class="drop"></div>
     <div class="ripple"></div><div class="ripple ripple2"></div>
     <div class="envelope" id="envelope">
-      <div class="seal">3C</div>
+      <div class="seal lmark"></div>
       <div style="font-weight:700;font-size:var(--fs-4);margin-bottom:4px">已发布</div>
       <div class="link" id="env-link"></div>
       <div class="hint">点击复制链接</div>
@@ -9212,7 +9218,7 @@ $('set-push').addEventListener('click',async()=>{
 function showLogin(){
   document.body.innerHTML='<div style="position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:var(--bg)">'
     +'<div style="text-align:center;padding:40px;border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);backdrop-filter:blur(var(--blur-2));box-shadow:var(--shadow)">'
-    +'<div class="mark" style="width:48px;height:48px;border-radius:var(--r-lg);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-size:18px;font-weight:800;margin:0 auto 14px">3C</div>'
+    +'<div class="lmark" style="width:48px;height:48px;border-radius:var(--r-lg);margin:0 auto 14px"></div>'
     +'<div style="font-family:var(--font-display);font-size:20px;font-weight:700;margin-bottom:4px">鹿蕊 <span style="font-size:14px;color:var(--muted);font-weight:600">Litmus</span></div>'
     +'<div style="color:var(--faint);font-size:12px;margin-bottom:20px">登录以访问你的知识库</div>'
     +'<input id="login-user" placeholder="用户名" style="width:260px;padding:10px 14px;border-radius:var(--r-md);border:1.5px solid var(--border);background:var(--bg-soft);color:var(--fg);outline:none;font:14px var(--font-body);box-sizing:border-box;text-align:center">'

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="182 182 664 664">
+  <!-- 单色字形（currentColor）：用于小尺寸、单色场景与壳内 .lmark 遮罩 -->
+  <g fill="none" stroke="currentColor" stroke-width="62" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262"/>
+  </g>
+  <g fill="currentColor">
+    <circle cx="318" cy="272" r="48"/><circle cx="418" cy="262" r="48"/><circle cx="588" cy="232" r="48"/><circle cx="708" cy="262" r="48"/>
+  </g>
+</svg>

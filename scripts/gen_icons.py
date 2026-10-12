@@ -2,11 +2,12 @@
 """生成桌面端图标（desktop/icons/*）。
 
 契约：颜色用 oklch 声明（与 tokens.css 同源），脚本里换算到 sRGB——
-仓库里不出现 hex 字面量。图形语义：三个知识节点 + 连线（画布 = 知识图谱）。
+仓库里不出现 hex 字面量。图形语义：石蕊显色渐变（酸红 → 中性紫 → 碱蓝）上的一枝鹿蕊——
+分叉如鹿角，也是知识的分叉。几何与 docs/brand/litmus-icon.svg 同源。
 
 用法：python3 scripts/gen_icons.py
 产物：icon.png(1024) / 32x32.png / 64x64.png / 128x128.png / 128x128@2x.png
-      / icon-512.png / icon.icns / icon.ico
+      / icon-512.png / icon.icns / icon.ico，以及 server/web/icon48.png（favicon）
 """
 from __future__ import annotations
 
@@ -43,19 +44,33 @@ def oklch(l: float, c: float, h: float) -> tuple[int, int, int]:
     return tuple(enc(v) for v in lin)  # type: ignore[return-value]
 
 
-A0 = oklch(0.60, 0.17, 258)  # 起点：品牌蓝（accent 同族，提亮）
-A1 = oklch(0.63, 0.19, 300)  # 终点：紫
-INK = (255, 255, 255)
+STOPS = [  # 对角：左下酸红 → 中性紫 → 右上碱蓝（与 litmus-icon.svg 一致）
+    (0.00, oklch(0.62, 0.20, 14)),
+    (0.52, oklch(0.54, 0.19, 318)),
+    (1.00, oklch(0.60, 0.17, 258)),
+]
+INK = oklch(0.99, 0.005, 85)
+
+
+def _lerp(c0, c1, t):
+    return tuple(round(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
 
 
 def gradient(size: int) -> Image.Image:
-    """对角线性渐变，逐行插值（1024 下肉眼无带状）。"""
+    """对角三段渐变 + 顶部柔光（radial，白 22% → 0）。"""
     img = Image.new("RGB", (size, size))
     px = img.load()
+    n = size - 1
     for y in range(size):
         for x in range(size):
-            t = (x + y) / (2 * (size - 1))
-            px[x, y] = tuple(round(A0[i] + (A1[i] - A0[i]) * t) for i in range(3))
+            t = (x + (n - y)) / (2 * n)
+            for (t0, c0), (t1, c1) in zip(STOPS, STOPS[1:]):
+                if t <= t1:
+                    col = _lerp(c0, c1, (t - t0) / (t1 - t0))
+                    break
+            dx, dy = x / n - 0.5, y / n - 0.18
+            g = max(0.0, 1 - math.hypot(dx, dy) / 0.8) * 0.22
+            px[x, y] = tuple(round(v + (255 - v) * g) for v in col)
     return img
 
 
@@ -75,25 +90,39 @@ def squircle_mask(size: int, n: float = 4.6) -> Image.Image:
     return m
 
 
-def draw_mark(img: Image.Image) -> None:
-    """三节点知识图谱：三条连线 + 三个实心节点（32px 下仍能分辨）。"""
-    s = img.size[0]
-    d = ImageDraw.Draw(img, "RGBA")
-    # 相对坐标（0..1），在 32px 下仍能分辨
-    nodes = [(0.30, 0.34), (0.72, 0.28), (0.52, 0.72)]
-    edges = [(0, 1), (0, 2), (1, 2)]
-    lw = max(1, round(s * 0.042))
-    for a, b in edges:
-        d.line(
-            [(nodes[a][0] * s, nodes[a][1] * s), (nodes[b][0] * s, nodes[b][1] * s)],
-            fill=INK + (150,),
-            width=lw,
+def _cubic(p0, p1, p2, p3, n=48):
+    for i in range(n + 1):
+        t = i / n
+        u = 1 - t
+        yield (
+            u**3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t**3 * p3[0],
+            u**3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t**3 * p3[1],
         )
-    radii = [0.112, 0.082, 0.094]
-    for (cx, cy), rr in zip(nodes, radii):
-        r = rr * s
-        box = [cx * s - r, cy * s - r, cx * s + r, cy * s + r]
-        d.ellipse(box, fill=INK + (255,))
+
+
+def draw_mark(img: Image.Image) -> None:
+    """鹿蕊枝：主干 + 两次分枝 + 四个节点（1024 坐标系，按尺寸缩放）。"""
+    s = img.size[0] / 1024
+    d = ImageDraw.Draw(img, "RGBA")
+    w = 58 * s
+    strokes = [
+        [(500, 812), (500, 532)],
+        list(_cubic((500, 572), (500, 472), (418, 442), (378, 372))),
+        list(_cubic((500, 532), (500, 442), (588, 412), (628, 332))),
+        [(378, 372), (318, 272)], [(378, 372), (418, 262)],
+        [(628, 332), (588, 232)], [(628, 332), (708, 262)],
+    ]
+    for pts in strokes:
+        pts = [(x * s, y * s) for x, y in pts]
+        # 沿路径密集盖圆章：圆头圆角、曲线无接缝
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            k = max(1, int(math.hypot(x1 - x0, y1 - y0) / (w * 0.08)))
+            for i in range(k + 1):
+                x, y = x0 + (x1 - x0) * i / k, y0 + (y1 - y0) * i / k
+                d.ellipse([x - w / 2, y - w / 2, x + w / 2, y + w / 2], fill=INK)
+    for cx, cy in [(318, 272), (418, 262), (588, 232), (708, 262)]:
+        r = 46 * s
+        d.ellipse([cx * s - r, cy * s - r, cx * s + r, cy * s + r], fill=INK)
 
 
 def master(size: int) -> Image.Image:
@@ -102,6 +131,20 @@ def master(size: int) -> Image.Image:
     draw_mark(base)
     base.putalpha(squircle_mask(big))
     return base.resize((size, size), Image.LANCZOS)
+
+
+def mac_padded(m1024: Image.Image) -> Image.Image:
+    """macOS 图标网格：主体 824/1024 居中 + 柔和投影，Dock 里与系统图标等大。"""
+    from PIL import ImageFilter
+
+    body = m1024.resize((824, 824), Image.LANCZOS)
+    canvas = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+    sh = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+    sh.paste((0, 0, 0, 90), (100, 112), body.getchannel("A"))
+    sh = sh.filter(ImageFilter.GaussianBlur(14))
+    canvas.alpha_composite(sh)
+    canvas.alpha_composite(body, (100, 100))
+    return canvas
 
 
 def write_icns(png_by_type: dict[bytes, bytes], path: Path) -> None:
@@ -129,11 +172,13 @@ def main() -> None:
         im.save(OUT / name)
 
     # icns：ic07..ic14（128/256/512/1024 各 1x/2x）
+    mac = mac_padded(m1024)
+
     def enc(sz: int) -> bytes:
         import io
 
         buf = io.BytesIO()
-        (rendered.get(sz) or m1024.resize((sz, sz), Image.LANCZOS)).save(buf, "PNG")
+        (mac if sz == 1024 else mac.resize((sz, sz), Image.LANCZOS)).save(buf, "PNG")
         return buf.getvalue()
 
     write_icns(
@@ -151,6 +196,7 @@ def main() -> None:
     )
 
     m1024.save(OUT / "icon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    m1024.resize((48, 48), Image.LANCZOS).save(OUT.parent.parent / "server" / "web" / "icon48.png")
     print("icons ->", OUT)
 
 
