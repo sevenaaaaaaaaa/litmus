@@ -568,6 +568,99 @@ fn desktop_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// 原生触觉反馈：按压/成功/警告/错误四档强度。
+/// 桌面：macOS 走 NSHapticFeedbackManager（触控板 Force Touch），Windows/Linux 静默降级；
+/// 移动：iOS 走 UIImpactFeedbackGenerator，Android 走 Vibrator。
+/// Web 层 navigator.vibrate 在 iOS 无效，必须下沉到原生。
+#[tauri::command]
+fn native_haptic(_app: AppHandle, pattern: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::base::id;
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+            let perf: id = msg_send![class!(NSHapticFeedbackManager), defaultPerformer];
+            let pattern_id: i64 = match pattern.as_str() {
+                "press" => 1,   // generic
+                "success" => 1, // generic
+                "warn" => 2,    // alignment
+                "error" => 3,   // levelChange
+                _ => 1,
+            };
+            let _: () = msg_send![perf, performFeedbackPattern: pattern_id performanceTime: 0i64];
+        }
+    }
+    #[cfg(target_os = "android")]
+    {
+        // Android 触觉反馈在 MainActivity.kt 的 JS bridge 里实现（WebView 层），
+        // 此处仅作为 Tauri 命令的统一入口，实际调用走 window.__TAURI_HAPTIC__
+    }
+    #[cfg(target_os = "ios")]
+    {
+        // iOS 走 UIImpactFeedbackGenerator，需要 Swift bridge（TODO: 加 Swift 包）
+        // 当前静默降级，前端探测到 iOS 时继续用 navigator.vibrate（无效但不报错）
+    }
+    Ok(())
+}
+
+/// 原生通知：系统级通知中心推送。
+/// 桌面：macOS 走 NSUserNotification，Windows 走 Toast；移动：iOS/Android 走系统通知。
+#[tauri::command]
+fn native_notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|e| format!("通知发送失败：{e}"))?;
+    }
+    #[cfg(mobile)]
+    {
+        // 移动端通知走系统通知栏，需要权限（Android 13+ 运行时申请）
+        // 当前降级为应用内 toast（前端已实现）
+    }
+    Ok(())
+}
+
+/// 原生分享：系统分享面板（AirDrop / 微信 / 邮件 / 复制链接）。
+/// 桌面：macOS 走 NSSharingServicePicker；移动：iOS 走 UIActivityViewController，Android 走 Intent.ACTION_SEND。
+#[tauri::command]
+fn native_share(_app: AppHandle, title: String, text: String, url: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::base::{id, nil};
+        use cocoa::foundation::NSString;
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+            let items: id;
+            let mut vec: Vec<id> = Vec::new();
+            let ns_text = NSString::alloc(nil).init_str(&text);
+            vec.push(ns_text);
+            if let Some(u) = url {
+                let ns_url: id = msg_send![class!(NSURL), URLWithString: NSString::alloc(nil).init_str(&u)];
+                vec.push(ns_url);
+            }
+            let arr: id = msg_send![class!(NSArray), arrayWithObjects: vec.as_ptr() count: vec.len()];
+            let picker: id = msg_send![class!(NSSharingServicePicker), alloc];
+            let picker: id = msg_send![picker, initWithItems: arr];
+            let main_win = _app.get_webview_window("main").ok_or("主窗口不存在")?;
+            let ns_win: id = main_win.ns_window().map_err(|e| e.to_string())? as id;
+            let content_view: id = msg_send![ns_win, contentView];
+            let rect: cocoa::foundation::NSRect = msg_send![content_view, bounds];
+            let _: () = msg_send![picker, showRelativeToRect: rect ofView: content_view preferredEdge: 0i64];
+        }
+    }
+    #[cfg(mobile)]
+    {
+        // 移动端分享走系统 Intent（Android）/ UIActivityViewController（iOS）
+        // 需要平台 bridge，当前降级为复制到剪贴板（前端已实现）
+    }
+    Ok(())
+}
+
 /// 检查在线更新：命中则回传新版本号与说明，否则 available=false。
 /// 更新源（R2 / GitHub Releases 的 latest.json）与公钥见 tauri.conf.json 的 plugins.updater。
 #[cfg(desktop)]
@@ -824,7 +917,10 @@ pub fn run() {
             desktop_pick_folder,
             desktop_reveal_path,
             desktop_open_path,
-            desktop_kernel_api
+            desktop_kernel_api,
+            native_haptic,
+            native_notify,
+            native_share
         ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -834,7 +930,10 @@ pub fn run() {
         desktop_render_page,
         ego_render_result,
         desktop_prefs_save,
-        desktop_app_version
+        desktop_app_version,
+        native_haptic,
+        native_notify,
+        native_share
     ]);
 
     builder

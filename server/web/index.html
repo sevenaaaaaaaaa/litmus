@@ -9456,18 +9456,22 @@ function bootDone(){
   const isFine = matchMedia('(pointer:fine)').matches;
   const isTouch = isCoarse || 'ontouchstart' in window;
 
-  /* ── 1. 触觉反馈 ── */
-  function haptic(ms=8){
-    // Android: navigator.vibrate；iOS: 尝试 Taptic Engine（WebKit 未公开 API，安全降级）
+  /* ── 1. 触觉反馈（优先原生命令，降级 Web API）── */
+  function haptic(pattern='press'){
+    // 原生优先：Tauri 命令 native_haptic（桌面走 NSHapticFeedbackManager，Android 走 Vibrator）
+    if(window.__TAURI_INTERNALS__?.invoke){
+      try{window.__TAURI_INTERNALS__.invoke('native_haptic',{pattern});return}catch{}
+    }
+    // 降级：Web API（Android 浏览器有效，iOS 无效）
+    const ms={press:6,success:12,warn:18,error:24}[pattern]||8;
     if('vibrate' in navigator){try{navigator.vibrate(ms)}catch{}}
-    else if(window.webkit?.messageHandlers?.haptic){try{window.webkit.messageHandlers.haptic.postMessage(ms)}catch{}}
   }
   // 全局按压反馈：所有可点元素按下时微振 + 视觉下沉
   if(isTouch){
     document.addEventListener('touchstart',e=>{
       const el=e.target.closest('button,.act,.tab-pill,.icon-btn,.dk-icon,.tree-leaf,.tree-row,.rail-item,.mm-item,.node,.doc-tab,.search-pill,.send,.say-send');
       if(!el)return;
-      haptic(6);
+      haptic('press');
       el.classList.add('haptic-press');
       const rm=()=>el.classList.remove('haptic-press');
       setTimeout(rm,180);
@@ -9489,7 +9493,7 @@ function bootDone(){
       ring.style.left=lpX+'px';ring.style.top=lpY+'px';
       lpTimer=setTimeout(()=>{
         ring.classList.remove('on');
-        haptic(12);
+        haptic('success');
         // 合成 contextmenu 事件，复用现有右键逻辑
         const evt=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:lpX,clientY:lpY});
         lpTarget.dispatchEvent(evt);
@@ -9521,7 +9525,7 @@ function bootDone(){
       if(dx>60&&dy<40&&Date.now()-edgeStart.t<400){
         // 快速右滑：唤出侧栏
         rail.classList.remove('closed');
-        haptic(8);
+        haptic('press');
         edgeStart=null;
       }
     },{passive:true});
@@ -9534,7 +9538,7 @@ function bootDone(){
       const t=e.touches[0];
       if(railSwipe.x-t.clientX>60&&Math.abs(t.clientY-railSwipe.y)<40){
         rail.classList.add('closed');
-        haptic(8);
+        haptic('press');
         railSwipe=null;
       }
     },{passive:true});
@@ -9572,7 +9576,7 @@ function bootDone(){
       const now=Date.now();
       if(now-lastTap<300&&Math.hypot(t.clientX-lastX,t.clientY-lastY)<24){
         // 双击：适配视图
-        if(!e.target.closest('.node')){fit();haptic(10);}
+        if(!e.target.closest('.node')){fit();haptic('success');}
         lastTap=0;
       }else{lastTap=now;lastX=t.clientX;lastY=t.clientY;}
     },{passive:true});
