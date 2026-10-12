@@ -960,7 +960,7 @@ button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon
   .search-pill .sp-txt,.search-pill kbd{display:none}
   .search-pill svg{width:16px;height:16px;margin:0 3px}
 }
-/* ≤1024 Pad：左栏改覆盖式抽屉（默认收起由 JS 按宽决定）、检查器改底部抽屉 */
+/* ≤1024 Pad：左栏改覆盖式抽屉（默认收起由 JS 按宽决定）、检查器改底部抽屉（竖屏）/ 右侧浮出（横屏） */
 @media (max-width:1024px){
   #rail{box-shadow:var(--shadow)}
   #inspector{left:10px;right:10px;top:auto;width:auto;max-height:44vh;
@@ -968,6 +968,13 @@ button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon
   #inspector.closed{transform:translateY(calc(100% + 24px));visibility:hidden}
   #inspector:not(.closed){transform:none;visibility:visible}
   @supports selector(body:has(*)){body:has(#inspector:not(.closed)) #view-pill{right:12px}}
+}
+/* Pad 横屏（768–1024 且横置）：检查器改右侧浮出面板，更符合宽屏操作习惯 */
+@media (min-width:768px) and (max-width:1024px) and (orientation:landscape){
+  #inspector{left:auto;right:12px;top:calc(var(--chrome-h) + 12px);bottom:calc(var(--dock-h) + 10px);width:320px;max-height:none;
+    transform:translateX(calc(100% + 24px))}
+  #inspector.closed{transform:translateX(calc(100% + 24px));visibility:hidden}
+  #inspector:not(.closed){transform:none;visibility:visible}
 }
 /* 底部导航条（Pad 竖屏 / 移动）：模式区从顶栏迁到拇指位 */
 #mob-nav{position:fixed;left:0;right:0;bottom:0;z-index:var(--z-dock);display:none;align-items:stretch;justify-content:space-around;
@@ -1004,6 +1011,26 @@ button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon
   .tree-row:hover,.rail-item:hover,.mm-item:hover,.ws-chip:hover,.ab-verb:hover,
   #view-pill button:hover,#mode-seg button:hover,.brand:hover,.search-pill:hover,#board-pill:hover{transform:none}
   .node:hover{transform:scale(var(--ds,1))} /* 触屏去掉悬浮抬升/倾斜，按压反馈仍在 */
+}
+
+/* ── 触控创新：触觉反馈态 / 长按高亮 / 边缘滑出 / 键盘避让 / Pad 手写笔 ── */
+/* 触觉反馈：支持 navigator.vibrate 的设备，按压瞬间轻微下沉 */
+.haptic-press{transition:transform var(--dur-1) var(--ease-spring)!important;transform:scale(.94)!important}
+/* 长按唤出：coarse 指针下按住 400ms 出现环状进度，替代右键 */
+@media (pointer:coarse){
+  .longpress-ring{position:fixed;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;pointer-events:none;z-index:var(--z-ctx);
+    border:2px solid var(--accent);border-top-color:transparent;animation:lp-spin .7s linear infinite;opacity:0;transition:opacity var(--dur-1)}
+  .longpress-ring.on{opacity:1}
+}
+@keyframes lp-spin{to{transform:rotate(360deg)}}
+/* 键盘避让：iOS/Android 弹起软键盘时底栏上抬（JS 写 --kb-h） */
+#dock{transform:translateY(calc(-1 * var(--kb-h,0px)))}
+body.dock-hidden #dock{transform:translateY(calc(100% + 12px))} /* 覆盖：隐藏优先于键盘避让 */
+/* Pad 手写笔：pointer:fine 时恢复 hover 预览（覆盖 coarse 的禁用） */
+@media (hover:hover) and (pointer:fine){
+  .icon-btn:hover,.act:hover,.rail-act:hover,.tab-pill:hover,.doc-tab:hover,.tree-leaf:hover,
+  .tree-row:hover,.rail-item:hover,.mm-item:hover,.ws-chip:hover,.ab-verb:hover,
+  #view-pill button:hover,#mode-seg button:hover,.brand:hover,.search-pill:hover,#board-pill:hover{transform:translateY(-1px)}
 }
 
 /* ── 减少动效：系统开启后动画/过渡收敛 ── */
@@ -9413,6 +9440,143 @@ function bootDone(){
     addMsg('studio','画布已就绪。拖空白处平移、⌘滚轮缩放、拖节点排布。\n试试输入「搜索」，或点 ⌘K 找文档。');
   }
   setTimeout(dismiss, 1600);
+})();
+
+/* ═══════════ 触控创新层：统一手势 + 触觉反馈 + 键盘避让 + Pad 手写笔 ═══════════
+   设计原则：
+   - 全平台同一套 token / 断点 / 组件，行为按 pointer 类型自适应（coarse=finger / fine=mouse+pen）
+   - 手机/Pad：长按 400ms 唤出上下文菜单（替代右键），边缘右滑唤出侧栏，捏合缩放已有
+   - 触觉：navigator.vibrate(8) 微振确认（Android），iOS 走 Taptic Engine（WebKit 私有 API 探测）
+   - 键盘：visualViewport 监听，软键盘弹起时底栏自动上抬，输入框不被遮挡
+   - Pad 手写笔：pointer:fine 恢复 hover 预览，压感映射到节点倾斜角度（未来可扩为笔迹粗细）
+════════════════════════════════════════════════════════════════════════════ */
+(function touchLayer(){
+  'use strict';
+  const isCoarse = matchMedia('(pointer:coarse)').matches;
+  const isFine = matchMedia('(pointer:fine)').matches;
+  const isTouch = isCoarse || 'ontouchstart' in window;
+
+  /* ── 1. 触觉反馈 ── */
+  function haptic(ms=8){
+    // Android: navigator.vibrate；iOS: 尝试 Taptic Engine（WebKit 未公开 API，安全降级）
+    if('vibrate' in navigator){try{navigator.vibrate(ms)}catch{}}
+    else if(window.webkit?.messageHandlers?.haptic){try{window.webkit.messageHandlers.haptic.postMessage(ms)}catch{}}
+  }
+  // 全局按压反馈：所有可点元素按下时微振 + 视觉下沉
+  if(isTouch){
+    document.addEventListener('touchstart',e=>{
+      const el=e.target.closest('button,.act,.tab-pill,.icon-btn,.dk-icon,.tree-leaf,.tree-row,.rail-item,.mm-item,.node,.doc-tab,.search-pill,.send,.say-send');
+      if(!el)return;
+      haptic(6);
+      el.classList.add('haptic-press');
+      const rm=()=>el.classList.remove('haptic-press');
+      setTimeout(rm,180);
+      el.addEventListener('touchend',rm,{once:true});
+      el.addEventListener('touchcancel',rm,{once:true});
+    },{passive:true});
+  }
+
+  /* ── 2. 长按唤出上下文菜单（coarse 指针下替代右键）── */
+  if(isCoarse){
+    const ring=document.createElement('div');ring.className='longpress-ring';document.body.appendChild(ring);
+    let lpTimer=null,lpTarget=null,lpX=0,lpY=0;
+    const LP_DELAY=400; // ms
+    document.addEventListener('touchstart',e=>{
+      const t=e.touches[0];
+      lpTarget=e.target.closest('.node,.tree-leaf,.tree-row,.doc-tab,[data-ctx]');
+      if(!lpTarget)return;
+      lpX=t.clientX;lpY=t.clientY;
+      ring.style.left=lpX+'px';ring.style.top=lpY+'px';
+      lpTimer=setTimeout(()=>{
+        ring.classList.remove('on');
+        haptic(12);
+        // 合成 contextmenu 事件，复用现有右键逻辑
+        const evt=new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:lpX,clientY:lpY});
+        lpTarget.dispatchEvent(evt);
+      },LP_DELAY);
+      ring.classList.add('on');
+    },{passive:true});
+    const cancel=()=>{clearTimeout(lpTimer);ring.classList.remove('on');lpTarget=null;};
+    document.addEventListener('touchmove',e=>{
+      if(!lpTarget)return;
+      const t=e.touches[0];
+      if(Math.hypot(t.clientX-lpX,t.clientY-lpY)>10)cancel(); // 移动超 10px 取消
+    },{passive:true});
+    document.addEventListener('touchend',cancel,{passive:true});
+    document.addEventListener('touchcancel',cancel,{passive:true});
+  }
+
+  /* ── 3. 边缘右滑唤出侧栏（移动端/Pad，左边缘 24px 起滑）── */
+  if(isCoarse){
+    let edgeStart=null;
+    const rail=document.getElementById('rail');
+    document.addEventListener('touchstart',e=>{
+      const t=e.touches[0];
+      if(t.clientX<24)edgeStart={x:t.clientX,y:t.clientY,t:Date.now()};
+    },{passive:true});
+    document.addEventListener('touchmove',e=>{
+      if(!edgeStart)return;
+      const t=e.touches[0];
+      const dx=t.clientX-edgeStart.x, dy=Math.abs(t.clientY-edgeStart.y);
+      if(dx>60&&dy<40&&Date.now()-edgeStart.t<400){
+        // 快速右滑：唤出侧栏
+        rail.classList.remove('closed');
+        haptic(8);
+        edgeStart=null;
+      }
+    },{passive:true});
+    document.addEventListener('touchend',()=>edgeStart=null,{passive:true});
+    // 反向：侧栏上左滑关闭
+    let railSwipe=null;
+    rail.addEventListener('touchstart',e=>{const t=e.touches[0];railSwipe={x:t.clientX,y:t.clientY}},{passive:true});
+    rail.addEventListener('touchmove',e=>{
+      if(!railSwipe)return;
+      const t=e.touches[0];
+      if(railSwipe.x-t.clientX>60&&Math.abs(t.clientY-railSwipe.y)<40){
+        rail.classList.add('closed');
+        haptic(8);
+        railSwipe=null;
+      }
+    },{passive:true});
+    rail.addEventListener('touchend',()=>railSwipe=null,{passive:true});
+  }
+
+  /* ── 4. 键盘避让：visualViewport 监听，软键盘弹起时底栏上抬 ── */
+  if('visualViewport' in window){
+    const updateKb=()=>{
+      const vv=window.visualViewport;
+      const kbH=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+      document.documentElement.style.setProperty('--kb-h',kbH>60?kbH+'px':'0px'); // 60px 阈值防抖
+    };
+    window.visualViewport.addEventListener('resize',updateKb);
+    window.visualViewport.addEventListener('scroll',updateKb);
+    updateKb();
+  }
+
+  /* ── 5. Pad 手写笔：pointer:fine 时恢复 hover 倾斜（已在 CSS 处理），压感扩展点 ── */
+  if(isFine&&isTouch){
+    // 手写笔悬停：nodes 倾斜已在 pointermove 实现；此处为压感预留（Apple Pencil 压感 → 笔迹粗细，待画布手写模式启用）
+    document.getElementById('canvas').addEventListener('pointermove',e=>{
+      if(e.pointerType==='pen'&&e.pressure>0){
+        // 未来：e.pressure (0..1) 映射到笔迹宽度；当前仅记录供调试
+        document.documentElement.dataset.penPressure=e.pressure.toFixed(2);
+      }
+    },{passive:true});
+  }
+
+  /* ── 6. 双击放大（画布空白处，移动端双击适配视图）── */
+  if(isCoarse){
+    let lastTap=0,lastX=0,lastY=0;
+    document.getElementById('canvas').addEventListener('touchend',e=>{
+      const t=e.changedTouches[0];
+      const now=Date.now();
+      if(now-lastTap<300&&Math.hypot(t.clientX-lastX,t.clientY-lastY)<24){
+        // 双击：适配视图
+        if(!e.target.closest('.node')){fit();haptic(10);}
+        lastTap=0;
+      }else{lastTap=now;lastX=t.clientX;lastY=t.clientY;}
+    },{passive:true});
+  }
 })();
 </script>
 </body>
