@@ -2314,6 +2314,19 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    #[test]
+    fn peek_doc_reads_excerpt_tags_and_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.md");
+        std::fs::write(&f, "---\ntags: [化学, \"设计\"]\nstatus: x\n---\n# 石蕊\n\n石蕊遇酸**变红**，见 [[CRDT 与文件真相|CRDT]] 与 [[路线#b2]]。\n\n```rust\nfn x(){}\n```\n").unwrap();
+        let pk = peek_doc(&f, "a");
+        assert_eq!(pk.title, "石蕊");
+        assert_eq!(pk.tags, vec!["化学", "设计"]);
+        assert_eq!(pk.links, vec!["CRDT 与文件真相", "路线"]);
+        assert!(pk.excerpt.starts_with("石蕊遇酸变红"), "{}", pk.excerpt);
+        assert!(!pk.excerpt.contains("fn x"), "代码块不进摘要：{}", pk.excerpt);
+    }
+
     #[tokio::test]
     async fn browse_peeks_title_without_full_body() {
         let (app, token, dir) = test_router();
@@ -4784,17 +4797,96 @@ fn title_from_filename(name: &str) -> String {
 }
 
 /// 只读文件头 2KB 抽标题，避免首屏把整篇正文读进内存。
-fn peek_title(path: &std::path::Path, fallback: &str) -> String {
+/// 画布卡片的"一瞥"：同一次 2KB 读取里拿到标题、摘要、frontmatter 标签与 [[双链]] 目标。
+/// 不读全文（首屏性能纪律），摘要只给卡片预览用，不是检索依据。
+struct DocPeek {
+    title: String,
+    excerpt: String,
+    tags: Vec<String>,
+    links: Vec<String>,
+}
+
+fn peek_doc(path: &std::path::Path, fallback: &str) -> DocPeek {
     use std::io::Read;
     let mut buf = [0u8; 2048];
     let n = match std::fs::File::open(path).and_then(|mut f| f.read(&mut buf)) {
         Ok(n) => n,
-        Err(_) => return fallback.to_string(),
+        Err(_) => return DocPeek { title: fallback.to_string(), excerpt: String::new(), tags: vec![], links: vec![] },
     };
-    let text = String::from_utf8_lossy(&buf[..n]);
-    kernel_core::refs::extract_title(&text)
+    // 2KB 截断可能切在 UTF-8 中间：lossy 会在尾部留一个替换符，摘要阶段丢掉
+    let text = String::from_utf8_lossy(&buf[..n]).to_string();
+    let title = kernel_core::refs::extract_title(&text)
         .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| fallback.to_string())
+        .unwrap_or_else(|| fallback.to_string());
+    let is_html = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"));
+    let (tags, body) = if is_html { (vec![], String::new()) } else { split_front_tags(&text) };
+    DocPeek { title: title.clone(), excerpt: md_excerpt(&body, &title, 140), tags, links: wiki_links(&body) }
+}
+
+/// frontmatter 里的 tags（`tags: [a, b]` 或逐行 `- a`）+ 去掉 frontmatter 后的正文。
+fn split_front_tags(text: &str) -> (Vec<String>, String) {
+    let mut tags = Vec::new();
+    let t = text.trim_start_matches('\u{feff}');
+    if let Some(rest) = t.strip_prefix("---\n").or_else(|| t.strip_prefix("---\r\n")) {
+        if let Some(end) = rest.find("\n---") {
+            let fm = &rest[..end];
+            let mut in_tags = false;
+            for line in fm.lines() {
+                let l = line.trim();
+                if let Some(v) = l.strip_prefix("tags:").or_else(|| l.strip_prefix("keywords:")) {
+                    let v = v.trim();
+                    in_tags = v.is_empty();
+                    for x in v.trim_matches(|c| c == '[' || c == ']').split(',') {
+                        let x = x.trim().trim_matches(|c| c == '"' || c == '\'' || c == '#');
+                        if !x.is_empty() { tags.push(x.to_string()); }
+                    }
+                } else if in_tags && l.starts_with("- ") {
+                    tags.push(l[2..].trim().trim_matches(|c| c == '"' || c == '\'' || c == '#').to_string());
+                } else if !l.is_empty() {
+                    in_tags = false;
+                }
+            }
+            let body = rest[end + 4..].trim_start_matches(|c| c == '-' || c == '\r' || c == '\n').to_string();
+            tags.truncate(6);
+            return (tags, body);
+        }
+    }
+    (tags, t.to_string())
+}
+
+/// 纯文本摘要：跳过标题行/代码块/分隔线，剥掉常见 Markdown 记号，取前 max 个字符。
+fn md_excerpt(body: &str, title: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for line in body.lines() {
+        let l = line.trim();
+        if l.starts_with("```") { in_code = !in_code; continue; }
+        if in_code || l.is_empty() || l.starts_with('#') || l == "---" || l.starts_with("<!--") || l.starts_with('|') { continue; }
+        let mut s = l.trim_start_matches(|c: char| c == '>' || c == '-' || c == '*' || c == '+' || c.is_ascii_digit() || c == '.' || c == ' ').to_string();
+        for pat in ["**", "__", "`", "[[", "]]", "*", "~~"] { s = s.replace(pat, ""); }
+        if s == title || s.is_empty() { continue; }
+        if !out.is_empty() { out.push(' '); }
+        out.push_str(&s);
+        if out.chars().count() >= max { break; }
+    }
+    let out: String = out.chars().filter(|&c| c != '\u{fffd}').collect();
+    if out.chars().count() > max { format!("{}…", out.chars().take(max).collect::<String>()) } else { out }
+}
+
+/// `[[目标]]` / `[[目标|别名]]` / `[[目标#块]]` → 目标名（去重，最多 8 个）。
+fn wiki_links(body: &str) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    let mut rest = body;
+    while let Some(i) = rest.find("[[") {
+        let after = &rest[i + 2..];
+        let Some(j) = after.find("]]") else { break };
+        let raw = &after[..j];
+        let name = raw.split(['|', '#', '^']).next().unwrap_or("").trim();
+        if !name.is_empty() && !name.contains('\n') && !v.iter().any(|x| x == name) { v.push(name.to_string()); }
+        if v.len() >= 8 { break; }
+        rest = &after[j + 2..];
+    }
+    v
 }
 
 fn count_docs_under(dir: &std::path::Path) -> usize {
@@ -4839,7 +4931,7 @@ async fn browse(
     }
 
     let mut folders: Vec<Value> = Vec::new();
-    let mut docs: Vec<(String, String, u64, i64, i64)> = Vec::new();
+    let mut docs: Vec<(String, DocPeek, u64, i64, i64)> = Vec::new();
 
     let rd = match std::fs::read_dir(&abs) {
         Ok(r) => r,
@@ -4867,7 +4959,7 @@ async fn browse(
             }));
         } else if is_doc_file(&p) {
             let fallback = title_from_filename(&name);
-            let title = peek_title(&p, &fallback);
+            let peek = peek_doc(&p, &fallback);
             let md = std::fs::metadata(&p).ok();
             let mtime = md
                 .as_ref()
@@ -4878,7 +4970,7 @@ async fn browse(
             let size = md.map(|m| m.len()).unwrap_or(0) as i64;
             let recent = if now.saturating_sub(mtime) < 7 * 86400 { 2.0 } else { 0.0 };
             let score = ((recent + (size as f64 + 1.0).log10()) * 1000.0) as i64;
-            docs.push((format!("{dir}/{name}"), title, mtime, size, score));
+            docs.push((format!("{dir}/{name}"), peek, mtime, size, score));
         }
     }
 
@@ -4889,7 +4981,11 @@ async fn browse(
     let arr: Vec<Value> = docs
         .iter()
         .take(cap)
-        .map(|(p, t, mt, sz, sc)| json!({ "path": p, "title": t, "mtime": mt, "size": sz, "score": sc }))
+        .map(|(p, pk, mt, sz, sc)| {
+            // 只加字段（ABI 只增不破）：excerpt / tags / links 供画布卡片预览与双链连线
+            json!({ "path": p, "title": pk.title, "mtime": mt, "size": sz, "score": sc,
+                    "excerpt": pk.excerpt, "tags": pk.tags, "links": pk.links })
+        })
         .collect();
 
     let rel_to_root = dir.trim_start_matches("Notes").trim_start_matches('/');

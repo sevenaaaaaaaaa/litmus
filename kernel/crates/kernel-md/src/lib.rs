@@ -479,6 +479,194 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// 行内 Markdown → HTML（只渲染，不改真相）：`code`、**粗**、*斜*、~~删~~、==高亮==、
+/// [文字](url)、[[双链|别名]]、裸 http(s) 链接、#标签。先整体转义，再在转义后的文本上识别记号，
+/// 因此用户文本里的 `<` 永远不会变成标签；链接只放行 http(s)/mailto/相对路径。
+pub fn inline_md(src: &str) -> String {
+    let s = esc(src);
+    // 行内代码先切出来，代码里的记号不再参与后续替换
+    let mut parts: Vec<(bool, String)> = Vec::new();
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find('`') {
+        if let Some(j) = rest[i + 1..].find('`') {
+            parts.push((false, rest[..i].to_string()));
+            parts.push((true, rest[i + 1..i + 1 + j].to_string()));
+            rest = &rest[i + 1 + j + 1..];
+        } else {
+            break;
+        }
+    }
+    parts.push((false, rest.to_string()));
+    let mut out = String::new();
+    for (code, t) in parts {
+        if code {
+            out.push_str(&format!("<code>{t}</code>"));
+        } else {
+            out.push_str(&inline_spans(&t));
+        }
+    }
+    out
+}
+
+/// 列表项：`[ ]` / `[x]` 渲染成只读勾选框（任务清单）
+fn list_item(i: &str) -> String {
+    let t = i.trim_start();
+    if let Some(r) = t.strip_prefix("[ ] ") {
+        return format!("<span class=\"kb-task\"><input type=\"checkbox\" disabled> {}</span>", inline_md(r));
+    }
+    if let Some(r) = t.strip_prefix("[x] ").or_else(|| t.strip_prefix("[X] ")) {
+        return format!(
+            "<span class=\"kb-task done\"><input type=\"checkbox\" checked disabled> {}</span>",
+            inline_md(r)
+        );
+    }
+    inline_md(i)
+}
+
+fn wrap_pairs(s: &str, mark: &str, open: &str, close: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    loop {
+        let Some(i) = rest.find(mark) else { break };
+        let after = &rest[i + mark.len()..];
+        let Some(j) = after.find(mark) else { break };
+        let inner = &after[..j];
+        // 记号内侧不能是空白（`a * b * c` 不是斜体）
+        if inner.is_empty() || inner.starts_with(' ') || inner.ends_with(' ') {
+            out.push_str(&rest[..i + mark.len()]);
+            rest = after;
+            continue;
+        }
+        out.push_str(&rest[..i]);
+        out.push_str(open);
+        out.push_str(inner);
+        out.push_str(close);
+        rest = &after[j + mark.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn safe_href(u: &str) -> bool {
+    let l = u.trim().to_ascii_lowercase();
+    l.starts_with("http://")
+        || l.starts_with("https://")
+        || l.starts_with("mailto:")
+        || l.starts_with('#')
+        || l.starts_with('/')
+        || l.starts_with("./")
+        || l.starts_with("../")
+        || (!l.contains(':') && !l.is_empty())
+}
+
+fn inline_spans(s: &str) -> String {
+    // [[双链]]：data-wiki 交给宿主解析（文件名/标题都行），href="#" 不在沙箱里导航
+    let mut t = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("[[") {
+        let after = &rest[i + 2..];
+        let Some(j) = after.find("]]") else { break };
+        let raw = &after[..j];
+        let (target, label) = match raw.split_once('|') {
+            Some((a, b)) => (a.trim(), b.trim()),
+            None => (raw.trim(), raw.split(['#', '^']).next().unwrap_or(raw).trim()),
+        };
+        let target = target.split(['#', '^']).next().unwrap_or(target).trim();
+        t.push_str(&rest[..i]);
+        t.push_str(&format!("<a class=\"wikilink\" href=\"#\" data-wiki=\"{target}\">{label}</a>"));
+        rest = &after[j + 2..];
+    }
+    t.push_str(rest);
+    // [文字](url)
+    let mut u = String::new();
+    let mut rest = t.as_str();
+    while let Some(i) = rest.find('[') {
+        let after = &rest[i + 1..];
+        let Some(j) = after.find("](") else { break };
+        let label = &after[..j];
+        if label.contains('[') || label.contains("<a ") {
+            u.push_str(&rest[..i + 1]);
+            rest = after;
+            continue;
+        }
+        let tail = &after[j + 2..];
+        let Some(k) = tail.find(')') else { break };
+        let href = &tail[..k];
+        u.push_str(&rest[..i]);
+        if safe_href(href) {
+            u.push_str(&format!("<a href=\"{href}\" target=\"_blank\" rel=\"noopener\">{label}</a>"));
+        } else {
+            u.push_str(label);
+        }
+        rest = &tail[k + 1..];
+    }
+    u.push_str(rest);
+    let mut v = wrap_pairs(&u, "**", "<strong>", "</strong>");
+    v = wrap_pairs(&v, "__", "<strong>", "</strong>");
+    v = wrap_pairs(&v, "~~", "<del>", "</del>");
+    v = wrap_pairs(&v, "==", "<mark>", "</mark>");
+    v = wrap_pairs(&v, "*", "<em>", "</em>");
+    autolink_and_tags(&v)
+}
+
+/// 裸链接与 #标签：只在标签外的文本里识别（跳过 `<...>` 内部与已有 <a>，避免改坏生成的链接）
+fn autolink_and_tags(s: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    let mut in_a = false;
+    let chars: Vec<char> = s.chars().collect();
+    let stop = "，。；！？）】」、";
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '<' {
+            in_tag = true;
+            let head: String = chars[i..chars.len().min(i + 3)].iter().collect();
+            if head.starts_with("<a ") {
+                in_a = true;
+            }
+            if head.starts_with("</a") {
+                in_a = false;
+            }
+        }
+        if in_tag {
+            out.push(c);
+            if c == '>' {
+                in_tag = false;
+            }
+            i += 1;
+            continue;
+        }
+        if !in_a {
+            let head: String = chars[i..chars.len().min(i + 8)].iter().collect();
+            if head.starts_with("http://") || head.starts_with("https://") {
+                let mut j = i;
+                while j < chars.len() && !chars[j].is_whitespace() && chars[j] != '<' && !stop.contains(chars[j]) {
+                    j += 1;
+                }
+                let url: String = chars[i..j].iter().collect();
+                out.push_str(&format!("<a href=\"{url}\" target=\"_blank\" rel=\"noopener\">{url}</a>"));
+                i = j;
+                continue;
+            }
+            let prev_ok = i == 0 || chars[i - 1].is_whitespace();
+            if c == '#' && prev_ok && i + 1 < chars.len() && !chars[i + 1].is_whitespace() && chars[i + 1] != '#' {
+                let mut j = i + 1;
+                while j < chars.len() && !chars[j].is_whitespace() && chars[j] != '<' && chars[j] != '#' && !stop.contains(chars[j]) {
+                    j += 1;
+                }
+                let tag: String = chars[i + 1..j].iter().collect();
+                out.push_str(&format!("<span class=\"kb-hashtag\">#{tag}</span>"));
+                i = j;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
 /// 渲染为自包含 AI-HTML：语义化标签 + 内嵌 JSON-LD 块模型（人与 agent 双可读）。
 /// Raw 块按原样内联（其存在意义就是保真外来结构）；应用内渲染时须置于沙箱。
 pub fn to_html(doc: &DocModel) -> String {
@@ -505,10 +693,10 @@ pub fn to_html(doc: &DocModel) -> String {
             None => format!(" id=\"b{bi}\""),
         };
         match b {
-            Block::Paragraph { text, .. } => body.push_str(&format!("<p{id_attr}>{}</p>\n", esc(text))),
+            Block::Paragraph { text, .. } => body.push_str(&format!("<p{id_attr}>{}</p>\n", inline_md(text))),
             Block::Heading { level, text, .. } => {
                 let l = (*level).clamp(1, 6);
-                body.push_str(&format!("<h{l}{id_attr}>{}</h{l}>\n", esc(text)))
+                body.push_str(&format!("<h{l}{id_attr}>{}</h{l}>\n", inline_md(text)))
             }
             Block::Code { lang, text, .. } => {
                 let cls = lang
@@ -518,20 +706,20 @@ pub fn to_html(doc: &DocModel) -> String {
                 body.push_str(&format!("<pre><code{cls}>{}</code></pre>\n", esc(text)))
             }
             Block::Quote { lines, .. } => {
-                let inner: String = lines.iter().map(|l| format!("<p>{}</p>", esc(l))).collect();
+                let inner: String = lines.iter().map(|l| format!("<p>{}</p>", inline_md(l))).collect();
                 body.push_str(&format!("<blockquote{id_attr}>{inner}</blockquote>\n"))
             }
             Block::List { ordered, items, .. } => {
                 let (open, close) = if *ordered { ("ol", "ol") } else { ("ul", "ul") };
-                let inner: String = items.iter().map(|i| format!("<li>{}</li>", esc(i))).collect();
+                let inner: String = items.iter().map(|i| format!("<li>{}</li>", list_item(i))).collect();
                 body.push_str(&format!("<{open}{id_attr}>{inner}</{close}>\n"))
             }
             Block::Table { header, rows, .. } => {
-                let th: String = header.iter().map(|h| format!("<th>{}</th>", esc(h))).collect();
+                let th: String = header.iter().map(|h| format!("<th>{}</th>", inline_md(h))).collect();
                 let trs: String = rows
                     .iter()
                     .map(|r| {
-                        let tds: String = r.iter().map(|c| format!("<td>{}</td>", esc(c))).collect();
+                        let tds: String = r.iter().map(|c| format!("<td>{}</td>", inline_md(c))).collect();
                         format!("<tr>{tds}</tr>")
                     })
                     .collect();
@@ -585,6 +773,13 @@ hr{{border:none;height:1px;background:var(--doc-line);margin:2.4em auto;width:62
 .kb-card:hover{{background:color-mix(in oklab,var(--doc-accent) 14%,transparent)}}\n\
 .kb-day{{padding:10px 14px;border-bottom:1px solid var(--doc-line)}}\n\
 .kb-tag{{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--doc-soft);font-size:11px;margin-right:4px}}\n\
+a.wikilink{{border-bottom:1px dashed color-mix(in oklab,var(--doc-accent) 55%,transparent);cursor:pointer}}\n\
+a.wikilink::before{{content:\"\";display:inline-block;width:.42em;height:.42em;border-radius:50%;margin:0 .32em .12em 0;background:var(--doc-accent);opacity:.7}}\n\
+mark{{background:color-mix(in oklab,oklch(85% .15 95) 55%,transparent);color:inherit;border-radius:4px;padding:0 .15em}}\n\
+del{{color:var(--doc-muted)}}\n\
+.kb-hashtag{{color:var(--doc-accent);font-weight:550;font-size:.92em}}\n\
+.kb-task{{display:inline-flex;gap:.4em;align-items:baseline}}.kb-task.done{{color:var(--doc-muted);text-decoration:line-through}}\n\
+li{{margin:.25em 0}}\n\
 </style>\n\
 </head><body><article data-kb-format=\"ai-html\" data-block-count=\"{n}\">\n{}\n</article></body></html>\n",
         title_esc,
@@ -596,6 +791,24 @@ hr{{border:none;height:1px;background:var(--doc-line);margin:2.4em auto;width:62
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_markdown_renders_and_stays_safe() {
+        let h = inline_md("石蕊**显色见真**——见 [[CRDT 与文件真相|CRDT]]、`a<b`、*斜*、==亮==、[站](https://x.com) #化学");
+        assert!(h.contains("<strong>显色见真</strong>"), "{h}");
+        assert!(h.contains("data-wiki=\"CRDT 与文件真相\">CRDT</a>"), "{h}");
+        assert!(h.contains("<code>a&lt;b</code>"), "{h}");
+        assert!(h.contains("<em>斜</em>") && h.contains("<mark>亮</mark>"), "{h}");
+        assert!(h.contains("href=\"https://x.com\""), "{h}");
+        assert!(h.contains("kb-hashtag\">#化学"), "{h}");
+        // 注入防护：原文里的标签被转义；javascript: 链接不生成 href
+        let x = inline_md("<script>x</script> [点](javascript:alert(1))");
+        assert!(!x.contains("<script>") && !x.contains("javascript:"), "{x}");
+        // 乘号不是斜体
+        assert_eq!(inline_md("3 * 4 * 5"), "3 * 4 * 5");
+        // 任务清单
+        assert!(list_item("[x] 完成").contains("checked"));
+    }
 
     const SAMPLE: &str = "\
 # 标题
