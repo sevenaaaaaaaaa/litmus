@@ -38,6 +38,16 @@ CREATE TABLE IF NOT EXISTS items(
     fetched_at INTEGER NOT NULL,
     PRIMARY KEY(connection, uri)
 );
+CREATE TABLE IF NOT EXISTS files(
+    path TEXT PRIMARY KEY,
+    mtime INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL DEFAULT 0
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+    path UNINDEXED,
+    name,
+    tokenize='trigram'
+);
 CREATE TABLE IF NOT EXISTS doc_vectors(
     path TEXT PRIMARY KEY,
     mtime INTEGER NOT NULL,
@@ -421,6 +431,59 @@ impl Index {
     }
 
     /// 全文检索，按相关度（bm25）排序。返回 (相对路径, 相关度)。
+    /* ── 非文档文件索引（files / files_fts）：按文件名可检索，文件即真相 ── */
+    /// 返回 (mtime, size)；None = 尚未登记。
+    pub fn stat_file(&self, path: &str) -> Option<(i64, i64)> {
+        self.conn
+            .query_row(
+                "SELECT mtime, size FROM files WHERE path = ?1",
+                [path],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok()
+    }
+
+    /// 登记文件；返回是否有变化（mtime/size 变化才重建 fts 行）。
+    pub fn upsert_file(&self, path: &str, mtime: i64, size: i64) -> Result<bool, StoreError> {
+        let changed = self
+            .conn
+            .execute(
+                "INSERT INTO files(path, mtime, size) VALUES(?1, ?2, ?3)
+                 ON CONFLICT(path) DO UPDATE SET mtime = ?2, size = ?3
+                 WHERE files.mtime <> ?2 OR files.size <> ?3",
+                rusqlite::params![path, mtime, size],
+            )?
+            > 0;
+        if changed {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            self.conn
+                .execute("DELETE FROM files_fts WHERE path = ?1", [path])?;
+            self.conn.execute(
+                "INSERT INTO files_fts(path, name) VALUES(?1, ?2)",
+                rusqlite::params![path, name],
+            )?;
+        }
+        Ok(changed)
+    }
+
+    pub fn remove_file(&self, path: &str) -> Result<(), StoreError> {
+        self.conn
+            .execute("DELETE FROM files WHERE path = ?1", [path])?;
+        self.conn
+            .execute("DELETE FROM files_fts WHERE path = ?1", [path])?;
+        Ok(())
+    }
+
+    pub fn list_files(&self) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self.conn.prepare("SELECT path FROM files ORDER BY path")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
     pub fn search(&self, query: &str) -> Result<Vec<(String, f64)>, StoreError> {
         let qlen = query.chars().count();
         if qlen == 0 {
@@ -437,6 +500,16 @@ impl Index {
             })?;
             let mut out = Vec::new();
             for r in rows {
+                out.push(r?);
+            }
+            /* 文件即真相：非文档文件按文件名一并召回（内核不解析 ≠ 检索不到） */
+            let mut fstmt = self.conn.prepare(
+                "SELECT path, rank FROM files_fts WHERE files_fts MATCH ?1 ORDER BY rank LIMIT 20",
+            )?;
+            let frows = fstmt.query_map([&quoted], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+            })?;
+            for r in frows {
                 out.push(r?);
             }
             Ok(out)

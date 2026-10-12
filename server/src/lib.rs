@@ -197,6 +197,7 @@ pub fn router(state: Arc<AppState>) -> Router {
 }))
         .route("/assets/fonts/{name}", get(font))
         .route("/health", get(health))
+        .route("/version", get(version))
         .route("/status", get(status))
         .route("/docs", get(list_docs_api))
         .route("/memo/docs", get(memo_docs))
@@ -207,8 +208,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/boards", get(boards_list).post(boards_create))
         .route("/boards/{name}", axum::routing::delete(boards_delete))
         .route("/doc/move", post(move_doc))
-        .route("/dir", post(create_dir_ep))
         .route("/doc/copy", post(copy_doc))
+        .route("/dir", post(create_dir).delete(remove_dir))
+        .route("/dir/move", post(move_dir))
+        .route("/dir/copy", post(copy_dir))
         .route("/doc/raw", get(raw_doc))
         .route("/asset-file", get(asset_file))
         .route("/connections", get(connections))
@@ -463,6 +466,175 @@ async fn move_doc(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     }
     let _ = k.sync_all();
     Json(json!({ "from": from, "to": to })).into_response()
+}
+
+/// 目录路径合法性：Notes/ 前缀、无 ..、无反斜杠、非根本身、段非空。
+fn is_safe_dir_path(p: &str) -> bool {
+    p.starts_with("Notes/")
+        && p != "Notes"
+        && !p.contains("..")
+        && !p.contains('\\')
+        && !p.ends_with('/')
+        && !p.contains("//")
+        && p.split('/').all(|s| !s.is_empty())
+}
+
+/// 新建文件夹（Notes/ 下，递归创建）。
+async fn create_dir(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if !is_safe_dir_path(&path) {
+        return err(StatusCode::BAD_REQUEST, "dir path must be under Notes/").into_response();
+    }
+    let k = st.kernel.lock().unwrap();
+    let abs = k.vault.root.join(&path);
+    // 重名 409（main 8a2fcdd 的约定，前端据此提示"已存在"）
+    if abs.exists() {
+        return err(StatusCode::CONFLICT, "目录或文件已存在").into_response();
+    }
+    if let Err(e) = std::fs::create_dir_all(&abs) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    Json(json!({ "ok": true, "path": path })).into_response()
+}
+
+/// 文件夹重命名 / 移动（整目录 rename；随后 sync_all 重建索引路径）。
+async fn move_dir(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let from = req.get("from").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let to = req.get("to").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if !is_safe_dir_path(&from) || !is_safe_dir_path(&to) {
+        return err(StatusCode::BAD_REQUEST, "dir paths must be under Notes/").into_response();
+    }
+    if to.starts_with(&(from.clone() + "/")) {
+        return err(StatusCode::BAD_REQUEST, "cannot move a folder into itself").into_response();
+    }
+    let mut k = st.kernel.lock().unwrap();
+    let src = k.vault.root.join(&from);
+    let dst = k.vault.root.join(&to);
+    if !src.is_dir() {
+        return err(StatusCode::NOT_FOUND, "source folder not found").into_response();
+    }
+    if dst.exists() {
+        return err(StatusCode::CONFLICT, "target exists").into_response();
+    }
+    if let Some(dir) = dst.parent() {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+        }
+    }
+    if let Err(e) = std::fs::rename(&src, &dst) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let _ = k.sync_all();
+    Json(json!({ "from": from, "to": to })).into_response()
+}
+
+/// 复制整个文件夹（含子目录）：文档走 put_doc（新 doc 身份，避免 CRDT 同源冲突），
+/// 其余文件字节级复制。文件夹也是真相，复制粘贴一样不少。
+async fn copy_dir(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let from = req.get("from").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let to = req.get("to").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if !is_safe_dir_path(&from) || !is_safe_dir_path(&to) {
+        return err(StatusCode::BAD_REQUEST, "dir paths must be under Notes/").into_response();
+    }
+    if from == to || to.starts_with(&(from.clone() + "/")) {
+        return err(StatusCode::BAD_REQUEST, "不能复制到自身或其子目录").into_response();
+    }
+    let mut k = st.kernel.lock().unwrap();
+    let root = k.vault.root.clone();
+    if root.join(&to).exists() {
+        return err(StatusCode::CONFLICT, "目标文件夹已存在").into_response();
+    }
+    if let Err(e) = k.sync_throttled() {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let mut copied = 0usize;
+    fn rec(
+        src: &std::path::Path,
+        dst: &std::path::Path,
+        root: &std::path::Path,
+        k: &mut kernel_core::Kernel,
+        copied: &mut usize,
+    ) -> Result<(), String> {
+        std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+        for e in std::fs::read_dir(src).map_err(|e| e.to_string())? {
+            let e = e.map_err(|e| e.to_string())?;
+            let name = e.file_name().to_string_lossy().into_owned();
+            if is_junk_name(&name) {
+                continue;
+            }
+            let sp = e.path();
+            let dp = dst.join(&name);
+            if sp.is_dir() {
+                rec(&sp, &dp, root, k, copied)?;
+            } else {
+                let rel = dp
+                    .strip_prefix(root)
+                    .unwrap_or(&dp)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if is_doc_file(&sp) {
+                    let text = std::fs::read_to_string(&sp).map_err(|e| e.to_string())?;
+                    k.put_doc(&rel, &text).map_err(|e| e.to_string())?;
+                } else {
+                    if let Some(p) = dp.parent() {
+                        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+                    }
+                    std::fs::copy(&sp, &dp).map_err(|e| e.to_string())?;
+                }
+                *copied += 1;
+            }
+        }
+        Ok(())
+    }
+    match rec(&root.join(&from), &root.join(&to), &root, &mut k, &mut copied) {
+        Ok(()) => Json(json!({ "from": from, "to": to, "copied": copied })).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// 删除空文件夹（非空返回 409，提示先移走内容）。
+async fn remove_dir(
+    State(st): State<Arc<AppState>>,
+    h: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let path = q.get("path").cloned().unwrap_or_default();
+    if !is_safe_dir_path(&path) {
+        return err(StatusCode::BAD_REQUEST, "dir path must be under Notes/").into_response();
+    }
+    let k = st.kernel.lock().unwrap();
+    let abs = k.vault.root.join(&path);
+    if !abs.is_dir() {
+        return err(StatusCode::NOT_FOUND, "folder not found").into_response();
+    }
+    if let Err(e) = std::fs::remove_dir(&abs) {
+        return err(StatusCode::CONFLICT, format!("文件夹非空或删除失败：{e}")).into_response();
+    }
+    Json(json!({ "ok": true, "path": path })).into_response()
 }
 
 /// 直接读取真相区文件（附件预览用），仅允许 Assets/ 下。
@@ -1200,6 +1372,16 @@ async fn health(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespo
     Json(json!({ "ok": true, "name": "thirdc", "version": env!("CARGO_PKG_VERSION"), "api": HOST_API_LEVEL })).into_response()
 }
 
+/// 公开版本端点（无 token）：浏览器版「关于」页显示当前版本，桌面端走 Tauri updater。
+async fn version() -> impl IntoResponse {
+    Json(json!({
+        "name": "litmus",
+        "version": env!("CARGO_PKG_VERSION"),
+        "shell": shell_version(),
+        "api": HOST_API_LEVEL,
+    }))
+}
+
 async fn status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
@@ -1591,9 +1773,15 @@ async fn search(
     }
     match k.search(&query) {
         Ok(hits) => {
+            /* 文件即真相：命中非文档文件时标注 kind=file，前端走下载/系统打开而非编辑器 */
+            let fileset: std::collections::HashSet<String> =
+                k.index_files().unwrap_or_default().into_iter().collect();
             let arr: Vec<Value> = hits
                 .into_iter()
-                .map(|(path, rank)| json!({ "path": path, "rank": rank }))
+                .map(|(path, rank)| {
+                    let kind = if fileset.contains(&path) { "file" } else { "doc" };
+                    json!({ "path": path, "rank": rank, "kind": kind })
+                })
                 .collect();
             Json(json!({ "query": query, "hits": arr })).into_response()
         }
@@ -1648,36 +1836,6 @@ async fn get_doc(
         }
         Err(e) => err(StatusCode::NOT_FOUND, e).into_response(),
     }
-}
-
-/// 新建文件夹（Notes/ 下；文件真相：目录就是普通目录）。
-async fn create_dir_ep(
-    State(st): State<Arc<AppState>>,
-    h: HeaderMap,
-    body: Bytes,
-) -> impl IntoResponse {
-    if let Err(e) = check_token(&st, &h) {
-        return e.into_response();
-    }
-    let req: Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
-    };
-    let path = req.get("path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    if !kernel_core::is_safe_doc_path(&path) {
-        return err(StatusCode::BAD_REQUEST, "path must be under Notes/").into_response();
-    }
-    let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    let abs = root.join(&path);
-    if abs.exists() {
-        return err(StatusCode::CONFLICT, "目录或文件已存在").into_response();
-    }
-    std::fs::create_dir_all(&abs).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e)).ok();
-    if !abs.is_dir() {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, "创建失败").into_response();
-    }
-    // 目录无内容变更，不 bump 数据代数；前端 refreshAll 直接重拉树/画布
-    Json(json!({ "written": path })).into_response()
 }
 
 /// 复制文档（文件真相的平凡操作：读源文件字节 → put_doc 到新路径）。
@@ -2361,6 +2519,66 @@ mod tests {
         );
         let folders = v["folders"].as_array().unwrap();
         assert!(folders.iter().any(|f| f["name"] == "Topic" && f["count"] == 1));
+    }
+
+    #[tokio::test]
+    async fn dir_create_move_remove_roundtrip() {
+        let (app, token, dir) = test_router();
+        let auth = format!("Bearer {token}");
+        let post = |uri: &str, body: &str| {
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("authorization", &auth)
+                .body(Body::from(body.to_string()))
+                .unwrap()
+        };
+        // 新建 Notes/A/B
+        let resp = app.clone().oneshot(post("/dir", r#"{"path":"Notes/A/B"}"#)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(dir.path().join("Notes/A/B").is_dir());
+        // 非法路径拒绝
+        let resp = app.clone().oneshot(post("/dir", r#"{"path":"Notes/../evil"}"#)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        // 放一篇文档进去，再整目录改名 A → C
+        std::fs::write(dir.path().join("Notes/A/B/x.md"), "# x\n").unwrap();
+        let resp = app
+            .clone()
+            .oneshot(post("/dir/move", r#"{"from":"Notes/A","to":"Notes/C"}"#))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(dir.path().join("Notes/C/B/x.md").is_file());
+        assert!(!dir.path().join("Notes/A").exists());
+        // 移进自身子目录拒绝
+        let resp = app
+            .clone()
+            .oneshot(post("/dir/move", r#"{"from":"Notes/C","to":"Notes/C/B/D"}"#))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        // 删空文件夹成功；删非空失败（409）
+        let del = |uri: &str| {
+            Request::builder()
+                .method("DELETE")
+                .uri(uri)
+                .header("authorization", &auth)
+                .body(Body::empty())
+                .unwrap()
+        };
+        let resp = app.clone().oneshot(del("/dir?path=Notes/C")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT); // 还有内容，拒绝
+        let resp = app
+            .clone()
+            .oneshot(del("/dir?path=Notes/C/B"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT); // 同上（内含 x.md）
+        // 建一个空目录再删 → 成功
+        let resp = app.clone().oneshot(post("/dir", r#"{"path":"Notes/D"}"#)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = app.clone().oneshot(del("/dir?path=Notes/D")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -4939,7 +5157,7 @@ fn count_docs_under(dir: &std::path::Path) -> usize {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if is_doc_file(&p) {
+            } else {
                 n += 1;
             }
         }
@@ -4969,6 +5187,7 @@ async fn browse(
 
     let mut folders: Vec<Value> = Vec::new();
     let mut docs: Vec<(String, DocPeek, u64, i64, i64)> = Vec::new();
+    let mut files: Vec<Value> = Vec::new();
 
     let rd = match std::fs::read_dir(&abs) {
         Ok(r) => r,
@@ -5008,6 +5227,11 @@ async fn browse(
             let recent = if now.saturating_sub(mtime) < 7 * 86400 { 2.0 } else { 0.0 };
             let score = ((recent + (size as f64 + 1.0).log10()) * 1000.0) as i64;
             docs.push((format!("{dir}/{name}"), peek, mtime, size, score));
+        } else {
+            /* 文件即真相：非文档文件（.txt/.pdf/.zip/图片…）一样列出来，
+               供下载、系统打开、访达显示——不许因为内核不解析就隐身。 */
+            let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            files.push(json!({ "path": format!("{dir}/{name}"), "name": name, "size": size }));
         }
     }
 
@@ -5039,7 +5263,9 @@ async fn browse(
         "breadcrumb": crumbs,
         "folders": folders,
         "docs": arr,
+        "files": files,
         "total_docs": docs.len(),
+        "total_files": files.len(),
         "rule": if has_sub { "子文件夹 + 最近文档" } else { "全部文档（按最近）" },
     }))
     .into_response()
@@ -5097,7 +5323,9 @@ async fn tree(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespons
         rd.filter_map(|e| e.ok())
             .filter(|e| {
                 let n = e.file_name().to_string_lossy().into_owned();
-                !is_junk_name(&n) && is_doc_file(&e.path())
+                /* 文件即真相：计数含全部非垃圾文件（不只 md/html），
+                   只放了附件/图片的文件夹也要在树里出现 */
+                !is_junk_name(&n) && e.path().is_file()
             })
             .count()
     }

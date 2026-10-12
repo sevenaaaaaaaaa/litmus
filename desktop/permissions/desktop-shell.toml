@@ -1,0 +1,26 @@
+# ThirdC 桌面壳命令的 ACL 许可。
+#
+# 桌面 webview 指向内嵌 daemon（http://127.0.0.1:<port>），对 Tauri 而言这是
+# 「远程 origin」——即便命令定义在应用自身，也必须显式授权，否则被 ACL 拒绝：
+#   Command desktop_vaults not allowed by ACL
+# 配合 capabilities/default.json 的 remote.urls（覆盖随机端口）一起生效。
+
+[[permission]]
+identifier = "allow-desktop-shell"
+description = "Allow ThirdC desktop shell commands"
+commands.allow = [
+  "desktop_vaults",
+  "desktop_create_vault",
+  "desktop_switch_vault",
+  "desktop_render_page",
+  "ego_render_result",
+  "desktop_prefs_save",
+  "desktop_focus_main",
+  "desktop_app_version",
+  "desktop_check_update",
+  "desktop_install_update",
+  "desktop_pick_folder",
+  "desktop_reveal_path",
+  "desktop_open_path",
+  "desktop_kernel_api",
+]

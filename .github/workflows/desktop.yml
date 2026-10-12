@@ -1,6 +1,12 @@
 # ThirdC 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg）
 # 触发：手动（Actions 页 Run workflow）或推 v* 标签（自动附到 GitHub Release）
 # 前端是纯静态 server/web，无需 node 构建；内核 reqwest 走 rustls，无 openssl 依赖
+#
+# 在线更新：createUpdaterArtifacts=true 会产出 *.sig 与 updater 归档，
+# tauri-action 用 TAURI_SIGNING_PRIVATE_KEY 签名并生成 latest.json（供 App 内自更新）。
+# 必需仓库 Secret：
+#   TAURI_SIGNING_PRIVATE_KEY          私钥全文（~/.tauri/thirdc-updater.key）
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD 私钥口令（本次生成时为空，填空字符串即可）
 name: desktop
 on:
   workflow_dispatch:
@@ -34,12 +40,18 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: 安装 tauri-cli
-        run: cargo install tauri-cli --version "^2" --locked
-
-      - name: 构建（bundle targets = all）
-        working-directory: desktop
-        run: cargo tauri build
+      - name: 构建 + 签名 + 发布（tauri-action）
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('鹿蕊 Litmus {0}', github.ref_name) || '' }}
+          releaseDraft: false
+          includeUpdaterJson: true
 
       - name: 收集产物
         shell: bash
@@ -47,7 +59,8 @@ jobs:
           mkdir -p dist
           find target/release/bundle -type f \( \
             -name '*.msi' -o -name '*.exe' -o -name '*.AppImage' \
-            -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \) \
+            -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \
+            -o -name '*.sig' -o -name '*.tar.gz' -o -name '*.zip' \) \
             -not -name 'rw.*' -exec cp {} dist/ \;
           ls -la dist/
 
@@ -57,8 +70,15 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: 附到 GitHub Release（仅标签触发）
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+      # R2 镜像（可选）：仓库变量 R2_ENABLED=true 时把产物同步到 Cloudflare R2。
+      # 需要 Secrets：R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ENDPOINT / R2_BUCKET，
+      # 变量：R2_PUBLIC_BASE（自定义域名，用于重写 latest.json 的下载地址）。
+      - name: 同步到 R2（可选）
+        if: ${{ vars.R2_ENABLED == 'true' }}
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: bash deploy/r2-sync.sh dist

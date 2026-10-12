@@ -9,7 +9,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+/// 进程内内核状态句柄：IPC 桥（desktop_kernel_api）与全局快捷键快速捕捉共用。
+/// serve 只提供 HTTP 通道；这里让 webview 在 daemon 不可达时仍能直达内核（脱机可用）。
+static KERNEL_STATE: std::sync::OnceLock<std::sync::Arc<thirdc_server::AppState>> = std::sync::OnceLock::new();
 
 /// ego-lite 内置渲染槽：隐藏 webview 抓取 JS 渲染后的页面 DOM。
 #[derive(Default)]
@@ -275,6 +279,7 @@ fn boot_kernel(vault_path: PathBuf) -> Result<(u16, String), String> {
                         let _ = tx.send(Err(e));
                     }
                     Ok((listener, state, port)) => {
+                        let _ = KERNEL_STATE.set(state.clone());
                         let _ = thirdc_server::spawn_watcher(state.clone());
                         let _ = tx.send(Ok((port, state.token.clone())));
                         let _ = thirdc_server::serve_listener(listener, state).await;
@@ -407,6 +412,9 @@ fn open_sticky(app: &AppHandle) {
         .min_inner_size(220.0, 240.0)
         .always_on_top(true)
         .skip_taskbar(true)
+        /* 关闭 Tauri 的系统文件拖放拦截：不拦截才能让页内 HTML5 拖拽
+           （侧栏拖文档进文件夹、看板拖卡片）在 WKWebView 里正常触发 */
+        .disable_drag_drop_handler()
         .build()
     {
         eprintln!("[tray] 便利贴窗口创建失败：{e}");
@@ -428,6 +436,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
         fresh
     };
     let show = MenuItem::with_id(app, "t-show", "显示主窗口", true, None::<&str>)?;
+    let capture = MenuItem::with_id(app, "t-capture", "⚡ 捕捉剪贴板到库（Alt+Space）", true, None::<&str>)?;
     let new_doc = MenuItem::with_id(app, "t-new", "新建文档", true, None::<&str>)?;
     let sticky = MenuItem::with_id(app, "t-sticky", "新建便利贴", true, None::<&str>)?;
     let secrets = MenuItem::with_id(app, "t-secrets", "凭证库", true, None::<&str>)?;
@@ -456,6 +465,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
     let recent_sub = sub.build()?;
     MenuBuilder::new(app)
         .item(&show)
+        .item(&capture)
         .separator()
         .item(&new_doc)
         .item(&sticky)
@@ -479,6 +489,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
             let id = event.id().0.clone();
             match id.as_str() {
                 "t-show" => show_main(app),
+                "t-capture" => quick_capture(app),
                 "t-new" => {
                     show_main(app);
                     dispatch_main(app, "tray-new-doc", "{}");
@@ -528,6 +539,216 @@ fn desktop_focus_main(app: AppHandle) {
     show_main(&app);
 }
 
+/// 当前 App 版本（来自 tauri.conf.json / package_info），供「关于」页显示。
+#[tauri::command]
+fn desktop_app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// 检查在线更新：命中则回传新版本号与说明，否则 available=false。
+/// 更新源（R2 / GitHub Releases 的 latest.json）与公钥见 tauri.conf.json 的 plugins.updater。
+#[cfg(desktop)]
+#[tauri::command]
+async fn desktop_check_update(app: AppHandle) -> Result<serde_json::Value, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app
+        .updater()
+        .map_err(|e| format!("更新器初始化失败：{e}"))?;
+    match updater.check().await {
+        Ok(Some(u)) => Ok(serde_json::json!({
+            "available": true,
+            "version": u.version,
+            "current": u.current_version,
+            "notes": u.body,
+        })),
+        Ok(None) => Ok(serde_json::json!({ "available": false, "current": app.package_info().version.to_string() })),
+        Err(e) => Err(format!("检查更新失败：{e}")),
+    }
+}
+
+/// 下载并安装更新，装完自动重启。进度经事件 `update-progress` 回传前端。
+#[cfg(desktop)]
+#[tauri::command]
+async fn desktop_install_update(app: AppHandle) -> Result<String, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app
+        .updater()
+        .map_err(|e| format!("更新器初始化失败：{e}"))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| format!("检查更新失败：{e}"))?
+        .ok_or_else(|| "已是最新版本".to_string())?;
+    let handle = app.clone();
+    update
+        .download_and_install(
+            move |downloaded, total| {
+                let _ = handle.emit(
+                    "update-progress",
+                    serde_json::json!({ "downloaded": downloaded, "total": total }),
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("下载或安装失败：{e}"))?;
+    // 安装完成——重启进程加载新版本（此调用不返回）。
+    app.restart();
+}
+
+/// 系统原生文件夹选择对话框（桌面端「原生开发占比」第一步）。
+/// 返回绝对路径或 None（用户取消）；由前端换算成库内相对路径。
+#[cfg(desktop)]
+#[tauri::command]
+async fn desktop_pick_folder(app: AppHandle, title: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
+    app.dialog()
+        .file()
+        .set_title(&title)
+        .pick_folder(move |f| {
+            let _ = tx.send(f.map(|p| p.to_string()));
+        });
+    rx.await.map_err(|e| e.to_string())
+}
+
+/// 内核 IPC 桥：webview 经 Tauri invoke 直达进程内 axum router（不经 TCP socket）。
+/// 前端 fetch 失败时自动回退到这里——daemon 挂掉/端口被占，桌面端照样能读写文件。
+#[cfg(desktop)]
+#[tauri::command]
+async fn desktop_kernel_api(
+    method: String,
+    uri: String,
+    body: Option<String>,
+    token: String,
+) -> Result<serde_json::Value, String> {
+    use tower::util::ServiceExt;
+    let state = KERNEL_STATE
+        .get()
+        .ok_or_else(|| "内核未就绪".to_string())?
+        .clone();
+    let app = thirdc_server::router(state);
+    let m: axum::http::Method = method.parse().map_err(|e| format!("method 非法：{e}"))?;
+    let u: axum::http::Uri = uri.parse().map_err(|e| format!("uri 非法：{e}"))?;
+    let mut builder = axum::http::Request::builder()
+        .method(m)
+        .uri(u)
+        .header("authorization", format!("Bearer {token}"));
+    if body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    let req = builder
+        .body(axum::body::Body::from(body.unwrap_or_default()))
+        .map_err(|e| e.to_string())?;
+    let res = app.oneshot(req).await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    let bytes = axum::body::to_bytes(res.into_body(), 32 * 1024 * 1024)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "status": status,
+        "text": String::from_utf8_lossy(&bytes),
+    }))
+}
+
+/// 全局快捷键 3 秒落库：剪贴板文本 → Notes/Inbox/捕捉-<时间戳>.md。
+/// 复制 → Alt+Space → 进库，全程不碰窗口（PRODUCT.md「三秒落库」的热键入口）。
+#[cfg(desktop)]
+fn quick_capture(app: &AppHandle) {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let text = match app.clipboard().read_text() {
+        Ok(t) => t,
+        Err(_) => return, // 剪贴板是图片/文件等非文本，忽略
+    };
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    let Some(state) = KERNEL_STATE.get() else { return };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let path = format!("Notes/Inbox/捕捉-{}.md", now);
+    let secs = now / 1000;
+    let tod = secs % 86400;
+    let content = format!(
+        "# 捕捉 {:02}:{:02} UTC\n\n{}\n\n---\n\n> 来源：全局快捷键（Alt+Space）· 复制即落库\n",
+        tod / 3600,
+        (tod % 3600) / 60,
+        text
+    );
+    let mut k = state.kernel.lock().unwrap();
+    let inbox = k.vault.root.join("Notes/Inbox");
+    let _ = std::fs::create_dir_all(&inbox);
+    match k.put_doc(&path, &content) {
+        Ok(()) => {
+            let _ = app.emit("quick-captured", serde_json::json!({ "path": path }));
+        }
+        Err(e) => eprintln!("[capture] 快速捕捉失败：{e}"),
+    }
+}
+
+/// 在系统文件管理器中显示（macOS 访达 / Windows 资源管理器 / Linux 文件管理器）。
+/// 「文件即真相」的原生出口：库里任何文件都要能跳回它的物理位置。
+#[tauri::command]
+fn desktop_reveal_path(p: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{p}"))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let dir = std::path::Path::new(&p)
+            .parent()
+            .unwrap_or(std::path::Path::new("/"))
+            .to_path_buf();
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 用系统默认应用打开文件（PDF/图片/Office 文档交给系统，不塞 webview）。
+#[tauri::command]
+fn desktop_open_path(p: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &p])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&p)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// 应用入口：桌面由 src/main.rs 调用；移动端由 tauri mobile_entry_point 调用。
 /// 内核启动搬进 setup：移动端默认库要等 app 数据目录就绪后再解析。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -536,8 +757,23 @@ pub fn run() {
     std::env::set_var("THIRDC_DESKTOP", "1");
     let vault_override = std::env::var_os("THIRDC_VAULT").map(PathBuf::from);
 
-    tauri::Builder::default()
-        .manage(RenderSlot(StdMutex::new(None)))
+    let builder = tauri::Builder::default().manage(RenderSlot(StdMutex::new(None)));
+
+    // 在线更新器仅桌面端可用（移动端商店更新，不走自更新）。
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        quick_capture(app);
+                    }
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             desktop_vaults,
             desktop_create_vault,
@@ -545,8 +781,28 @@ pub fn run() {
             desktop_render_page,
             ego_render_result,
             desktop_prefs_save,
-            desktop_focus_main
-        ])
+            desktop_focus_main,
+            desktop_app_version,
+            desktop_check_update,
+            desktop_install_update,
+            desktop_pick_folder,
+            desktop_reveal_path,
+            desktop_open_path,
+            desktop_kernel_api
+        ]);
+    #[cfg(mobile)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        desktop_vaults,
+        desktop_create_vault,
+        desktop_switch_vault,
+        desktop_render_page,
+        ego_render_result,
+        desktop_prefs_save,
+        desktop_focus_main,
+        desktop_app_version
+    ]);
+
+    builder
         .setup(move |app| {
             let vault_path = vault_override.unwrap_or_else(|| {
                 #[cfg(mobile)]
@@ -569,6 +825,14 @@ pub fn run() {
             let url = match boot_kernel(vault_path.clone()) {
         Ok((port, token)) => {
             wait_ready(port);
+            /* 全局快捷键：Alt+Space 剪贴板 → 3 秒落库（内核就绪后注册，失败不阻塞启动） */
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                if let Err(e) = app.handle().global_shortcut().register("Alt+Space") {
+                    eprintln!("[shortcut] 全局快捷键注册失败（可能被其他应用占用）：{e}");
+                }
+            }
             // token 走 query：前端首帧就存进 localStorage，省掉桌面端再登录一次。
             format!("http://127.0.0.1:{port}/?token={token}")
         }
@@ -588,7 +852,9 @@ pub fn run() {
             let mut builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
                     .title("ThirdC Studio")
-                    .resizable(true);
+                    .resizable(true)
+                    /* 同 sticky：关掉系统拖放拦截，还网页原生 HTML5 拖拽 */
+                    .disable_drag_drop_handler();
 
             /* 偏好初始化脚本：每次页面加载（含换库导航）把 prefs.json 灌进 localStorage，
                主题/昵称/树状态等跨库保留。token 除外——每个 origin 的内核 token 不同，
