@@ -229,14 +229,29 @@ fn default_vault() -> PathBuf {
 }
 
 fn open_or_init(path: &Path) -> anyhow::Result<kernel_core::Vault> {
-    if path.join("thirdc.toml").is_file() {
-        return Ok(kernel_core::Vault::open(path)?);
+    let cfg = path.join("thirdc.toml");
+    if cfg.is_file() {
+        match kernel_core::Vault::open(path) {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                // 坏配置自愈：进程上次被杀在 init 写盘途中会留下空的 thirdc.toml
+                // （目录项已提交、数据丢失——移动端尤其常见）。空文件直接删掉重建；
+                // 非空但解析失败才是真坏了，如实上报，不再盲目回退 open 吞掉原因。
+                let empty = std::fs::metadata(&cfg).map(|m| m.len() == 0).unwrap_or(false);
+                if !empty {
+                    return Err(anyhow::anyhow!("打开库失败：{e}"));
+                }
+                std::fs::remove_file(&cfg).ok();
+            }
+        }
     }
     std::fs::create_dir_all(path)?;
     match kernel_core::Vault::init(path, "Litmus") {
         Ok(v) => Ok(v),
-        // 目录已被别的实例初始化过（竞态）：回退到 open。
-        Err(_) => Ok(kernel_core::Vault::open(path)?),
+        // 目录已被别的实例初始化过（竞态，toml 已存在）：回退到 open。
+        Err(e) if cfg.is_file() => kernel_core::Vault::open(path)
+            .map_err(|_| anyhow::anyhow!("初始化库时发现竞态，回退打开也失败：{e}")),
+        Err(e) => Err(anyhow::anyhow!("初始化库失败：{e}")),
     }
 }
 
@@ -303,7 +318,10 @@ fn wait_ready(port: u16) {
     }
 }
 
-/// 内核起不来时的兜底页面：写到临时文件，用 file:// 打开。
+/// 内核起不来时的兜底页面：桌面写临时文件用 file:// 打开；移动端 Android WebView
+/// 默认禁 file://（net::ERR_ACCESS_DENIED），改走自定义协议 thirdcerror://。
+static BOOT_ERROR_HTML: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 fn error_page(vault: &Path, reason: &str) -> Option<String> {
     let esc = |s: &str| {
         s.replace('&', "&amp;")
@@ -342,7 +360,12 @@ ol{{margin:0;padding-left:20px;color:var(--muted)}} li{{margin:6px 0}}
         reason = esc(reason),
     );
     let path = std::env::temp_dir().join("thirdc-desktop-error.html");
-    std::fs::write(&path, html).ok()?;
+    std::fs::write(&path, html.clone()).ok()?;
+    let _ = BOOT_ERROR_HTML.set(html);
+    // 移动端：Android WebView 禁 file://，走注册好的自定义协议（http://<scheme>.localhost）
+    #[cfg(mobile)]
+    return Some("http://thirdcerror.localhost/".into());
+    #[cfg(desktop)]
     tauri::Url::from_file_path(&path).ok().map(|u| u.to_string())
 }
 
@@ -757,7 +780,20 @@ pub fn run() {
     std::env::set_var("THIRDC_DESKTOP", "1");
     let vault_override = std::env::var_os("THIRDC_VAULT").map(PathBuf::from);
 
-    let builder = tauri::Builder::default().manage(RenderSlot(StdMutex::new(None)));
+    let builder = tauri::Builder::default()
+        .manage(RenderSlot(StdMutex::new(None)))
+        // 兜底错误页协议：移动端 WebView 禁 file://，错误页经 thirdcerror:// 提供。
+        // 页面 HTML 在 boot 失败时写入 BOOT_ERROR_HTML，见 error_page()。
+        .register_uri_scheme_protocol("thirdcerror", |_ctx, _req| {
+            let html = BOOT_ERROR_HTML.get().cloned().unwrap_or_else(|| {
+                "<!doctype html><meta charset=\"utf-8\"><title>鹿蕊 Litmus</title><p>内核没能启动".into()
+            });
+            tauri::http::Response::builder()
+                .status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(html.into_bytes())
+                .unwrap()
+        });
 
     // 在线更新器仅桌面端可用（移动端商店更新，不走自更新）。
     #[cfg(desktop)]
@@ -956,6 +992,20 @@ mod tests {
         assert!(dir.join("thirdc.toml").is_file());
         let v2 = open_or_init(&dir).expect("再次应 open");
         assert_eq!(v1.root, v2.root);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_or_init_selfheals_empty_config() {
+        let dir = std::env::temp_dir().join(format!("thirdc-desk-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // 模拟上次被杀在 init 写盘途中：目录结构在、thirdc.toml 是空文件。
+        std::fs::create_dir_all(dir.join("Notes")).unwrap();
+        std::fs::write(dir.join("thirdc.toml"), "").unwrap();
+        let v = open_or_init(&dir).expect("空配置应自愈重建");
+        assert_eq!(v.config.name, "Litmus");
+        let raw = std::fs::read_to_string(dir.join("thirdc.toml")).unwrap();
+        assert!(raw.contains("name"), "重建后配置应含 name 字段");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

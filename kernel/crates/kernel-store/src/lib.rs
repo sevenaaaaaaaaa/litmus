@@ -347,7 +347,7 @@ impl Vault {
         };
         let toml_str = toml::to_string_pretty(&config)
             .map_err(|e| StoreError::Config(e.to_string()))?;
-        fs::write(&cfg_path, toml_str)?;
+        write_config_atomic(&cfg_path, &toml_str)?;
         Ok(Vault {
             root: root.to_path_buf(),
             config,
@@ -379,11 +379,15 @@ impl Vault {
     pub fn ensure_machine(&self) -> Result<MachineConfig, StoreError> {
         let path = self.sidecar().join("machine.toml");
         if path.is_file() {
-            let raw = fs::read_to_string(&path)?;
-            let m: MachineConfig = toml::from_str(&raw).map_err(|e| StoreError::Config(e.to_string()))?;
-            if !m.token.is_empty() {
-                return Ok(m);
+            if let Ok(raw) = fs::read_to_string(&path) {
+                if let Ok(m) = toml::from_str::<MachineConfig>(&raw) {
+                    if !m.token.is_empty() {
+                        return Ok(m);
+                    }
+                }
             }
+            // 解析失败 / token 为空：多半是进程被杀时留下的残缺文件（目录项已提交、
+            // 数据丢失），走重建路径重新生成——本机回环身份重建无副作用。
         }
         let m = MachineConfig {
             device_id: ulid::Ulid::new().to_string(),
@@ -391,9 +395,20 @@ impl Vault {
             token: format!("{}{}", ulid::Ulid::new(), ulid::Ulid::new()).to_lowercase(),
         };
         let raw = toml::to_string_pretty(&m).map_err(|e| StoreError::Config(e.to_string()))?;
-        fs::write(&path, raw)?;
+        write_config_atomic(&path, &raw)?;
         Ok(m)
     }
+}
+
+/// 崩溃安全的小配置写入：临时文件 + rename。
+/// 进程在写盘途中被杀（移动端 App 被系统回收、断电等）时，直接 fs::write 可能
+/// 留下「目录项在、内容为空」的损坏 TOML，下次启动解析报错。tmp+rename 保证
+/// 要么旧内容、要么新内容，不会出现空壳。
+fn write_config_atomic(path: &Path, data: &str) -> Result<(), StoreError> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, data)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
 }
 
 /// 内容寻址：sha256 -> ab/cd/<hash> 两级目录，真相区 Assets/ 与 sidecar blobs/ 同规则。
@@ -567,5 +582,34 @@ mod tests {
             Vault::open(dir.path()),
             Err(StoreError::NotAVault(_))
         ));
+    }
+
+    #[test]
+    fn ensure_machine_regenerates_corrupt_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::init(dir.path(), "t").unwrap();
+        // 模拟进程被杀留下的空壳 machine.toml
+        std::fs::write(v.sidecar().join("machine.toml"), "").unwrap();
+        let m = v.ensure_machine().expect("残缺配置应重建而非报错");
+        assert!(!m.token.is_empty());
+        assert!(!m.device_id.is_empty());
+        // 幂等：重建后再次读取应返回同一身份，不再重生成
+        let m2 = v.ensure_machine().unwrap();
+        assert_eq!(m.device_id, m2.device_id);
+        assert_eq!(m.token, m2.token);
+    }
+
+    #[test]
+    fn machine_token_never_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::init(dir.path(), "t").unwrap();
+        // token 为空但格式合法的配置：也应重建（老版本残缺数据）
+        std::fs::write(
+            v.sidecar().join("machine.toml"),
+            "device_id = \"x\"\ntoken = \"\"\n",
+        )
+        .unwrap();
+        let m = v.ensure_machine().unwrap();
+        assert!(!m.token.is_empty());
     }
 }
