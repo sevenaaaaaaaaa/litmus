@@ -1234,6 +1234,10 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .drawer-head .icon-btn:hover{background:var(--hover);border-color:transparent;transform:none}
 .drawer-head .icon-btn[aria-pressed="true"]{color:var(--accent);background:var(--accent-soft)}
 .drawer-head #d-close{margin-left:auto}
+
+.tdots .tagchip.mini{height:17px;padding:0 6px;font-size:var(--fs-1);max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tdots .tmore{font:var(--fs-1)/1 var(--font-mono);color:var(--faint);align-self:center}
+.tdots{gap:3px}
 </style>
 </head>
 <body>
@@ -2019,7 +2023,14 @@ document.querySelectorAll('[data-ic]').forEach(el=>{el.innerHTML=iconSvg(el.data
 /* 子路径部署支持：应用挂在 /thirdc/ 下时，所有 API 都要带前缀 */
 const BASE=location.pathname.replace(/\/+$/,'').replace(/\/index\.html$/,'');
 /* Service Worker：外壳缓存（直连场景下重复打开秒开） */
+/* 外壳缓存（Service Worker）：
+   桌面壳的内核就在本机，离线缓存没有收益，反而会让"装了新版仍显示旧界面"——
+   桌面端一律注销 SW 并清空它的缓存；Web 端保留（SW 本身也改为网络优先，见 server SW_SRC）。 */
 if('serviceWorker' in navigator){
+  if(document.documentElement.classList.contains('desktop')){
+    navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});
+    if(window.caches)caches.keys().then(ks=>ks.forEach(k=>caches.delete(k))).catch(()=>{});
+  }else{
   navigator.serviceWorker.register(BASE+'/sw.js').catch(()=>{});
   navigator.serviceWorker.addEventListener('message',e=>{
     if(e.data&&e.data.type==='shell-updated'){
@@ -2028,6 +2039,8 @@ if('serviceWorker' in navigator){
       setTimeout(()=>location.reload(),800);
     }
   });
+
+  }
 }
 const params=new URLSearchParams(location.search);
 let token=params.get('token')||localStorage.getItem('thirdc_token')||'';
@@ -2901,8 +2914,9 @@ function treeDocsOf(path){
 function treeLeaf(d){
   const el=document.createElement('div');el.className='tree-leaf'+(current===d.path?' on':'');el.draggable=true;el.title=d.path;el.dataset.tpath=d.path;
   el.tabIndex=0;el.setAttribute('role','button');
-  /* 树里标签降为色点（悬停看名字）：一行一个名字，不让彩色胶囊抢走层级 */
-  const tags=(d.tags||[]).slice(0,3).map(x=>`<i class="tdot" style="--tc:${tagColor(x)}" title="#${escH(x)}"></i>`).join('');
+  /* 树里标签：最多两枚迷你着色胶囊 + 余数（色点太隐蔽，用户反馈看不到） */
+  const tl=d.tags||[];
+  const tags=tl.slice(0,2).map(x=>`<span class="tagchip mini" style="--tc:${tagColor(x)}" title="#${escH(x)}">${escH(x)}</span>`).join('')+(tl.length>2?`<span class="tmore">+${tl.length-2}</span>`:'');
   const lk=nodeKindOf({path:d.path,kind:d.path.includes('/Sources/')?'capture':'doc'});
   el.innerHTML=`<span class="t-ic k-${lk}">${iconSvg(KIND_IC[lk],14)}</span><span class="nm"></span><span class="tdots">${tags}</span>`;
   el.querySelector('.nm').textContent=d.title||d.path.split('/').pop();

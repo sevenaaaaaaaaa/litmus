@@ -126,8 +126,14 @@ const SHELL = '__SHELL_VERSION__';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil((async () => {
   const keys = await caches.keys();
-  await Promise.all(keys.filter(k => k !== SHELL).map(k => caches.delete(k)));
+  const stale = keys.filter(k => k !== SHELL);
+  await Promise.all(stale.map(k => caches.delete(k)));
   await self.clients.claim();
+  // 升级（存在旧版本缓存）时通知已打开的旧页面刷新——旧页面也认识 shell-updated，会自己 reload
+  if (stale.length) {
+    const cs = await self.clients.matchAll({ type: 'window' });
+    cs.forEach(c => c.postMessage({ type: 'shell-updated' }));
+  }
 })()));
 
 self.addEventListener('fetch', e => {
@@ -137,23 +143,17 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return;
 
   if (req.mode === 'navigate') {
-    // 外壳：先用缓存秒开，再后台校验；变了就通知页面刷新
+    // 外壳：网络优先（内核就在本机或同源服务器，取新壳只要几毫秒），断网才回落缓存。
+    // 旧策略"缓存优先 + 后台比对"会让新版本至少晚一次启动才出现，且通知消息可能在页面监听前发出而丢失。
     e.respondWith((async () => {
       const cache = await caches.open(SHELL);
-      const cached = (await cache.match(req)) || (await cache.match('/'));
-      const net = fetch(req).then(async r => {
-        if (r.ok) {
-          const fresh = await r.clone().text();
-          const old = cached ? await cached.clone().text() : '';
-          if (old && fresh !== old) {
-            const cs = await self.clients.matchAll();
-            cs.forEach(c => c.postMessage({ type: 'shell-updated' }));
-          }
-          cache.put(req, r.clone());
-        }
+      try {
+        const r = await fetch(req);
+        if (r.ok) cache.put('/', r.clone());
         return r;
-      }).catch(() => null);
-      return cached || (await net) || new Response('offline', { status: 503 });
+      } catch (_) {
+        return (await cache.match('/')) || new Response('offline', { status: 503 });
+      }
     })());
     return;
   }
@@ -174,7 +174,8 @@ self.addEventListener('fetch', e => {
 fn shell_version() -> &'static String {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
-        let html = include_str!("../web/index.html");
+        // 壳 = index.html + tokens.css：只改配色也必须换缓存键
+        let html = [include_str!("../web/index.html"), include_str!("../web/tokens.css")].concat();
         format!("thirdc-shell-{}", &kernel_core::Cas::hash_hex(html.as_bytes())[..12])
     })
 }
@@ -2325,6 +2326,10 @@ mod tests {
         assert_eq!(pk.links, vec!["CRDT 与文件真相", "路线"]);
         assert!(pk.excerpt.starts_with("石蕊遇酸变红"), "{}", pk.excerpt);
         assert!(!pk.excerpt.contains("fn x"), "代码块不进摘要：{}", pk.excerpt);
+        // 无 frontmatter 时取正文 #标签；标题与编号不算
+        let g = dir.path().join("b.md");
+        std::fs::write(&g, "# 标题\n- 10:20 读完一本书 #阅读 #设计 见 #1\n").unwrap();
+        assert_eq!(peek_doc(&g, "b").tags, vec!["阅读", "设计"]);
     }
 
     #[tokio::test]
@@ -4819,7 +4824,11 @@ fn peek_doc(path: &std::path::Path, fallback: &str) -> DocPeek {
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| fallback.to_string());
     let is_html = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm"));
-    let (tags, body) = if is_html { (vec![], String::new()) } else { split_front_tags(&text) };
+    let (mut tags, body) = if is_html { (vec![], String::new()) } else { split_front_tags(&text) };
+    // 没有 frontmatter 标签时，退而取正文里的 #标签（memo / 随手记的主流写法）
+    if tags.is_empty() {
+        tags = inline_hashtags(&body);
+    }
     DocPeek { title: title.clone(), excerpt: md_excerpt(&body, &title, 140), tags, links: wiki_links(&body) }
 }
 
@@ -4852,6 +4861,34 @@ fn split_front_tags(text: &str) -> (Vec<String>, String) {
         }
     }
     (tags, t.to_string())
+}
+
+/// 正文 #标签：行首或空白之后的 `#词`，跳过标题行与代码块，纯数字（#1 之类编号）不算，最多 6 个。
+fn inline_hashtags(body: &str) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    let mut in_code = false;
+    for line in body.lines() {
+        let l = line.trim_start();
+        if l.starts_with("```") { in_code = !in_code; continue; }
+        if in_code || l.starts_with("# ") || l.starts_with("## ") || l.starts_with("### ") || l.starts_with("####") { continue; }
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] == '#' && (i == 0 || chars[i - 1].is_whitespace()) {
+                let mut j = i + 1;
+                while j < chars.len() && !chars[j].is_whitespace() && chars[j] != '#' && !"，。；！？、,.;!?()（）[]【】".contains(chars[j]) { j += 1; }
+                let t: String = chars[i + 1..j].iter().collect();
+                if !t.is_empty() && !t.chars().all(|c| c.is_ascii_digit()) && t.chars().count() <= 20 && !v.contains(&t) {
+                    v.push(t);
+                    if v.len() >= 6 { return v; }
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    v
 }
 
 /// 纯文本摘要：跳过标题行/代码块/分隔线，剥掉常见 Markdown 记号，取前 max 个字符。
