@@ -1967,7 +1967,7 @@ async fn delete_doc(
     let days = k.vault.config.trash_days.unwrap_or(30);
     let _ = trash_purge_expired(&k.vault.root, days);
     let mut entries = trash_load(&k.vault.root);
-    let trash_rel = trash_unique_rel(&entries, &path);
+    let trash_rel = trash_unique_rel(&k.vault.root, &entries, &path);
     let dest = trash_dir(&k.vault.root).join(&trash_rel);
     if let Some(p) = dest.parent() {
         if let Err(e) = std::fs::create_dir_all(p) {
@@ -2034,10 +2034,14 @@ fn trash_save(root: &std::path::Path, entries: &[TrashEntry]) -> std::io::Result
     std::fs::write(dir.join("index.json"), json)
 }
 
-fn trash_unique_rel(entries: &[TrashEntry], path: &str) -> String {
+fn trash_unique_rel(root: &std::path::Path, entries: &[TrashEntry], path: &str) -> String {
     let mut cand = path.to_string();
     let mut i = 1usize;
-    while entries.iter().any(|e| e.trash == cand) {
+    // 查重不能只看清单：回收站里可能有清单之外的物理残留。最典型场景——
+    // 子项先逐个删除（回收站里它们都躺在 <父目录>/ 容器下，清单只有子项
+    // 记录），再删父目录时 rename 目标撞上这个非空容器 → ENOTEMPTY。
+    // 这里必须清单与文件系统一起查。
+    while entries.iter().any(|e| e.trash == cand) || trash_dir(root).join(&cand).exists() {
         cand = format!("{path}.{i}");
         i += 1;
     }
@@ -2798,6 +2802,80 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(dir.path().join("Notes/研究/b.md").is_file(), "文件夹恢复后内容完整");
+    }
+
+    #[tokio::test]
+    async fn delete_parent_folder_after_children_lands_in_trash() {
+        // 复现线上场景：先逐个删除子文件夹（它们都以 <父目录>/ 为容器躺在回收站，
+        // 清单里只有子项记录），再删除父目录本身——rename 目标撞上那个非空容器
+        // 报 ENOTEMPTY (os error 66)，用户表现为"文件夹怎么都删不掉"。
+        // 修复后：trash_unique_rel 连文件系统一起查重，父目录落到 MindRe.1。
+        let (app, token, dir) = test_router();
+        let auth = format!("Bearer {token}");
+        for rel in ["Notes/MindRe/a.md", "Notes/MindRe/子/b.md"] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PUT")
+                        .uri(format!("/doc?path={rel}"))
+                        .header("authorization", &auth)
+                        .header("content-type", "text/markdown")
+                        .body(Body::from("# x\n"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+        // 先删子文件夹「子」→ 回收站容器 Notes/MindRe/ 出现且非空
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/doc?path=Notes/MindRe/子")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(dir.path().join(".thirdc/trash/Notes/MindRe/子/b.md").is_file());
+
+        // 再删父目录 MindRe：目标名 trash/Notes/MindRe 已被非空容器占用
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/doc?path=Notes/MindRe")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "父目录删除应绕开非空容器落去 MindRe.1");
+        assert!(!dir.path().join("Notes/MindRe").exists());
+        assert!(dir.path().join(".thirdc/trash/Notes/MindRe.1/a.md").is_file());
+        // 旧子项的清单记录不受影响，仍可恢复
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/trash/restore")
+                    .header("authorization", &auth)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"path":"Notes/MindRe/子"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "旧子项记录应仍可恢复");
+        assert!(dir.path().join("Notes/MindRe/子/b.md").is_file());
     }
 
     #[test]
