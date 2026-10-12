@@ -2,14 +2,15 @@
  * 鹿蕊 Litmus · tokens.css
  * 契约来源：OpenFlow 前台设计系统（oklch / 零 hex / 弹簧缓动 / 圆角四档 / 玻璃）
  *
- * 配色体系 v2（2026-10-12，见 docs/spec/design-system.md「配色体系 v2」）
+* 配色体系 v3（2026-10-13，见 docs/spec/design-system.md「配色体系 v3」）
  *
  *   层级 = 明度阶梯，不靠饱和度、不靠压黑：
  *     bg-0 < bg-1 < surface-1 < surface-2 < surface-3      （五级表面，k = 0…4）
  *     暗色  L(k) = 22.5% + 3.2%·k        C(k) = .007 + .0008·k  h(k) = 70 + 2·k
  *           ——越"浮起"越亮、越暖一点（Arc 的温度感），步距等差、色度压低（Linear 的克制）
- *     亮色  L(k) = 100% − 0.65%·(4−k)^1.5  C(k) = .016·(4−k)/4    h = 84
- *           ——纸面最深、浮层趋向纯白、色度随高度褪尽（Things 的留白与纸感）
+ *     亮色  L = 97.2 / 98.1 / 99 / 99.6 / 100   C(k) = .006·(4−k)/4   h = 250
+ *           ——雾白玻璃：贴近纯白的冷中性，色度随高度褪尽；玻璃更透（--glass .42）、
+ *             镜面高光更强（--inset-hi 顶沿 .9）、blur 两档加深（10/22px）
  *   文字四级 text-1…4，边框两级 border-1/2，强调主副 accent / accent-2，
  *   语义四色 ok / warn / danger / info，各配 -soft 底。
  *
@@ -28,24 +29,25 @@
 
 @font-face{font-family:"Space Grotesk";src:url("fonts/space-grotesk-400.woff2") format("woff2");font-weight:100 900;font-display:swap}
 
-/* ── 亮色 · 暖纸（原语）── */
+/* ── 亮色 · 雾白玻璃（原语）── */
 :root,[data-theme="light"]{
-  /* 表面五级：L(k)=100−0.65·(4−k)^1.5 */
-  --bg-0: oklch(94.8% .016 84);
-  --bg-1: oklch(96.6% .012 84);
-  --surface-1: oklch(98.2% .008 84);
-  --surface-2: oklch(99.4% .004 84);
+  /* 表面五级：L = 97.2 / 98.1 / 99 / 99.6 / 100，C = .006·(4−k)/4，h = 250
+     ——贴近纯白的冷中性，纸感让位给玻璃感；层级差靠留白与阴影补足 */
+  --bg-0: oklch(97.2% .006 250);
+  --bg-1: oklch(98.1% .0045 250);
+  --surface-1: oklch(99% .003 250);
+  --surface-2: oklch(99.6% .0015 250);
   --surface-3: oklch(100% 0 0);
   /* 文字四级 */
-  --text-1: oklch(22% .022 70);
-  --text-2: oklch(40% .02 72);
-  --text-3: oklch(50% .018 74);
-  --text-4: oklch(58% .016 76);
+  --text-1: oklch(22% .02 260);
+  --text-2: oklch(40% .018 260);
+  --text-3: oklch(50% .016 260);
+  --text-4: oklch(58% .014 260);
   /* 边框两级（取文字色的透明度，压在任何表面上都成立） */
-  --border-1: oklch(22% .022 70/.12);
-  --border-2: oklch(22% .022 70/.24);
-  --hover: oklch(22% .02 70/.05);
-  --hover-strong: oklch(22% .02 70/.10);
+  --border-1: oklch(22% .02 260/.12);
+  --border-2: oklch(22% .02 260/.24);
+  --hover: oklch(22% .018 260/.05);
+  --hover-strong: oklch(22% .018 260/.10);
   /* 强调：主 = 石蕊蓝 */
   --accent: oklch(52% .18 258);
   --accent-strong: oklch(46% .18 258);
@@ -60,24 +62,24 @@
   --warn: oklch(52% .12 62);     --warn-soft: oklch(52% .12 62/.12);
   --danger: oklch(51% .19 29);   --danger-soft: oklch(51% .19 29/.12);   --on-danger: oklch(100% 0 0);
   --info: oklch(50% .11 220);    --info-soft: oklch(50% .11 220/.12);
-  /* 玻璃与氛围 */
-  --glass: oklch(100% 0 0/.55);
-  --glass-bright: oklch(100% 0 0/.72);
-  --glass-border: oklch(100% 0 0/.7);
-  --blob-a: oklch(76% .12 262/.30);
-  --blob-b: oklch(76% .11 350/.20);
-  --blob-c: oklch(78% .11 200/.22);
-  --shadow: 0 22px 56px -26px oklch(38% .05 80/.30);
-  --shadow-sm: 0 10px 26px -14px oklch(38% .05 80/.22);
-  --node-shadow: 0 16px 40px -22px oklch(38% .05 80/.32);
-  --shadow-lift: 0 34px 64px -26px oklch(38% .05 80/.42), 0 10px 22px -12px oklch(38% .05 80/.22);
-  /* 物件质感（PR④）：顶沿高光 + 极淡竖向渐变——纸面被光从上方照着 */
-  --inset-hi: inset 0 1px 0 oklch(100% 0 0/.75), inset 0 0 0 1px oklch(100% 0 0/.25);
-  --sheen: linear-gradient(180deg, oklch(100% 0 0/.55), oklch(100% 0 0/0) 38%, oklch(22% .02 70/.012));
-  --grid-dot: oklch(22% .02 70/.12);
+  /* 玻璃与氛围：更透（.55→.42）、镜面高光更强、氛围光更亮——液态玻璃的通透 */
+  --glass: oklch(100% 0 0/.42);
+  --glass-bright: oklch(100% 0 0/.66);
+  --glass-border: oklch(100% 0 0/.65);
+  --blob-a: oklch(78% .12 262/.32);
+  --blob-b: oklch(78% .11 350/.22);
+  --blob-c: oklch(80% .11 200/.24);
+  --shadow: 0 22px 56px -26px oklch(30% .05 260/.30);
+  --shadow-sm: 0 10px 26px -14px oklch(30% .05 260/.22);
+  --node-shadow: 0 16px 40px -22px oklch(30% .05 260/.32);
+  --shadow-lift: 0 34px 64px -26px oklch(30% .05 260/.42), 0 10px 22px -12px oklch(30% .05 260/.22);
+  /* 物件质感（PR④）：顶沿镜面高光 + 极淡竖向渐变——玻璃被光从上方照着 */
+  --inset-hi: inset 0 1px 0 oklch(100% 0 0/.9), inset 0 0 0 1px oklch(100% 0 0/.28);
+  --sheen: linear-gradient(180deg, oklch(100% 0 0/.62), oklch(100% 0 0/0) 40%, oklch(22% .02 260/.014));
+  --grid-dot: oklch(22% .02 260/.12);
   --edge: oklch(52% .18 258/.48);
-  --edge-soft: oklch(22% .02 70/.14);
-  --axis: oklch(22% .02 70/.28);
+  --edge-soft: oklch(22% .02 260/.14);
+  --axis: oklch(22% .02 260/.28);
   --type-query: oklch(52% .16 305);
   color-scheme: light;
 }
@@ -209,7 +211,7 @@
   /* 展示数字（不属正文阶梯）：文件夹篇数、统计大数——只给数字用 */
   --fs-num: 28px;
   /* 毛玻璃两档（PR④）：遮罩用 blur-1，玻璃表面用 blur-2；craft.rs 禁止其他半径 */
-  --blur-1: 8px; --blur-2: 18px;
+  --blur-1: 10px; --blur-2: 22px;
   /* 图标：24 网格线性家族，笔画 2（16px 渲染≈1.33px），全站一处可调 */
   --icon-stroke: 2;
 }
