@@ -244,6 +244,11 @@ impl Kernel {
         Ok(p)
     }
 
+    /// 已登记的非文档文件相对路径（检索结果标注 kind=file 用）。
+    pub fn index_files(&self) -> Result<Vec<String>, StoreError> {
+        self.index.list_files()
+    }
+
     /// 扫描 Notes/，把所有外部改动导入 op-log 并同步全文索引。
     /// 返回发生内容变化的文档数。已删除的文档自动从索引回收。
     pub fn sync_all(&mut self) -> Result<usize, SyncError> {
@@ -322,6 +327,38 @@ impl Kernel {
         for rel in self.index.list_paths().map_err(SyncError::Store)? {
             if !on_disk.contains(&rel) {
                 self.index.remove(&rel).map_err(SyncError::Store)?;
+            }
+        }
+        // 非文档文件：按文件名进检索（文件即真相——内核不解析 ≠ 检索不到）
+        let files = kernel_store::list_non_doc_files(&self.vault).map_err(SyncError::Store)?;
+        let mut seen_files = std::collections::HashSet::new();
+        for abs in &files {
+            let rel = abs
+                .strip_prefix(&self.vault.root)
+                .unwrap_or(abs)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let (mtime, size) = fs::metadata(abs)
+                .map(|m| {
+                    (
+                        m.modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0),
+                        m.len() as i64,
+                    )
+                })
+                .unwrap_or((0, 0));
+            seen_files.insert(rel.clone());
+            if self.index.stat_file(&rel) == Some((mtime, size)) {
+                continue; // mtime+size 一致 → 跳过
+            }
+            let _ = self.index.upsert_file(&rel, mtime, size);
+        }
+        for rel in self.index.list_files().map_err(SyncError::Store)? {
+            if !seen_files.contains(&rel) {
+                let _ = self.index.remove_file(&rel);
             }
         }
         Ok((changed, more))

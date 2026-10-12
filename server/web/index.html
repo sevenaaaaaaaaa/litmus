@@ -101,7 +101,10 @@ html.desktop #chrome button,html.desktop #chrome input,html.desktop #chrome nav,
 #rail.closed{transform:translateX(calc(-100% - 16px));opacity:0;pointer-events:none;visibility:hidden;transition:transform .45s var(--ease-spring),opacity .3s,visibility 0s .45s}
 #rail:not(.closed){transition:transform .45s var(--ease-spring),opacity .3s,visibility 0s 0s}
 .rail-slot{display:flex;flex-direction:column;flex:1;min-height:0}
-body[data-mode="learn"] .slot-studio{display:none}
+/* 学习模式：仅当目录大纲真的可见时才让位给 TOC；否则回落到文件树，
+   避免「进入学习模式但没打开文档」时侧栏空白（文件树消失）。 */
+body[data-mode="learn"].toc-on .slot-studio{display:none}
+body[data-mode="learn"]:not(.toc-on) .slot-learn{display:none}
 body[data-mode="studio"] .slot-learn,body[data-mode="organize"] .slot-learn{display:none}
 /* 展示模式：全屏优先，左栏与唤出钮一并退场 */
 body[data-mode="present"] #rail,body[data-mode="present"] #rail-open{display:none}
@@ -607,6 +610,33 @@ body[data-view="timeline"] .node:hover,body[data-view="kanban"] .node:hover{tran
 .tree-leaf.locate{animation:locateFlash 1.5s var(--ease-out)}
 @keyframes locateFlash{0%,55%{background:var(--accent-soft);color:var(--accent)}100%{background:transparent}}
 .tree-leaf.on{background:var(--surface-strong);box-shadow:inset 2px 0 0 var(--accent)}
+.tree-leaf.drop-hot{background:var(--accent-soft);color:var(--accent)}
+.tree-leaf.tree-file .nm{color:var(--muted);font-weight:400}
+.tree-leaf.tree-file .ct{color:var(--faint);font-family:var(--font-mono);font-size:9.5px}
+/* ── 文件夹选择器（移动/归档的可视化目录导航）── */
+#pickdir-ov{position:fixed;inset:0;z-index:1200;display:grid;place-items:center}
+/* 侧栏多选：选中高亮 + 底部浮动批量操作条 */
+.tree-leaf.sel{background:var(--accent-soft)!important;box-shadow:inset 2px 0 0 var(--accent)}
+#railselbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:1100;display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-strong);border:1px solid var(--border);border-radius:999px;box-shadow:0 12px 36px rgba(0,0,0,.3);font:500 12px var(--font-body)}
+#railselbar b{color:var(--accent);font-weight:600;white-space:nowrap}
+.btn-mini{border:1px solid var(--border);background:var(--surface);color:var(--fg);cursor:pointer;font:500 12px var(--font-body);padding:5px 10px;border-radius:999px;white-space:nowrap}
+.btn-mini:hover{border-color:var(--accent);color:var(--accent)}
+.btn-mini.danger:hover{border-color:var(--danger);color:var(--danger)}
+.pd-mask{position:absolute;inset:0;background:color-mix(in oklab,var(--bg) 55%,transparent);backdrop-filter:blur(6px)}
+.pd-card{position:relative;width:min(430px,92vw);max-height:74vh;display:flex;flex-direction:column;background:var(--surface-strong);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:0 24px 64px rgba(0,0,0,.35);overflow:hidden}
+.pd-card .panel-head{margin:0}
+.pd-crumb{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:10px 14px;font:500 12px var(--font-body);border-bottom:1px solid var(--border)}
+.pd-crumb button{border:none;background:transparent;color:var(--accent);cursor:pointer;font:inherit;padding:2px 6px;border-radius:var(--r-sm)}
+.pd-crumb button:hover{background:var(--accent-soft)}
+.pd-sep{color:var(--faint)}
+.pd-search-row{padding:8px 14px;border-bottom:1px solid var(--border)}
+.pd-search-row input{width:100%;box-sizing:border-box;height:30px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg-soft);color:var(--fg);font:12px var(--font-body);outline:none}
+.pd-search-row input:focus{border-color:var(--accent)}
+.pd-list{flex:1;overflow:auto;padding:6px 8px;min-height:130px}
+.pd-list .tree-row{cursor:pointer}
+.pd-list .tree-row:hover{background:var(--glass)}
+.pd-foot{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border)}
+.pd-foot .rail-act{flex:0 0 auto;height:32px}
 .tree-leaf .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .tagchip{display:inline-flex;align-items:center;height:18px;padding:0 8px;border-radius:var(--r-pill);font:600 10px var(--font-mono);color:var(--on-accent);flex:0 0 auto}
 #rail-search{margin:0;width:100%;height:30px;padding:0 10px;border-radius:var(--r-md);border:1px solid var(--border);background:var(--bg-soft);color:var(--fg);font:12.5px var(--font-body);outline:none;box-sizing:border-box}
@@ -1551,6 +1581,15 @@ button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon
         林下 Understory 出品 · 本地优先 · 核心永久开源（AGPL-3.0）· 与 OpenFlow 同源设计契约。地衣长在林下，鹿蕊是它的第一株。
       </div>
     </div>
+    <div id="set-update-block" style="margin-bottom:14px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-soft)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;font-size:12.4px;color:var(--muted)" id="set-update-status">检查是否有新版本</div>
+        <button class="act" id="set-check-update" style="flex:0 0 auto">检查更新</button>
+      </div>
+      <div id="set-update-actions" style="display:none;margin-top:8px">
+        <button class="act" id="set-install-update" style="width:100%;background:var(--accent);color:var(--on-accent);border-color:var(--accent)">下载并安装</button>
+      </div>
+    </div>
     <div style="margin-bottom:8px">
       <div style="font-size:12px;color:var(--faint);margin-bottom:6px">资源</div>
       <div style="font-size:12.4px;line-height:2">
@@ -1749,6 +1788,20 @@ function uiModal({title='',body='',okText='确定',cancelText='取消',danger=fa
 const uiConfirm=(msg,opts={})=>uiModal(Object.assign({body:String(msg),okText:opts.ok||'确定',cancelText:opts.cancel||'取消',danger:opts.danger!==false},opts)).then(r=>!!r.ok);
 const uiPrompt=(msg,def='',opts={})=>uiModal(Object.assign({body:String(msg),input:true,inputVal:def==null?'':String(def),okText:opts.ok||'确定',cancelText:opts.cancel||'取消',password:!!opts.password},opts)).then(r=>r.ok?(r.val||''):null);
 const uiAlert=msg=>uiModal({body:String(msg),okText:'好',cancelText:''}).then(()=>undefined);
+/* 桌面 IPC 桥：经 Tauri invoke 直达进程内内核 router，不经 TCP——daemon 不可达也能读写文件（脱机可用） */
+async function bridgeApi(path,opts={}){
+  const r=await window.__TAURI_INTERNALS__.invoke('desktop_kernel_api',{
+    method:(opts.method||'GET'),
+    uri:path,
+    body:opts.body!=null?String(opts.body):null,
+    token:token||''
+  });
+  const text=String(r.text||'');let data;
+  try{data=text?JSON.parse(text):{}}catch{data={raw:text}}
+  if(r.status===401){localStorage.removeItem('thirdc_token');localStorage.removeItem('thirdc_user');token='';busy=false;if(!document.getElementById('login-user'))showLogin();throw new Error('登录已失效，请重新登录');}
+  if(r.status>=400)throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
 async function api(path,opts={},attempt=0){const headers=Object.assign({},opts.headers||{});if(token)headers['authorization']='Bearer '+token;
   if(opts.json!==undefined){headers['content-type']='application/json';opts.body=JSON.stringify(opts.json);}
   const method=(opts.method||'GET').toUpperCase();
@@ -1769,6 +1822,10 @@ async function api(path,opts={},attempt=0){const headers=Object.assign({},opts.h
     }
     if(e&&e.name==='AbortError')throw new Error('请求超时：服务器没有响应（可能与负载有关，稍后再试）');
     if(navigator.onLine===false)throw new Error('当前离线——改动都落在本机，联网后自动合流');
+    /* 桌面端兜底：HTTP 全挂时走进程内 IPC 桥（内核与 UI 同进程，永不断联） */
+    if(netFail&&window.__TAURI_INTERNALS__){
+      try{return await bridgeApi(path,opts)}catch(_){/* 桥也失败才抛错 */}
+    }
     throw new Error(netFail?'网络不稳，多次重试后仍失败：稍候再试，或用桌面端打开本地库':msg);
   }
   const text=await res.text();let data;
@@ -2111,6 +2168,23 @@ $('nodes').addEventListener('pointerdown',e=>{
     el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',up);
     canvas.classList.remove('dragging');el.classList.remove('drop');
     document.querySelectorAll('.col').forEach(c=>c.classList.remove('hot'));
+    /* ⌘/Ctrl + 拖到文件夹节点上：把文件/附件移动进该文件夹（画布内拖放移动） */
+    const dragNode=graph.nodes.find(n=>n.id===id);
+    const under=document.elementFromPoint(ev.clientX,ev.clientY);
+    const tgtEl=under&&under.closest('.node');
+    const folderNode=(tgtEl&&(ev.metaKey||ev.ctrlKey)&&dragNode&&dragNode.path)?
+      graph.nodes.find(n=>n.id===tgtEl.dataset.id&&n.kind==='folder'&&n.id!==id):null;
+    if(folderNode){
+      const fname=dragNode.path.split('/').pop();
+      const to=folderNode.path==='Notes'?`Notes/${fname}`:`${folderNode.path}/${fname}`;
+      if(to!==dragNode.path){
+        try{
+          await api('/doc/move',{method:'POST',json:{from:dragNode.path,to}});
+          toast(`${dragNode.path} → ${folderNode.path}`,'ok');
+          await refreshAll();return;
+        }catch(err){toast('移动失败：'+err.message,'err');renderGraph();return;}
+      }
+    }
     if(!kanban){saveBoard();return;}
     const p=s2w(ev.clientX,ev.clientY);
     const cols=layoutMeta().cols;
@@ -2359,6 +2433,121 @@ function recordRecent(path){
   saveTreeUI({ recentDocs: [path, ...(treeUI.recentDocs||[]).filter(x=>x!==path)].slice(0,12) });
 }
 /* 用 /tree 的结构渲染（无文件标题）：文件夹秒开，文件展开时按需加载（构建函数模块级，供定位/自动展开复用） */
+/* ── 拖拽载荷：自定义 MIME + text/plain 兜底（部分 webview 会丢自定义类型）── */
+function setDragPayload(e,val){try{e.dataTransfer.setData('text/thirdc-path',val);e.dataTransfer.setData('text/plain',val);}catch{}}
+function setDragDirPayload(e,val){try{e.dataTransfer.setData('text/thirdc-dir',val);e.dataTransfer.setData('text/plain',val);}catch{}}
+function dragPayloadType(e){const ts=[...(e.dataTransfer?.types||[])];return ts.includes('text/thirdc-path')||ts.includes('text/thirdc-dir')||ts.includes('text/plain');}
+function getDragPayload(e){
+  let v='';try{v=e.dataTransfer.getData('text/thirdc-dir')||''}catch{}
+  if(v)return{dir:v};
+  try{v=e.dataTransfer.getData('text/thirdc-path')||''}catch{}
+  if(!v){try{v=e.dataTransfer.getData('text/plain')||''}catch{}}
+  if(v.startsWith('Notes/'))return{path:v};
+  return null;
+}
+/* 文档移动共享助手（侧栏树 / 画布 / 选择器共用） */
+async function movePathTo(from,toDir){
+  const fname=from.split('/').pop();
+  const to=(toDir==='Notes'?'Notes':toDir)+'/'+fname;
+  if(to===from)return;
+  try{await api('/doc/move',{method:'POST',json:{from,to}});toast(`${fname} → ${to}`,'ok');await refreshAll();if(current===from)openDoc(to);}
+  catch(err){toast('移动失败：'+err.message,'err');}
+}
+/* 文件夹移动 / 改名（服务端整目录 rename + 重建索引） */
+async function moveDirTo(from,toDir){
+  const name=from.split('/').pop();
+  const to=(toDir==='Notes'?'Notes':toDir)+'/'+name;
+  if(to===from||to.startsWith(from+'/')){toast('不能移动到自身或其子目录','err');return}
+  try{await api('/dir/move',{method:'POST',json:{from,to}});toast(`文件夹 → ${to}`,'ok');await refreshAll();}
+  catch(err){toast('移动文件夹失败：'+err.message,'err');}
+}
+/* ── 原生出口（桌面壳）：文件即真相的最后一米——跳回物理文件 ── */
+const isDesk=()=>!!window.__TAURI_INTERNALS__;
+async function absVaultPath(rel){const st=await api('/status');return String(st.root||'').replace(/\/+$/,'')+'/'+rel;}
+async function nativeReveal(rel){try{await tauriInvoke('desktop_reveal_path',{p:await absVaultPath(rel)})}catch(e){toast('访达定位失败：'+(e.message||e),'err')}}
+async function nativeOpen(rel){try{await tauriInvoke('desktop_open_path',{p:await absVaultPath(rel)})}catch(e){toast('系统打开失败：'+(e.message||e),'err')}}
+function fsize(n){if(n==null)return'';if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' K';return (n/1048576).toFixed(1)+' M'}
+function dlFile(rel){location.href=BASE+'/doc/raw?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(rel);}
+/* 非文档文件叶子：内核不解析 ≠ 不存在（文件即真相） */
+function treeFileLeaf(f){
+  const el=document.createElement('div');el.className='tree-leaf tree-file';el.draggable=true;el.title=f.path+'（非文档文件）';el.dataset.tpath=f.path;
+  el.innerHTML='<span class="nm"></span><span class="ct"></span>';
+  el.querySelector('.nm').textContent=f.name||f.path.split('/').pop();
+  el.querySelector('.ct').textContent=fsize(f.size);
+  el.onclick=e=>{
+  if(e.metaKey||e.ctrlKey){e.preventDefault();railSelAnchor=f.path;railSel.has(f.path)?railSel.delete(f.path):railSel.add(f.path);railSelRender();return;}
+  if(e.shiftKey&&railSelAnchor){
+    const leaves=[...document.querySelectorAll('#rail-list .tree-leaf')];
+    const i0=leaves.findIndex(x=>x.dataset.tpath===railSelAnchor),i1=leaves.findIndex(x=>x.dataset.tpath===f.path);
+    if(i0>=0&&i1>=0){for(const x of leaves.slice(Math.min(i0,i1),Math.max(i0,i1)+1))railSel.add(x.dataset.tpath);railSelRender();return;}
+  }
+  railSel.clear();railSelRender();isDesk()?nativeOpen(f.path):dlFile(f.path);
+};
+  el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.click();}};
+  el.ondragstart=e=>{setDragPayload(e,f.path);e.dataTransfer.effectAllowed='move';};
+  el.ondragover=e=>{if(dragPayloadType(e)){e.preventDefault();el.classList.add('drop-hot');}};
+  el.ondragleave=()=>el.classList.remove('drop-hot');
+  el.ondrop=e=>{e.preventDefault();e.stopPropagation();el.classList.remove('drop-hot');const p=getDragPayload(e);const from=p&&(p.path||p.dir);if(!from||from===f.path)return;movePathTo(from,f.path.split('/').slice(0,-1).join('/')||'Notes');};
+  el.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openCtx(e.clientX,e.clientY,fileCtxItems(f.path));};
+  return el;
+}
+function fileCtxItems(path){
+  return [
+    isDesk()?{label:'↗ 用系统应用打开',fn:()=>nativeOpen(path)}:null,
+    isDesk()?{label:'🖥 在访达中显示',fn:()=>nativeReveal(path)}:null,
+    {label:'⬇️ 下载原文件',fn:()=>dlFile(path)},
+    'sep',
+    {label:'📄 复制相对路径',fn:()=>{navigator.clipboard.writeText(path);toast('已复制 '+path,'ok');}},
+    'sep',
+    {label:'🗑 移入回收站',danger:true,fn:async()=>{
+      if(!(await uiConfirm('移入回收站？'+path,{ok:'移入回收站'})))return;
+      try{await api('/doc?path='+encodeURIComponent(path),{method:'DELETE'});toast('已移入回收站：'+path,'ok');await refreshAll();}
+      catch(err){toast('删除失败：'+err.message,'err');}
+    }},
+  ].filter(Boolean);
+}
+/* ── 侧栏多选：⌘/Ctrl 点选、⇧ 连选；批量移动/回收站（文件真相的操作面补完）── */
+const railSel=new Set();let railSelAnchor=null;
+function railSelRender(){
+  document.querySelectorAll('#rail-list .tree-leaf').forEach(el=>{
+    el.classList.toggle('sel',railSel.has(el.dataset.tpath));
+  });
+  let bar=document.getElementById('railselbar');
+  if(!railSel.size){if(bar)bar.remove();return;}
+  if(!bar){
+    bar=document.createElement('div');bar.id='railselbar';
+    bar.innerHTML='<b id="rs-n"></b><button class="btn-mini" id="rs-move">📂 移动到…</button><button class="btn-mini danger" id="rs-del">🗑 移入回收站</button><button class="btn-mini" id="rs-x">✕</button>';
+    document.body.appendChild(bar);
+    $('rs-x').onclick=()=>{railSel.clear();railSelRender();};
+    $('rs-move').onclick=railSelMove;
+    $('rs-del').onclick=railSelTrash;
+  }
+  $('rs-n').textContent=`已选 ${railSel.size}`;
+}
+async function railSelMove(){
+  const items=[...railSel];if(!items.length)return;
+  const dir0=items[0].split('/').slice(0,-1).join('/')||'Notes';
+  const toDir=await pickFolder(dir0,`移动 ${items.length} 项到…`);
+  if(!toDir)return;
+  let ok=0;
+  for(const from of items){
+    const to=(toDir==='Notes'?'Notes':toDir)+'/'+from.split('/').pop();
+    if(to===from)continue;
+    try{await api('/doc/move',{method:'POST',json:{from,to}});ok++}catch(e){toast(`${from}：${e.message}`,'err')}
+  }
+  railSel.clear();railSelRender();
+  if(ok)toast(`已移动 ${ok} 项 → ${toDir}`,'ok');
+  await refreshAll();
+}
+async function railSelTrash(){
+  const items=[...railSel];if(!items.length)return;
+  if(!(await uiConfirm(`移入回收站？\n${items.slice(0,8).join('\n')}${items.length>8?`\n… 共 ${items.length} 项`:''}`,{ok:'移入回收站'})))return;
+  let ok=0;
+  for(const p of items){try{await api('/doc?path='+encodeURIComponent(p),{method:'DELETE'});ok++}catch(e){toast(`${p}：${e.message}`,'err')}}
+  railSel.clear();railSelRender();
+  if(ok)toast(`已移入回收站 ${ok} 项`,'ok');
+  await refreshAll();
+}
 function treeDocsOf(path){
   const fd=window.__fullDocs||[];
   return fd.filter(d=>d.path.startsWith(path+'/') && !d.path.slice(path.length+1).includes('/'));
@@ -2369,9 +2558,28 @@ function treeLeaf(d){
   const tags=(d.tags||[]).slice(0,3).map(x=>`<span class="tagchip" style="background:${tagColor(x)}">${x}</span>`).join('');
   el.innerHTML=`<span class="nm"></span>${tags}`;
   el.querySelector('.nm').textContent=d.title||d.path.split('/').pop();
-  el.onclick=()=>openDoc(d.path);
+  el.onclick=e=>{
+    /* ⌘/Ctrl 点选：批量选择；⇧ 连选；普通点击：清选并打开 */
+    if(e.metaKey||e.ctrlKey){e.preventDefault();railSelAnchor=d.path;railSel.has(d.path)?railSel.delete(d.path):railSel.add(d.path);railSelRender();return;}
+    if(e.shiftKey&&railSelAnchor){
+      const leaves=[...document.querySelectorAll('#rail-list .tree-leaf')];
+      const i0=leaves.findIndex(x=>x.dataset.tpath===railSelAnchor),i1=leaves.findIndex(x=>x.dataset.tpath===d.path);
+      if(i0>=0&&i1>=0){for(const x of leaves.slice(Math.min(i0,i1),Math.max(i0,i1)+1))railSel.add(x.dataset.tpath);railSelRender();return;}
+    }
+    railSel.clear();railSelRender();openDoc(d.path);
+  };
   el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openDoc(d.path);}};
-  el.ondragstart=e=>{e.dataTransfer.setData('text/thirdc-path',d.path)};
+  el.ondragstart=e=>{setDragPayload(e,d.path);e.dataTransfer.effectAllowed='move';};
+  /* 拖到文件行上 = 移到该文件所在的文件夹 */
+  el.ondragover=e=>{if(dragPayloadType(e)){e.preventDefault();el.classList.add('drop-hot');}};
+  el.ondragleave=()=>el.classList.remove('drop-hot');
+  el.ondrop=e=>{
+    e.preventDefault();e.stopPropagation();el.classList.remove('drop-hot');
+    const p=getDragPayload(e);const from=p&&(p.path||p.dir);
+    if(!from||from===d.path)return;
+    movePathTo(from,d.path.split('/').slice(0,-1).join('/')||'Notes');
+  };
+  el.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openCtx(e.clientX,e.clientY,docCtxItems(d.path));};
   return el;
 }
 async function treeLoadKids(f,r,path){
@@ -2387,6 +2595,7 @@ async function treeLoadKids(f,r,path){
       loading.remove();
       const cached=JSON.parse(localStorage.getItem('thirdc_dir_'+path.path)||'null')||b;
       (cached.docs||[]).forEach(d=>kids.appendChild(treeLeaf(d)));
+      (cached.files||[]).forEach(f=>kids.appendChild(treeFileLeaf(f)));
     }).catch(()=>loading.remove());
   }
   f.appendChild(kids);f.dataset.loaded='1';
@@ -2406,30 +2615,47 @@ function treeNode(name,count,path){
       treeExpandedAdd(path.path);
     } else treeExpandedRemove(path.path);
   };
-  r.ondragover=e=>{e.preventDefault();r.classList.add('drop-hot')};
+  r.draggable=true;
+  r.ondragstart=e=>{setDragDirPayload(e,path.path);e.dataTransfer.effectAllowed='move';};
+  r.ondragover=e=>{if(dragPayloadType(e)){e.preventDefault();e.stopPropagation();r.classList.add('drop-hot');}};
   r.ondragleave=()=>r.classList.remove('drop-hot');
   r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();r.click();}};
-  r.ondrop=async e=>{
-    e.preventDefault();r.classList.remove('drop-hot');
-    const from=e.dataTransfer.getData('text/thirdc-path');if(!from)return;
-    const fname=from.split('/').pop();const to=`Notes/${path.path.replace(/^Notes\//,'')}/${fname}`;
-    if(to===from)return;
-    try{await api('/doc/move',{method:'POST',json:{from,to}});toast(`${from} → ${to}`,'ok');await refreshAll();if(current===from)openDoc(to);}
-    catch(err){toast('移动失败：'+err.message,'err');}
+  r.ondrop=e=>{
+    e.preventDefault();e.stopPropagation();r.classList.remove('drop-hot');
+    const p=getDragPayload(e);if(!p)return;
+    if(p.dir){moveDirTo(p.dir,path.path);return;}
+    if(p.path)movePathTo(p.path,path.path);
   };
+  r.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openCtx(e.clientX,e.clientY,folderTreeCtxItems(path.path));};
   f.appendChild(r);return f;
 }
 function renderTreeFromTree(t){
   const box=$('rail-list');box.innerHTML='';
+  railSel.clear();const rsb=document.getElementById('railselbar');if(rsb)rsb.remove();
   (t.dirs||[]).forEach(d=>box.appendChild(treeNode(d.name,d.count,{path:d.path,node:d})));
   // 根目录直属文件（有缓存就列）
   treeDocsOf('Notes').filter(d=>!d.path.slice(6).includes('/')).forEach(d=>box.appendChild(treeLeaf(d)));
+  // 根目录非文档文件：后台补拉（__fullDocs 只有文档）
+  api('/browse?path=Notes').then(b=>{
+    const bx=$('rail-list');
+    (b.files||[]).forEach(f=>{
+      if(!bx.querySelector(`[data-tpath="${CSS.escape(f.path)}"]`))bx.appendChild(treeFileLeaf(f));
+    });
+  }).catch(()=>{});
   if(!t.dirs?.length&&!t.files)box.innerHTML='<div style="padding:14px;color:var(--faint);font-size:12px">还没有文件夹</div>';
   autoExpandTree().then(()=>{
     /* 展开完成后：定位到当前/最近文档 */
     if((mode==='studio'||mode==='organize')&&treeUI.lastDoc)locateInTree(treeUI.lastDoc);
   });
 }
+/* 根列表兜底拖放：拖到侧栏空白处 = 移到 Notes 根目录（子行会 stopPropagation） */
+$('rail-list').ondragover=e=>{if(dragPayloadType(e))e.preventDefault();};
+$('rail-list').ondrop=e=>{
+  const p=getDragPayload(e);if(!p)return;
+  const from=p.path||p.dir;if(!from||from==='Notes')return;
+  e.preventDefault();
+  if(p.dir)moveDirTo(from,'Notes');else movePathTo(from,'Notes');
+};
 /* 展开集合恢复：无已保存集合时默认展开一级；恢复过程中把展开结果登记进状态（下次按此恢复） */
 async function autoExpandTree(){
   const saved=new Set(treeUI.expanded||[]);
@@ -2732,6 +2958,8 @@ function syncTocOpen(){
   const has=($('toc-list')&&$('toc-list').children.length)>0;
   const open=tocPref&&has&&!wide&&$('drawer').classList.contains('open');
   toc.classList.toggle('open',open);
+  /* 学习模式侧栏：TOC 可见时占用左栏，否则让文件树回来（见 slot CSS） */
+  document.body.classList.toggle('toc-on',open);
   if(!open)$('toc-line').classList.remove('on');
 }
 $b('d-toc').onclick=()=>{
@@ -3583,6 +3811,7 @@ function openPalette(q){
 }
 const CMDS=[
   ['新建文档','n',()=>{closeAll();newDoc();}],
+  ['新建文件夹','nf',()=>{closeAll();createFolderIn('Notes');}],
   ['同步外部改动','s',async()=>{closeAll();const r=await api('/sync',{method:'POST'});toast('同步完成，合入 '+r.changed+' 篇');await refreshAll();}],
   ['整理布局','t',()=>{closeAll();tidy();}],
   ['适配视图','f',()=>{closeAll();fit();}],
@@ -4190,7 +4419,7 @@ function buildToc(md){
     const m=/^(#{2,4})\s+(.+)/.exec(line);
     if(m)heads.push({level:m[1].length,text:m[2].trim(),idx:heads.length});
   }
-  if(!heads.length){$('toc').classList.remove('open');$('toc-line').classList.remove('on');return}
+  if(!heads.length){$('toc').classList.remove('open');$('toc-line').classList.remove('on');syncTocOpen();return}
   heads.forEach((h,i)=>{
     const el=document.createElement('div');
     el.className=`toc-item lv${h.level}`;el.textContent=h.text;
@@ -4488,7 +4717,7 @@ const MODES={
     toast('学习模式：文档工作台阅读，Esc 返回 Studio');
   },exit(){
     /* 还原进入前的抽屉状态：没开过就收回去；编辑态交还 Studio */
-    if(!learnPrevDrawerOpen){$('drawer').classList.remove('open');$('toc').classList.remove('open');$('toc-line').classList.remove('on');}
+    if(!learnPrevDrawerOpen){$('drawer').classList.remove('open');$('toc').classList.remove('open');$('toc-line').classList.remove('on');document.body.classList.remove('toc-on');}
     else $('d-body').classList.remove('view');
     memoSlotSet(false);
   }},
@@ -6771,6 +7000,10 @@ function docCtxItems(path){
     isCsv?{label:'📊 转为 Markdown 表格',fn:()=>csvToTableDoc(path)}:null,
     'sep',
     {label:'ℹ️ 属性',fn:()=>showDocProps(path)},
+    ...(isDesk()?[
+      {label:'🖥 在访达中显示',fn:()=>nativeReveal(path)},
+      {label:'↗ 用系统应用打开',fn:()=>nativeOpen(path)},
+    ]:[]),
     {label:'⬇️ 下载原文件',fn:()=>{location.href=BASE+'/doc/raw?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(path);}},
     'sep',
     {label:'🗑 移入回收站',danger:true,fn:async()=>{
@@ -6785,6 +7018,10 @@ function folderCtxItems(name){
   return [
     {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(dir);toast('已复制 '+dir,'ok');}},
     {label:'📂 在画布中打开',fn:()=>{browsePath=dir;loadGraph();}},
+    ...(isDesk()?[
+      {label:'🖥 在访达中显示',fn:()=>nativeReveal(dir)},
+      {label:'↗ 用系统应用打开',fn:()=>nativeOpen(dir)},
+    ]:[]),
     'sep',
     {label:'📋 粘贴文档到此处',fn:()=>pasteDocInto(dir)},
     {label:'📥 导入并转码…',fn:()=>filePickerTranscode(dir)},
@@ -6806,15 +7043,167 @@ async function renameDoc(path){
 }
 async function moveDocTo(path){
   const name=path.split('/').pop();
-  const dir=await uiPrompt('目标目录（Notes/ 下，如 Sources/upload）',path.split('/').slice(0,-1).join('/').replace(/^Notes\/?/,''));
-  if(dir===null)return;
-  const to='Notes/'+dir.split('/').map(s=>s.trim()).filter(Boolean).join('/')+'/'+name;
+  const fromDir=path.split('/').slice(0,-1).join('/')||'Notes';
+  const toDir=await pickFolder(fromDir,`移动「${name}」到…`);
+  if(!toDir)return;
+  const to=(toDir==='Notes'?'Notes':toDir)+'/'+name;
   if(to===path){toast('位置未变','ok');return}
   try{
     await api('/doc/move',{method:'POST',json:{from:path,to}});
     toast(`已移动 → ${to}`,'ok');await refreshAll();
     if(current===path)openDoc(to);
   }catch(e){toast('移动失败：'+e.message,'err')}
+}
+/* ── 文件夹选择器：可视化目录导航，替代手输路径（面包屑下钻 / 搜索跳转 / 新建 / 桌面端系统对话框）── */
+let _pickDirDone=null;
+function allVaultDirs(){
+  const set=new Set(['Notes']);
+  (window.__fullDocs||[]).forEach(d=>{const parts=d.path.split('/');for(let i=1;i<parts.length-1;i++)set.add(parts.slice(0,i+1).join('/'))});
+  try{const walk=n=>{(n.dirs||[]).forEach(x=>{set.add(x.path);walk(x)})};walk(cacheGet('tree'))}catch{}
+  return [...set].sort();
+}
+function pickFolder(startDir,title){
+  return new Promise(resolve=>{
+    if(_pickDirDone)_pickDirDone(null); /* 单例：重复打开先落空 */
+    let cur=startDir&&startDir.startsWith('Notes/')?startDir:'Notes';
+    const ov=document.createElement('div');ov.id='pickdir-ov';
+    ov.innerHTML=`<div class="pd-mask"></div><div class="pd-card">
+      <div class="panel-head"><h3>${title||'选择目标文件夹'}</h3><button class="icon-btn" id="pd-x">✕</button></div>
+      <div class="pd-crumb" id="pd-crumb"></div>
+      <div class="pd-search-row"><input id="pd-search" placeholder="搜索文件夹名，Enter 跳转第一个结果"></div>
+      <div class="pd-list" id="pd-list"></div>
+      <div class="pd-foot">
+        <button class="rail-act" id="pd-new">＋ 新建文件夹</button>
+        ${window.__TAURI_INTERNALS__?'<button class="rail-act" id="pd-native" title="调用系统目录对话框（须选库内 Notes/ 目录）">系统目录…</button>':''}
+        <span style="flex:1"></span>
+        <button class="rail-act" id="pd-cancel">取消</button>
+        <button class="rail-act accent" id="pd-ok">选择此处</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const done=v=>{_pickDirDone=null;ov.remove();document.removeEventListener('keydown',onEsc,true);resolve(v);};
+    _pickDirDone=done;
+    const onEsc=e=>{if(e.key==='Escape'){e.stopPropagation();done(null);}};
+    document.addEventListener('keydown',onEsc,true);
+    ov.querySelector('.pd-mask').onclick=()=>done(null);
+    $('pd-x').onclick=()=>done(null);
+    $('pd-cancel').onclick=()=>done(null);
+    $('pd-ok').onclick=()=>done(cur);
+    $('pd-new').onclick=async()=>{await createFolderIn(cur);render();};
+    const nat=$('pd-native');
+    if(nat)nat.onclick=async()=>{
+      try{
+        const abs=await tauriInvoke('desktop_pick_folder',{title:'选择库内目标文件夹'});
+        if(!abs)return;
+        const st=await api('/status');const root=String(st.root||'').replace(/\\/g,'/').replace(/\/+$/,'');
+        let rel=String(abs).replace(/\\/g,'/');
+        if(root&&rel.startsWith(root+'/'))rel=rel.slice(root.length+1);
+        if(!rel.startsWith('Notes/')||rel==='Notes'){toast('所选目录不在库的 Notes/ 内','err');return}
+        done(rel);
+      }catch(e){toast('系统对话框失败：'+(e.message||e),'err');}
+    };
+    function render(){
+      const dirs=allVaultDirs();
+      const kids=dirs.filter(p=>p!==cur&&p.startsWith(cur+'/')&&!p.slice(cur.length+1).includes('/'));
+      /* 面包屑 */
+      const parts=cur.split('/');
+      $('pd-crumb').innerHTML=parts.map((p,i)=>{
+        const target=parts.slice(0,i+1).join('/');
+        return `<button data-pd="${target}">${i===0?'📚 ':''}${p}</button>`;
+      }).join('<span class="pd-sep">›</span>');
+      $('pd-crumb').querySelectorAll('button').forEach(b=>b.onclick=()=>{cur=b.dataset.pd;render();});
+      /* 列表：上一层 + 子文件夹 */
+      const rows=[];
+      if(cur!=='Notes')rows.push(`<div class="tree-row pd-up"><span class="nm">↩ 上一层</span></div>`);
+      rows.push(...kids.map(p=>{
+        const name=p.split('/').pop();
+        const sub=dirs.filter(x=>x!==p&&x.startsWith(p+'/')&&!x.slice(p.length+1).includes('/')).length;
+        return `<div class="tree-row pd-dir" data-pd="${p}"><svg class="chev" viewBox="0 0 24 24" style="opacity:0"><path d="m9 6 6 6-6 6"/></svg><span class="nm"></span><span class="ct">${sub?sub+' 子目录':'空'}</span></div>`;
+      }));
+      $('pd-list').innerHTML=rows.join('')||'<div style="padding:14px;color:var(--faint);font-size:12px">此目录下没有子文件夹</div>';
+      $('pd-list').querySelectorAll('.pd-dir .nm').forEach(n=>n.textContent=n.parentElement.dataset.pd.split('/').pop());
+      $('pd-list').querySelectorAll('.pd-dir').forEach(r=>r.onclick=()=>{cur=r.dataset.pd;$('pd-search').value='';render();});
+      const up=$('pd-list').querySelector('.pd-up');
+      if(up)up.onclick=()=>{cur=cur.split('/').slice(0,-1).join('/')||'Notes';render();};
+      $('pd-search').oninput=()=>{
+        const q=$('pd-search').value.trim().toLowerCase();if(!q){render();return;}
+        const hits=dirs.filter(p=>p.toLowerCase().includes(q)).slice(0,50);
+        $('pd-list').innerHTML=hits.map(p=>`<div class="tree-row pd-dir" data-pd="${p}"><span class="nm"></span><span class="ct">${p}</span></div>`).join('')||'<div style="padding:14px;color:var(--faint);font-size:12px">无匹配</div>';
+        $('pd-list').querySelectorAll('.pd-dir .nm').forEach(n=>n.textContent=n.parentElement.dataset.pd.split('/').pop());
+        $('pd-list').querySelectorAll('.pd-dir').forEach(r=>r.onclick=()=>{cur=r.dataset.pd;$('pd-search').value='';render();});
+      };
+      $('pd-search').onkeydown=e=>{
+        if(e.key==='Enter'){const f=$('pd-list').querySelector('.pd-dir');if(f){cur=f.dataset.pd;$('pd-search').value='';render();}}
+        e.stopPropagation();
+      };
+      const t=$('pd-search');if(document.activeElement!==t)t.focus();
+    }
+    render();
+  });
+}
+/* ── 文件夹操作（侧栏右键 / 选择器内部共用）── */
+function folderTreeCtxItems(dir){
+  return [
+    {label:'📁 新建子文件夹…',fn:()=>createFolderIn(dir)},
+    {label:'📝 在此新建文档',fn:()=>newDocIn(dir)},
+    'sep',
+    {label:'📂 移动文件夹到…',fn:async()=>{const to=await pickFolder(dir,'移动文件夹到…');if(to&&to!==dir)moveDirTo(dir,to);}},
+    {label:'📑 复制文件夹',fn:async()=>{
+      const name=dir.split('/').pop();const parent=dir.split('/').slice(0,-1).join('/')||'Notes';
+      let to=parent+'/'+name+'-副本';
+      for(let i=2;i<100;i++){
+        try{
+          await api('/dir/copy',{method:'POST',json:{from:dir,to}});
+          toast('已复制 → '+to,'ok');await refreshAll();return;
+        }catch(e){
+          if(/已存在/.test(String(e.message||e))){to=parent+'/'+name+'-副本'+i;continue;}
+          toast('复制失败：'+(e.message||e),'err');return;
+        }
+      }
+      toast('复制失败：目标名冲突过多','err');
+    }},
+    {label:'✏️ 重命名文件夹…',fn:async()=>{
+      const name=dir.split('/').pop();const parent=dir.split('/').slice(0,-1).join('/')||'Notes';
+      const nn=await uiPrompt('新文件夹名',name);if(!nn||!nn.trim()||nn===name)return;
+      moveDirTo(dir,parent+'/'+nn.trim().replace(/[\/\\]+/g,'-'));
+    }},
+    'sep',
+    {label:'🗂 在画布中打开',fn:()=>{browsePath=dir;loadGraph();}},
+    {label:'📋 复制文件夹路径',fn:()=>{navigator.clipboard.writeText(dir);toast('已复制 '+dir,'ok');}},
+    ...(isDesk()?[
+      {label:'🖥 在访达中显示',fn:()=>nativeReveal(dir)},
+      {label:'↗ 用系统应用打开',fn:()=>nativeOpen(dir)},
+    ]:[]),
+    'sep',
+    {label:'🗑 移入回收站',danger:true,fn:async()=>{
+      if(!(await uiConfirm(`移入回收站？${dir}\n（整个文件夹连同内容一起软删除，可在 ⌘K「回收站」恢复）`,{ok:'移入回收站'})))return;
+      try{await api('/doc?path='+encodeURIComponent(dir),{method:'DELETE'});toast('已移入回收站：'+dir,'ok');await refreshAll();}
+      catch(e){toast('删除失败：'+e.message,'err');}
+    }},
+    {label:'🧹 删除空文件夹',fn:async()=>{
+      if(!(await uiConfirm(`删除空文件夹 ${dir}？`,{ok:'删除'})))return;
+      try{await api('/dir?path='+encodeURIComponent(dir),{method:'DELETE'});toast('已删除 '+dir,'ok');await refreshAll();}
+      catch(e){toast('删除失败：'+e.message,'err');}
+    }},
+  ];
+}
+async function createFolderIn(dir){
+  const name=await uiPrompt(`新文件夹名（位于 ${dir}）`,'');
+  if(!name||!name.trim())return;
+  const clean=name.trim().replace(/[\/\\]+/g,'-');
+  try{await api('/dir',{method:'POST',json:{path:dir+'/'+clean}});toast(`已创建 ${dir}/${clean}`,'ok');await refreshAll();}
+  catch(e){toast('创建失败：'+e.message,'err');}
+}
+async function newDocIn(dir){
+  const title=await uiPrompt(`新文档标题（保存到 ${dir}/，可写 子目录/标题）`,'未命名');
+  if(!title)return;
+  const parts=title.split('/').map(s=>s.trim()).filter(Boolean);
+  const name=parts.pop()||'未命名';
+  const slug=name.replace(/[^\p{L}\p{N}\u4e00-\u9fa5]+/gu,'-').replace(/^-|-$/g,'').toLowerCase()||('note-'+Date.now());
+  const path=dir+'/'+(parts.length?parts.join('/')+'/':'')+slug+'.md';
+  try{
+    await api('/doc?path='+encodeURIComponent(path),{method:'PUT',body:'# '+name+'\n\n',headers:{'content-type':'text/markdown'}});
+    await refreshAll();await openDoc(path);toast(`已创建：${path}`,'ok');
+  }catch(e){toast('创建失败：'+e.message,'err');}
 }
 async function duplicateDoc(path){
   const m=path.match(/^(.*\/)([^/]+?)(\.[^/]*)?$/);
@@ -7692,10 +8081,53 @@ openSettings=async function(){
   try{
     document.querySelectorAll('[data-settheme]').forEach(x=>{x.style.borderColor=x.dataset.settheme===(localStorage.getItem('thirdc_theme')||'auto')?'var(--accent)':''});
     document.getElementById('set-nick').value=myNick||'';
-    document.getElementById('set-version').textContent='v0.1.9';
+    fillAppVersion();
     fillVaultInfo();
   }catch{}
 };
+/* 关于页 · 版本与在线更新：桌面端走 Tauri updater 自更新，浏览器版随服务器更新 */
+async function fillAppVersion(){
+  const el=document.getElementById('set-version');if(!el)return;
+  try{
+    if(window.__TAURI_INTERNALS__){
+      const v=await window.__TAURI_INTERNALS__.invoke('desktop_app_version');
+      el.textContent='v'+v;
+    }else{
+      const r=await fetch(BASE+'/version').then(x=>x.json()).catch(()=>null);
+      if(r&&r.version)el.textContent='v'+r.version;
+    }
+  }catch(e){}
+}
+async function checkAppUpdate(){
+  const st=document.getElementById('set-update-status');
+  const actions=document.getElementById('set-update-actions');
+  const btn=document.getElementById('set-check-update');
+  if(!st)return;
+  if(!window.__TAURI_INTERNALS__){st.textContent='浏览器版随服务器更新；桌面端支持一键自更新。';return}
+  btn&&(btn.disabled=true);st.textContent='正在检查…';actions&&(actions.style.display='none');
+  try{
+    const r=await window.__TAURI_INTERNALS__.invoke('desktop_check_update');
+    if(r&&r.available){
+      st.innerHTML='发现新版本 <b style="color:var(--accent)">v'+r.version+'</b>'+(r.notes?'<div style="font-size:11.5px;color:var(--faint);margin-top:4px">'+String(r.notes).slice(0,240)+'</div>':'');
+      actions&&(actions.style.display='block');
+    }else{
+      st.textContent='已是最新版本'+(r&&r.current?'（v'+r.current+'）':'');
+    }
+  }catch(e){st.textContent='检查失败：'+((e&&e.message)||e)}
+  finally{btn&&(btn.disabled=false)}
+}
+async function installAppUpdate(){
+  const st=document.getElementById('set-update-status');
+  const btn=document.getElementById('set-install-update');
+  if(!st)return;
+  btn&&(btn.disabled=true);st.textContent='正在下载并安装…（完成后自动重启）';
+  try{
+    await window.__TAURI_INTERNALS__.invoke('desktop_install_update');
+    st.textContent='更新完成，即将重启…';
+  }catch(e){st.textContent='更新失败：'+((e&&e.message)||e);btn&&(btn.disabled=false)}
+}
+document.getElementById('set-check-update')&&(document.getElementById('set-check-update').onclick=checkAppUpdate);
+document.getElementById('set-install-update')&&(document.getElementById('set-install-update').onclick=installAppUpdate);
 async function openSettings(){
   overlayPrevFocus=document.activeElement;
   const ov=document.getElementById('settings-ov');

@@ -514,6 +514,32 @@ pub fn list_docs(vault: &Vault) -> Result<Vec<PathBuf>, StoreError> {
     Ok(out)
 }
 
+/// 非文档文件（Notes/ 下任意扩展名）：文件即真相——内核不解析 ≠ 不可检索不可管理。
+pub fn list_non_doc_files(vault: &Vault) -> Result<Vec<PathBuf>, StoreError> {
+    let mut out = Vec::new();
+    for entry in walkdir::WalkDir::new(vault.notes_dir())
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let p = entry.path();
+        let name = entry.file_name().to_string_lossy();
+        if name.starts_with("._") || name == ".DS_Store" {
+            continue;
+        }
+        let is_doc = p.is_file()
+            && p.extension().map_or(false, |e| {
+                let e = e.to_string_lossy();
+                e == "md" || e == "html" || e == "htm"
+                    || VERBATIM_EXTS.contains(&e.as_ref())
+            });
+        if p.is_file() && !is_doc {
+            out.push(p.strip_prefix(&vault.root).unwrap().to_path_buf());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
