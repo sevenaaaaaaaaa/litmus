@@ -798,7 +798,6 @@ pub fn run() {
         desktop_render_page,
         ego_render_result,
         desktop_prefs_save,
-        desktop_focus_main,
         desktop_app_version
     ]);
 
