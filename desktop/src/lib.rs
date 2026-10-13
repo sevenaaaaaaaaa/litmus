@@ -1018,9 +1018,13 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
+                /* 红绿灯与 56px 顶栏同一条中线（y=28）。tao 的 inset：标题栏容器高 = 按钮高(16)+y，
+                   按钮离容器底 6 → 按钮中心 = y + 2。x=18：三灯落在 18/38/58，止于 72，
+                   顶栏首个控件从 88 起（壳里 --tl-inset）。改顶栏高度时两处一起改。 */
                 builder = builder
                     .hidden_title(true)
-                    .title_bar_style(tauri::TitleBarStyle::Overlay);
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(18.0, 26.0)));
             }
 
             builder.build()?;
@@ -1052,6 +1056,18 @@ pub fn run() {
                 }
                 tauri::WindowEvent::Destroyed if window.label() == "main" => {
                     window.app_handle().exit(0);
+                }
+                // 全屏时系统收起红绿灯：通知壳收回顶栏左侧留白（html.fullscreen）
+                #[cfg(target_os = "macos")]
+                tauri::WindowEvent::Resized(_) if window.label() == "main" => {
+                    use std::sync::atomic::{AtomicBool, Ordering};
+                    static FS: AtomicBool = AtomicBool::new(false);
+                    let fs = window.is_fullscreen().unwrap_or(false);
+                    if FS.swap(fs, Ordering::Relaxed) != fs {
+                        if let Some(w) = window.app_handle().get_webview_window("main") {
+                            let _ = w.eval(&format!("document.documentElement.classList.toggle('fullscreen',{fs})"));
+                        }
+                    }
                 }
                 _ => {}
             }

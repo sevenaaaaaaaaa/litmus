@@ -263,3 +263,10 @@ server/web/index.html   <style> 只放本页独有部件
 
 ![画布：之前 / 之后](../img/craft/round2-canvas.png)
 ![阅读：之前 / 之后](../img/craft/round2-reading.png)
+
+## 标题栏与红绿灯（macOS）
+
+- 红绿灯由原生层定位：`traffic_light_position(18, 26)`（desktop/src/lib.rs），三灯中心与 56px 顶栏中线 y=28 对齐，横向落在 18…72。
+- 顶栏首个控件从 `--tl-inset`（88px）起；全屏时系统收起红绿灯，Rust 端给 `<html>` 加 `fullscreen`，留白收回 12px。
+- 红绿灯右侧紧挨侧栏开关 `#rail-toggle`（⌘\），是唯一的侧栏开关；Web 端同位。
+- 改顶栏高度（`--chrome-h`）时，原生 y 与 `--tl-inset` 一起改。
