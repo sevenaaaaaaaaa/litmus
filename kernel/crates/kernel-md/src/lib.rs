@@ -4,6 +4,8 @@
 //! `<!-- tc:block raw -->` fenced 容器保真不丢。序列化是确定性的：
 //! 同一块模型永远产出字节相同的 MD，保证 git diff 干净、外部编辑器互操作无损。
 
+pub mod tidy;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -502,10 +504,84 @@ pub fn inline_md(src: &str) -> String {
         if code {
             out.push_str(&format!("<code>{t}</code>"));
         } else {
-            out.push_str(&inline_spans(&t));
+            for (math, seg) in math_split(&t) {
+                if math {
+                    out.push_str(&format!("<span class=\"math-inline\">\\({seg}\\)</span>"));
+                } else {
+                    out.push_str(&inline_spans(&seg));
+                }
+            }
         }
     }
     out
+}
+
+/// 行内公式 `$…$`：开记号右侧、闭记号左侧不能是空白，闭记号后不能紧跟数字（排除「$5 和 $10」）。
+fn math_split(s: &str) -> Vec<(bool, String)> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '$' && chars.get(i + 1).map_or(false, |c| !c.is_whitespace() && *c != '$') && (i == 0 || chars[i - 1] != '\\') {
+            if let Some(rel) = chars[i + 1..].iter().position(|c| *c == '$') {
+                let j = i + 1 + rel;
+                let inner: String = chars[i + 1..j].iter().collect();
+                let close_ok = !chars[j - 1].is_whitespace() && chars.get(j + 1).map_or(true, |c| !c.is_ascii_digit());
+                if close_ok && !inner.is_empty() {
+                    if !buf.is_empty() {
+                        out.push((false, std::mem::take(&mut buf)));
+                    }
+                    out.push((true, inner));
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        buf.push(chars[i]);
+        i += 1;
+    }
+    if !buf.is_empty() || out.is_empty() {
+        out.push((false, buf));
+    }
+    out
+}
+
+/// 单独成段的视频链接 → 内嵌播放器（YouTube / Bilibili / Vimeo / 直链视频）。
+fn video_embed(text: &str) -> Option<String> {
+    let u = text.trim();
+    if u.contains(char::is_whitespace) || !(u.starts_with("https://") || u.starts_with("http://")) {
+        return None;
+    }
+    let frame = |src: String| {
+        format!("<div class=\"kb-embed\"><iframe src=\"{}\" allowfullscreen loading=\"lazy\" referrerpolicy=\"no-referrer\"></iframe></div>\n", esc(&src))
+    };
+    let after = |k: &str| u.split(k).nth(1).map(|r| r.split(|c| c == '&' || c == '?' || c == '#' || c == '/').next().unwrap_or("").to_string());
+    if u.contains("youtube.com/watch") {
+        let id = u.split("v=").nth(1)?.split('&').next()?.to_string();
+        return Some(frame(format!("https://www.youtube-nocookie.com/embed/{id}")));
+    }
+    if u.contains("youtu.be/") {
+        return Some(frame(format!("https://www.youtube-nocookie.com/embed/{}", after("youtu.be/")?)));
+    }
+    if u.contains("bilibili.com/video/") {
+        let id = after("bilibili.com/video/")?;
+        let key = if id.starts_with("BV") { "bvid" } else { "aid" };
+        let id = id.trim_start_matches("av");
+        return Some(frame(format!("https://player.bilibili.com/player.html?{key}={id}&autoplay=0")));
+    }
+    if u.contains("vimeo.com/") {
+        let id = after("vimeo.com/")?;
+        if id.chars().all(|c| c.is_ascii_digit()) && !id.is_empty() {
+            return Some(frame(format!("https://player.vimeo.com/video/{id}")));
+        }
+    }
+    let low = u.to_ascii_lowercase();
+    let path = low.split(['?', '#']).next().unwrap_or("");
+    if [".mp4", ".webm", ".mov", ".m4v"].iter().any(|x| path.ends_with(x)) {
+        return Some(format!("<div class=\"kb-embed\"><video src=\"{}\" controls preload=\"metadata\"></video></div>\n", esc(u)));
+    }
+    None
 }
 
 /// 列表项：`[ ]` / `[x]` 渲染成只读勾选框（任务清单）
@@ -680,6 +756,8 @@ pub fn to_html(doc: &DocModel) -> String {
     let title_esc = esc(&title);
     let n = doc.blocks.len();
     let mut body = String::new();
+    let mut has_math = false;
+    let mut has_mermaid = false;
     if doc.title.is_some() {
         // 自包含文档里标题也是 H1：人类可读、agent 可解析、往返一致
         body.push_str(&format!("<h1>{}</h1>\n", esc(doc.title.as_deref().unwrap_or(""))));
@@ -693,10 +771,26 @@ pub fn to_html(doc: &DocModel) -> String {
             None => format!(" id=\"b{bi}\""),
         };
         match b {
-            Block::Paragraph { text, .. } => body.push_str(&format!("<p{id_attr}>{}</p>\n", inline_md(text))),
+            Block::Paragraph { text, .. } => {
+                let t = text.trim();
+                if t.len() > 4 && t.starts_with("$$") && t.ends_with("$$") {
+                    has_math = true;
+                    body.push_str(&format!("<div{id_attr} class=\"math-display\">\\[{}\\]</div>\n", esc(t[2..t.len() - 2].trim())));
+                } else if let Some(v) = video_embed(t) {
+                    body.push_str(&v);
+                } else {
+                    let h = inline_md(text);
+                    has_math |= h.contains("class=\"math-inline\"");
+                    body.push_str(&format!("<p{id_attr}>{h}</p>\n"));
+                }
+            }
             Block::Heading { level, text, .. } => {
                 let l = (*level).clamp(1, 6);
                 body.push_str(&format!("<h{l}{id_attr}>{}</h{l}>\n", inline_md(text)))
+            }
+            Block::Code { lang, text, .. } if lang.as_deref() == Some("mermaid") => {
+                has_mermaid = true;
+                body.push_str(&format!("<pre{id_attr} class=\"mermaid\">{}</pre>\n", esc(text)))
             }
             Block::Code { lang, text, .. } => {
                 let cls = lang
@@ -730,6 +824,18 @@ pub fn to_html(doc: &DocModel) -> String {
             Block::Divider { .. } => body.push_str("<hr>\n"),
             Block::Raw { text, .. } => body.push_str(text),
         }
+    }
+    // 公式 / 流程图：有才加载（CDN，离线时保留源码可读）
+    if has_math {
+        body.push_str(concat!(
+            "<link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css\">",
+            "<script defer src=\"https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js\"></script>",
+            "<script defer src=\"https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js\" ",
+            "onload=\"renderMathInElement(document.body,{delimiters:[{left:'\\\\[',right:'\\\\]',display:true},{left:'\\\\(',right:'\\\\)',display:false}],throwOnError:false})\"></script>\n"
+        ));
+    }
+    if has_mermaid {
+        body.push_str("<script type=\"module\">import m from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';m.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'neutral',securityLevel:'strict'});</script>\n");
     }
     format!(
         "<!doctype html>\n<html lang=\"zh\"><head><meta charset=\"utf-8\">\n\
@@ -780,6 +886,10 @@ del{{color:var(--doc-muted)}}\n\
 .kb-hashtag{{color:var(--doc-accent);font-weight:550;font-size:.92em}}\n\
 .kb-task{{display:inline-flex;gap:.4em;align-items:baseline}}.kb-task.done{{color:var(--doc-muted);text-decoration:line-through}}\n\
 li{{margin:.25em 0}}\n\
+.kb-embed{{position:relative;aspect-ratio:16/9;margin:1.3em 0;border-radius:14px;overflow:hidden;background:var(--doc-soft)}}\n\
+.kb-embed iframe,.kb-embed video{{position:absolute;inset:0;width:100%;height:100%;border:0}}\n\
+.math-display{{margin:1.2em 0;overflow-x:auto;text-align:center}}\n\
+pre.mermaid{{background:var(--doc-soft);color:var(--doc-fg);box-shadow:none;text-align:center}}\n\
 </style>\n\
 </head><body><article data-kb-format=\"ai-html\" data-block-count=\"{n}\">\n{}\n</article></body></html>\n",
         title_esc,
@@ -791,6 +901,22 @@ li{{margin:.25em 0}}\n\
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn math_mermaid_video_render() {
+        let doc = from_markdown("# T\n\n面积 $\\pi r^2$，价格 $5 和 $10。\n\n$$\nE = mc^2\n$$\n\n```mermaid\ngraph TD\nA-->B\n```\n\nhttps://www.bilibili.com/video/BV1xx411c7mD\n\nhttps://youtu.be/abc123\n").unwrap();
+        let h = to_html(&doc);
+        assert!(h.contains("<span class=\"math-inline\">\\(\\pi r^2\\)</span>"), "{h}");
+        assert!(h.contains("价格 $5 和 $10"), "货币不是公式: {h}");
+        assert!(h.contains("class=\"math-display\">\\[E = mc^2\\]"), "{h}");
+        assert!(h.contains("<pre id=\"b2\" class=\"mermaid\">graph TD\nA--&gt;B"), "{h}");
+        assert!(h.contains("player.bilibili.com/player.html?bvid=BV1xx411c7mD"), "{h}");
+        assert!(h.contains("youtube-nocookie.com/embed/abc123"), "{h}");
+        assert!(h.contains("katex.min.js") && h.contains("mermaid.esm.min.mjs"));
+        // 没有公式/流程图的文档不加载任何外部脚本
+        let plain = to_html(&from_markdown("# T\n\n普通段落。\n").unwrap());
+        assert!(!plain.contains("cdn.jsdelivr"));
+    }
 
     #[test]
     fn inline_markdown_renders_and_stays_safe() {

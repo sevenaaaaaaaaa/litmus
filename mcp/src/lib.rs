@@ -1748,6 +1748,32 @@ pub mod agent {
         Outcome { mode: "command", reply, steps, tokens: 0 }
     }
 
+    /// 纯文本补全：不给工具、不碰库——排版 / 起标题这类「只变形不行动」的任务用它，
+    /// 杜绝模型顺手调用 write_doc 之类的副作用。
+    pub async fn complete(cfg: &AiConfig, system: &str, user: &str) -> anyhow::Result<String> {
+        let key = cfg.resolved_key();
+        let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+        let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(180)).build()?;
+        let mut req = client.post(&url).json(&json!({
+            "model": cfg.model,
+            "temperature": 0.1,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user },
+            ],
+        }));
+        if !key.is_empty() {
+            req = req.bearer_auth(&key);
+        }
+        let resp = req.send().await?;
+        let status = resp.status();
+        let body: Value = resp.json().await?;
+        if !status.is_success() {
+            anyhow::bail!("模型接口返回 {status}: {}", body);
+        }
+        Ok(body["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
+    }
+
     /// AI 模式：模型选择工具 → 执行 → 回灌结果，直到给出最终答复。
     pub async fn run_ai(
         server: &McpServer,

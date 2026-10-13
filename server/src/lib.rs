@@ -208,6 +208,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/boards", get(boards_list).post(boards_create))
         .route("/boards/{name}", axum::routing::delete(boards_delete))
         .route("/doc/move", post(move_doc))
+        .route("/doc/tidy", post(doc_tidy))
+        .route("/doc/autoname", post(doc_autoname))
         .route("/doc/copy", post(copy_doc))
         .route("/dir", post(create_dir).delete(remove_dir))
         .route("/dir/move", post(move_dir))
@@ -892,6 +894,307 @@ async fn agent_apply(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         return Json(json!({"op":op,"mode":"ai","placement":"writeback","path":path})).into_response();
     }
     Json(json!({"op":op,"mode":"ai","placement":"replace","markdown":out})).into_response()
+}
+
+/* ───────── 魔法排版 / 自动命名 ───────── */
+
+/// POST /doc/tidy {markdown, mode: diagnose|rule|ai, pangu?} → {markdown, issues, total, changed, mode, warning?}
+/// 规则版离线可用；AI 版先跑规则再交给模型（无工具），逐块校验「内容没被改写」，不过关的块退回规则结果。
+async fn doc_tidy(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let md = req.get("markdown").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let mode = req.get("mode").and_then(|v| v.as_str()).unwrap_or("rule").to_string();
+    let opts = kernel_core::tidy::TidyOptions {
+        promote_title: req.get("title").and_then(|v| v.as_bool()).unwrap_or(true),
+        pangu: req.get("pangu").and_then(|v| v.as_bool()).unwrap_or(false),
+    };
+    let rule = kernel_core::tidy::tidy(&md, &opts);
+    if mode == "diagnose" {
+        return Json(json!({ "mode": "diagnose", "issues": rule.issues, "total": rule.total, "changed": rule.changed })).into_response();
+    }
+    if mode != "ai" {
+        return Json(json!({ "mode": "rule", "markdown": rule.markdown, "issues": rule.issues, "total": rule.total, "changed": rule.changed })).into_response();
+    }
+    let ai = st.kernel.lock().unwrap().vault.config.ai.clone();
+    let Some(cfg) = ai.filter(|c| !c.base_url.is_empty()) else {
+        return err(StatusCode::NOT_IMPLEMENTED, "AI 排版需要先在「设置 → 连接」配置模型；规则排版离线可用").into_response();
+    };
+    let chunks = tidy_chunks(&rule.markdown, 6000);
+    let mut set = tokio::task::JoinSet::new();
+    for (idx, c) in chunks.iter().cloned().enumerate() {
+        let cfg = cfg.clone();
+        set.spawn(async move {
+            let r = thirdc_mcp::agent::complete(&cfg, TIDY_SYSTEM, &c).await;
+            (idx, c, r)
+        });
+    }
+    let mut parts: Vec<(usize, String, bool)> = Vec::new();
+    let mut errors = Vec::new();
+    while let Some(j) = set.join_next().await {
+        let Ok((idx, orig, r)) = j else { continue };
+        match r {
+            Ok(out) => {
+                let out = strip_fence_md(&out);
+                let ok = content_preserved(&orig, &out);
+                parts.push((idx, if ok { out } else { orig }, ok));
+            }
+            Err(e) => {
+                errors.push(e.to_string());
+                parts.push((idx, orig, false));
+            }
+        }
+    }
+    parts.sort_by_key(|p| p.0);
+    let rejected = parts.iter().filter(|p| !p.2).count();
+    let joined = parts.into_iter().map(|p| p.1.trim().to_string()).collect::<Vec<_>>().join("\n\n");
+    // AI 产物再过一遍规则做收口（统一空行 / 表格 / 序号），保证幂等
+    let fin = kernel_core::tidy::tidy(&joined, &opts);
+    let warning = if !errors.is_empty() {
+        Some(format!("模型调用失败，{} 段保留规则排版：{}", rejected, errors[0]))
+    } else if rejected > 0 {
+        Some(format!("{rejected} 段 AI 结果改动了文字内容，已退回规则排版（只动格式不动字）"))
+    } else {
+        None
+    };
+    Json(json!({
+        "mode": "ai", "markdown": fin.markdown, "issues": rule.issues, "total": rule.total,
+        "changed": fin.markdown != md, "chunks": chunks.len(), "rejected": rejected, "warning": warning,
+    }))
+    .into_response()
+}
+
+const TIDY_SYSTEM: &str = "你是 Markdown 排版修复器。输入是从网页、Word、飞书、PDF 等处复制来的文本，格式可能已经损坏。\
+只修复格式，绝不改写、删减、增加任何文字内容（标点、数字、链接、专有名词都保持原样）。可以做的事：\
+恢复标题层级（# / ## / ###）；把挤在一段里的条目拆成列表；把本该独立成行的内容分行；把被硬换行打断的句子接上；\
+把表格数据还原为 Markdown 表格；把 JSON、代码、命令行放进带语言标记的代码块并保持原文；把流程图描述放进 ```mermaid 代码块；\
+把公式写成 $…$ 或 $$…$$；修正列表序号；去掉多余空格和空行。\
+直接输出修复后的完整 Markdown，不要解释，不要用代码围栏包裹全文。";
+
+/// 按标题 / 空行切块，每块不超过 limit 字符（代码块不切开）。
+fn tidy_chunks(md: &str, limit: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut cur = String::new();
+    let mut in_fence = false;
+    for line in md.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+        }
+        let boundary = !in_fence && (line.starts_with("# ") || line.starts_with("## ") || line.trim().is_empty());
+        if boundary && cur.chars().count() >= limit {
+            chunks.push(std::mem::take(&mut cur));
+        }
+        cur.push_str(line);
+        cur.push('\n');
+    }
+    if !cur.trim().is_empty() {
+        chunks.push(cur);
+    }
+    if chunks.is_empty() {
+        chunks.push(String::new());
+    }
+    chunks
+}
+
+fn strip_fence_md(s: &str) -> String {
+    let t = s.trim();
+    for open in ["```markdown\n", "```md\n", "```\n"] {
+        if let Some(rest) = t.strip_prefix(open) {
+            if let Some(inner) = rest.strip_suffix("```") {
+                return inner.trim().to_string();
+            }
+        }
+    }
+    t.to_string()
+}
+
+/// 内容保真：去掉空白与 Markdown 记号后，两边字符多重集的重合率 ≥ 96%。
+fn content_preserved(a: &str, b: &str) -> bool {
+    fn bag(s: &str) -> HashMap<char, usize> {
+        let mut m = HashMap::new();
+        for c in s.chars() {
+            if c.is_whitespace() || "#*-_>|`[]()$~:：•●▪◦·+=".contains(c) {
+                continue;
+            }
+            *m.entry(c).or_insert(0) += 1;
+        }
+        m
+    }
+    let (ba, bb) = (bag(a), bag(b));
+    let la: usize = ba.values().sum();
+    let lb: usize = bb.values().sum();
+    if la == 0 {
+        return true;
+    }
+    let common: usize = ba.iter().map(|(c, n)| (*n).min(*bb.get(c).unwrap_or(&0))).sum();
+    common * 100 >= la.max(lb) * 96
+}
+
+/// 占位文件名：新建默认名、时间戳、粘贴导入名……这些允许被自动改名。
+fn is_placeholder_name(stem: &str) -> bool {
+    let s = stem.trim().to_lowercase();
+    let base = s.trim_end_matches(|c: char| c.is_ascii_digit() || c == '-' || c == '_' || c == ' ');
+    ["未命名", "无标题", "新文档", "新建文档", "untitled", "note", "doc", "memo", "粘贴", "paste", "导入", "新笔记"]
+        .iter()
+        .any(|p| base == *p || base.is_empty())
+        || s.chars().all(|c| c.is_ascii_digit() || c == '-' || c == '_' || c == ' ' || c == ':')
+        || (s.starts_with("doc-") || s.starts_with("note-")) && s.len() <= 20
+}
+
+/// 标题 → 安全文件名：保留中文、大小写与空格，只替换文件系统非法字符。
+fn safe_file_stem(title: &str) -> String {
+    let mut s: String = title
+        .chars()
+        .map(|c| if "/\\:*?\"<>|#^[]".contains(c) || c.is_control() { '-' } else { c })
+        .collect();
+    s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let s = s.trim_matches(|c: char| c == '-' || c == '.' || c == ' ');
+    s.chars().take(80).collect::<String>().trim().to_string()
+}
+
+fn doc_h1(md: &str) -> Option<String> {
+    let mut lines = md.lines();
+    let mut first = lines.next()?;
+    if first.trim() == "---" {
+        // frontmatter：title: 优先
+        let mut fm_title = None;
+        for l in lines.by_ref() {
+            if l.trim() == "---" {
+                break;
+            }
+            if let Some(v) = l.strip_prefix("title:") {
+                let v = v.trim().trim_matches('"').trim_matches('\'').trim();
+                if !v.is_empty() {
+                    fm_title = Some(v.to_string());
+                }
+            }
+        }
+        if fm_title.is_some() {
+            return fm_title;
+        }
+        first = lines.find(|l| !l.trim().is_empty())?;
+    }
+    let t = first.trim_start().strip_prefix("# ")?.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+/// POST /doc/autoname {path, ai?} → {path, title, source: h1|ai|rule|keep, renamed}
+/// 一级标题 = 文件名；没有标题（或标题是占位）且文件名是占位时，AI 起名（未配模型时取首句）。
+async fn doc_autoname(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let allow_ai = req.get("ai").and_then(|v| v.as_bool()).unwrap_or(true);
+    if !is_safe_doc_path(&path) || !path.ends_with(".md") {
+        return err(StatusCode::BAD_REQUEST, "path must be a .md under Notes/").into_response();
+    }
+    let (root, ai) = {
+        let k = st.kernel.lock().unwrap();
+        (k.vault.root.clone(), k.vault.config.ai.clone())
+    };
+    let abs = root.join(&path);
+    let md = match std::fs::read_to_string(&abs) {
+        Ok(s) => s,
+        Err(e) => return err(StatusCode::NOT_FOUND, e).into_response(),
+    };
+    let stem = stem_of(&path);
+    let h1 = doc_h1(&md).filter(|t| !is_placeholder_name(t));
+    let (title, source) = match h1 {
+        Some(t) => (t, "h1"),
+        None => {
+            if !is_placeholder_name(&stem) {
+                return Json(json!({ "path": path, "title": stem, "source": "keep", "renamed": false })).into_response();
+            }
+            let body: String = md.lines().filter(|l| !l.trim_start().starts_with("# ")).collect::<Vec<_>>().join("\n");
+            if body.trim().chars().count() < 6 {
+                return Json(json!({ "path": path, "title": stem, "source": "keep", "renamed": false })).into_response();
+            }
+            let mut got = None;
+            if allow_ai {
+                if let Some(cfg) = ai.filter(|c| !c.base_url.is_empty()) {
+                    let sample: String = body.chars().take(3000).collect();
+                    let sys = "为用户的笔记起一个简洁准确的中文标题：不超过 20 个字，概括主题，不要书名号、引号、句末标点，只输出标题本身。";
+                    if let Ok(t) = thirdc_mcp::agent::complete(&cfg, sys, &sample).await {
+                        let t = t.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+                        let t = t.trim_start_matches('#').trim().trim_matches(|c| "《》\"“”'「」：:".contains(c)).trim();
+                        let t: String = t.chars().take(30).collect();
+                        if !t.is_empty() {
+                            got = Some((t, "ai"));
+                        }
+                    }
+                }
+            }
+            got.unwrap_or_else(|| {
+                let t = ab_first_line_title(&body);
+                (t.chars().take(24).collect(), "rule")
+            })
+        }
+    };
+    let new_stem = safe_file_stem(&title);
+    if new_stem.is_empty() || new_stem == stem {
+        return Json(json!({ "path": path, "title": title, "source": source, "renamed": false })).into_response();
+    }
+    let dir = path.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_else(|| "Notes".into());
+    let mut to = format!("{dir}/{new_stem}.md");
+    let mut n = 2;
+    while root.join(&to).exists() && n < 100 {
+        to = format!("{dir}/{new_stem} {n}.md");
+        n += 1;
+    }
+    if !is_safe_doc_path(&to) {
+        return err(StatusCode::BAD_REQUEST, "bad target").into_response();
+    }
+    // 标题是占位（「# 未命名」）而我们起了新名：顺手把 H1 也换掉
+    let placeholder_h1 = doc_h1(&md).map_or(false, |t| is_placeholder_name(&t));
+    if placeholder_h1 && source != "h1" {
+        if let Some(first) = md.lines().position(|l| l.trim_start().starts_with("# ")) {
+            let mut ls: Vec<String> = md.lines().map(String::from).collect();
+            ls[first] = format!("# {title}");
+            let _ = std::fs::write(&abs, ls.join("\n") + "\n");
+        }
+    }
+    if let Err(e) = std::fs::rename(&abs, root.join(&to)) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let final_stem = stem_of(&to);
+    let relinked = rewrite_wikilinks(&root, &stem, &final_stem);
+    let _ = st.kernel.lock().unwrap().sync_all();
+    Json(json!({ "path": to, "from": path, "title": title, "source": source, "renamed": true, "relinked": relinked })).into_response()
+}
+
+/// 改名后修双链：[[旧名]] / [[旧名|别名]] / [[旧名#小节]] → 新名。
+fn rewrite_wikilinks(root: &std::path::Path, old: &str, new: &str) -> usize {
+    let mut changed = 0;
+    let mut stack = vec![root.join("Notes")];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(s) = std::fs::read_to_string(&p) else { continue };
+            if !s.contains(&format!("[[{old}")) {
+                continue;
+            }
+            let mut out = s.clone();
+            for tail in ["]]", "|", "#"] {
+                out = out.replace(&format!("[[{old}{tail}"), &format!("[[{new}{tail}"));
+            }
+            if out != s && std::fs::write(&p, out).is_ok() {
+                changed += 1;
+            }
+        }
+    }
+    changed
 }
 
 fn strip_fence(s: &str) -> String {
@@ -3537,55 +3840,164 @@ async fn publish(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> 
     if !kernel_core::is_safe_doc_path(&path) {
         return err(StatusCode::BAD_REQUEST, "path must be under Notes/").into_response();
     }
-    let mut k = st.kernel.lock().unwrap();
-    if let Err(e) = k.sync_all() {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-    }
-    let model = match k.get_doc(&path) {
-        Ok(m) => m,
-        Err(e) => return err(StatusCode::NOT_FOUND, e).into_response(),
-    };
-    let title = model.title.clone().unwrap_or_else(|| path.clone());
-    let html = match k.render_doc_html(&path) {
-        Ok(h) => h,
-        Err(_) => kernel_core::to_html(&model),
-    };
-    let slug = {
-        let s = kernel_core::slugify(&title);
-        if s.is_empty() {
-            format!("doc-{}", &kernel_core::Cas::hash_hex(path.as_bytes())[..8])
-        } else {
-            s
+    let prep = (|| -> Result<Result<_, axum::response::Response>, axum::response::Response> {
+        let mut k = st.kernel.lock().unwrap();
+        if let Err(e) = k.sync_all() {
+            return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response());
         }
-    };
-    let dir = publish_dir(&k);
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-    }
-    let file = dir.join(format!("{slug}.html"));
-    // 站点级 llms.txt：让 agent 能发现已发布内容
-    let mut manifest_path = dir.join("llms.txt");
-    if let Err(e) = std::fs::write(&file, html.as_bytes()) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-    }
-    let mut lines = vec![format!("# {} 发布内容", k.vault.config.name), String::new()];
-    if let Ok(read) = std::fs::read_dir(&dir) {
-        let mut names: Vec<String> = read
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
-            .filter(|n| n.ends_with(".html"))
-            .collect();
-        names.sort();
-        for n in names {
-            lines.push(format!("- /publish/{n}"));
+        let model = match k.get_doc(&path) {
+            Ok(m) => m,
+            Err(e) => return Err(err(StatusCode::NOT_FOUND, e).into_response()),
+        };
+        let title = model.title.clone().unwrap_or_else(|| path.clone());
+        let html = match k.render_doc_html(&path) {
+            Ok(h) => h,
+            Err(_) => kernel_core::to_html(&model),
+        };
+        let slug = {
+            let s = kernel_core::slugify(&title);
+            if s.is_empty() {
+                format!("doc-{}", &kernel_core::Cas::hash_hex(path.as_bytes())[..8])
+            } else {
+                s
+            }
+        };
+        let dir = publish_dir(&k);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response());
         }
+        let file = dir.join(format!("{slug}.html"));
+        // 分享出去的是单个文件：库内图片转成 data URI，离开本机也能完整显示
+        let html = inline_vault_assets(&html, &k.vault.root);
+        // 站点级 llms.txt：让 agent 能发现已发布内容
+        let mut manifest_path = dir.join("llms.txt");
+        if let Err(e) = std::fs::write(&file, html.as_bytes()) {
+            return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response());
+        }
+        let mut lines = vec![format!("# {} 发布内容", k.vault.config.name), String::new()];
+        if let Ok(read) = std::fs::read_dir(&dir) {
+            let mut names: Vec<String> = read
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
+                .filter(|n| n.ends_with(".html"))
+                .collect();
+            names.sort();
+            for n in names {
+                lines.push(format!("- /publish/{n}"));
+            }
+        }
+        let _ = std::fs::write(&mut manifest_path, lines.join("\n"));
+
+        // ── 公开分享：配置了公网目标（GitHub Pages / S3·OSS·R2 / Cloudflare Pages）就把这一页推上去 ──
+        let share = share_target(&k.vault.config.publish);
+        let local_url = format!("/publish/{slug}.html");
+        let Some((target, base)) = share else {
+            return Ok(Err(Json(json!({
+                "path": path, "title": title, "url": local_url, "bytes": html.len(), "public": false,
+                "hint": "还没有配置公开发布目标：这个链接只在本机打开。可以下载 HTML 文件直接发给别人，或在「发布」面板里配置 GitHub Pages / 对象存储，之后一键得到公网链接。",
+            }))
+            .into_response()));
+        };
+        let site = k.vault.root.join(kernel_deploy::target_dir(&target, &k.vault.config.publish.site_dir));
+        let share_file = site.join("share").join(format!("{slug}.html"));
+        if let Err(e) = std::fs::create_dir_all(share_file.parent().unwrap()).and_then(|_| std::fs::write(&share_file, html.as_bytes())) {
+            return Err(err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response());
+        }
+        let issues = k.compliance_check(&site, &target).unwrap_or_default();
+        let blocking: Vec<_> = issues.iter().filter(|i| i.level == "block").cloned().collect();
+        let sidecar = k.vault.sidecar();
+        Ok(Ok((title, local_url, html.len(), target, base, site, share_file, sidecar, blocking, slug)))
+    })();
+    let (title, local_url, html_len, target, base, site, share_file, sidecar, blocking, slug) = match prep {
+        Ok(Ok(v)) => v,
+        Ok(Err(done)) => return done,
+        Err(e) => return e,
+    };
+    if !blocking.is_empty() {
+        let _ = std::fs::remove_file(&share_file);
+        return err(StatusCode::BAD_REQUEST, format!("发布前检查未通过：{}", serde_json::to_string(&blocking).unwrap_or_default())).into_response();
     }
-    let _ = std::fs::write(&mut manifest_path, lines.join("\n"));
-    Json(json!({
-        "path": path, "title": title, "url": format!("/publish/{slug}.html"),
-        "bytes": html.len(), "note": "本地预览产物；对象存储 / GitHub Pages 目标规划中"
-    }))
-    .into_response()
+    let t2 = target.clone();
+    let (site2, sidecar2) = (site.clone(), sidecar.clone());
+    let r = tokio::task::spawn_blocking(move || kernel_deploy::deploy(&site2, &sidecar2, &t2))
+        .await
+        .unwrap_or_else(|j| Err(kernel_deploy::DeployError::Io(std::io::Error::other(format!("join: {j}")))));
+    match r {
+        Ok(report) => {
+            let root = report.url.clone().filter(|u| u.starts_with("http") && base.is_none()).or(base.clone()).unwrap_or_default();
+            let public_url = if root.is_empty() { None } else { Some(format!("{}/share/{slug}.html", root.trim_end_matches('/'))) };
+            audit_log(&sidecar, "share", &json!({ "path": path, "target": target.name, "url": public_url }));
+            Json(json!({
+                "path": path, "title": title, "url": local_url, "bytes": html_len,
+                "public": public_url.is_some(), "public_url": public_url, "target": target.name,
+                "hint": if public_url.is_none() { Some("已推送到发布目标，但没配置公开地址（publish.base_url 或目标的 public_base_url），无法拼出链接。") } else { None },
+            }))
+            .into_response()
+        }
+        Err(e) => Json(json!({
+            "path": path, "title": title, "url": local_url, "bytes": html_len, "public": false,
+            "target": target.name, "hint": format!("推送到「{}」失败：{e}。这个链接只在本机打开，可以先下载 HTML 发给别人。", target.name),
+        }))
+        .into_response(),
+    }
+}
+
+/// 可产生公网链接的目标：默认目标优先，否则唯一的 git / s3 / cf-pages 目标。返回 (目标, 公开根地址)。
+fn share_target(cfg: &kernel_core::PublishConfig) -> Option<(kernel_core::PublishTarget, Option<String>)> {
+    let public = |t: &&kernel_core::PublishTarget| matches!(t.kind.as_str(), "git" | "s3" | "cf-pages");
+    let t = cfg
+        .default_target
+        .as_deref()
+        .and_then(|n| cfg.targets.iter().find(|t| t.name == n))
+        .filter(public)
+        .or_else(|| {
+            let v: Vec<_> = cfg.targets.iter().filter(public).collect();
+            (v.len() == 1).then(|| v[0])
+        })?;
+    let base = t.public_base_url.clone().or_else(|| cfg.base_url.clone()).filter(|u| !u.trim().is_empty());
+    Some((t.clone(), base))
+}
+
+/// 把 HTML 里指向库内附件的 <img src> 换成 data URI（单图 ≤ 8MB、总量 ≤ 24MB）。
+fn inline_vault_assets(html: &str, root: &std::path::Path) -> String {
+    use base64::Engine;
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    let mut budget: usize = 24 << 20;
+    while let Some(i) = rest.find("src=\"") {
+        let (head, tail) = rest.split_at(i + 5);
+        out.push_str(head);
+        let Some(end) = tail.find('"') else {
+            rest = tail;
+            break;
+        };
+        let raw = &tail[..end];
+        let rel = raw
+            .strip_prefix("/asset-file?path=")
+            .or_else(|| raw.strip_prefix("asset-file?path="))
+            .unwrap_or(raw)
+            .trim_start_matches("./")
+            .trim_start_matches('/');
+        let rel = rel.split('&').next().unwrap_or(rel).replace("%2F", "/");
+        let mut replaced = false;
+        if (rel.starts_with("Assets/") || rel.starts_with("Notes/")) && !rel.contains("..") {
+            let abs = root.join(&rel);
+            if let Ok(bytes) = std::fs::read(&abs) {
+                if bytes.len() <= 8 << 20 && bytes.len() <= budget {
+                    budget -= bytes.len();
+                    let mime = kernel_core::refs::mime_for_ext(abs.extension().and_then(|e| e.to_str()).unwrap_or(""));
+                    out.push_str(&format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(&bytes)));
+                    replaced = true;
+                }
+            }
+        }
+        if !replaced {
+            out.push_str(raw);
+        }
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 async fn publish_list(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
@@ -6949,4 +7361,66 @@ async fn sync_in_background(st: &Arc<AppState>) {
             let _ = g.sync_all();
         }
     }).await;
+}
+
+#[cfg(test)]
+mod tidy_share_tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_names_and_safe_stems() {
+        for p in ["未命名", "未命名-2", "Untitled 3", "note-1728000000", "2026-10-14", "新文档", "doc-1a2b3c4d"] {
+            assert!(is_placeholder_name(p), "{p}");
+        }
+        for p in ["GEO 渠道稿件", "周报", "geo-渠道稿件-调试稿件"] {
+            assert!(!is_placeholder_name(p), "{p}");
+        }
+        assert_eq!(safe_file_stem("A/B: 方案?  v2 "), "A-B- 方案- v2");
+        assert_eq!(safe_file_stem("GEO 渠道稿件 调试稿件"), "GEO 渠道稿件 调试稿件");
+    }
+
+    #[test]
+    fn h1_and_frontmatter_title() {
+        assert_eq!(doc_h1("# 标题\n\n正文").as_deref(), Some("标题"));
+        assert_eq!(doc_h1("---\ntitle: 前言标题\n---\n# 别的\n").as_deref(), Some("前言标题"));
+        assert_eq!(doc_h1("---\ntags: a\n---\n\n# 正文标题\n").as_deref(), Some("正文标题"));
+        assert_eq!(doc_h1("没有标题\n# 第二行不算"), None);
+    }
+
+    #[test]
+    fn ai_output_must_keep_the_words() {
+        let a = "一、背景\n随着生成式搜索的普及 1. 验证 2. 测试 3. 观察";
+        let ok = "## 一、背景\n\n随着生成式搜索的普及\n\n1. 验证\n2. 测试\n3. 观察\n";
+        assert!(content_preserved(a, ok));
+        let rewritten = "## 背景\n\n生成式搜索越来越流行。\n\n- 验证\n- 测试\n";
+        assert!(!content_preserved(a, rewritten));
+    }
+
+    #[test]
+    fn share_target_prefers_default_public_target() {
+        let mut cfg = kernel_core::PublishConfig::default();
+        assert!(share_target(&cfg).is_none(), "无目标 → 只能本机");
+        cfg.targets.push(kernel_core::PublishTarget { name: "local".into(), kind: "local".into(), ..Default::default() });
+        assert!(share_target(&cfg).is_none(), "local 目标不产生公网链接");
+        cfg.targets.push(kernel_core::PublishTarget {
+            name: "oss".into(),
+            kind: "s3".into(),
+            public_base_url: Some("https://cdn.example.com".into()),
+            ..Default::default()
+        });
+        let (t, base) = share_target(&cfg).unwrap();
+        assert_eq!(t.name, "oss");
+        assert_eq!(base.as_deref(), Some("https://cdn.example.com"));
+    }
+
+    #[test]
+    fn vault_images_are_inlined() {
+        let dir = std::env::temp_dir().join(format!("thirdc-inline-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("Assets")).unwrap();
+        std::fs::write(dir.join("Assets/a.png"), [137u8, 80, 78, 71]).unwrap();
+        let h = inline_vault_assets(r#"<img src="Assets/a.png"><img src="https://x.com/b.png"><img src="/asset-file?path=Assets/a.png">"#, &dir);
+        assert_eq!(h.matches("data:image/png;base64,iVBORw==").count(), 2, "{h}");
+        assert!(h.contains("https://x.com/b.png"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

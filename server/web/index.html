@@ -180,6 +180,37 @@ body[data-mode="present"] #rail,body[data-mode="present"] #rail-open,body[data-m
   color:var(--muted);font:600 var(--fs-1)/var(--lh-1) var(--font-mono);cursor:pointer;transition:all var(--dur-2) var(--ease-out)}
 #ed-toolbar button:hover{color:var(--fg);border-color:var(--border-strong);background:var(--surface-strong)}
 .edt-sep{width:1px;height:16px;background:var(--border);margin:0 3px}
+/* ── 魔法排版：工具栏按钮 / 打开文档时的诊断提示 / 结果卡 ── */
+#ed-toolbar #edt-tidy{display:inline-flex;align-items:center;gap:5px;padding:0 10px;color:var(--fg);font-family:var(--font-body);
+  background:var(--accent-grad-soft,var(--surface-strong));border-color:var(--border)}
+#ed-toolbar #edt-tidy:hover{border-color:var(--accent)}
+#tidy-hint{display:none;align-items:center;gap:8px;margin:0 12px;padding:7px 8px 7px 12px;border-radius:var(--r-md);
+  background:var(--accent-grad-soft,var(--surface-strong));border:1px solid var(--border);font-size:var(--fs-2);color:var(--fg)}
+#tidy-hint.on{display:flex;animation:tidy-in var(--dur-3) var(--ease-spring) both}
+#tidy-hint span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tidy-hint svg{flex:none;width:14px;height:14px;stroke:var(--accent);stroke-width:var(--icon-stroke);fill:none;stroke-linecap:round;stroke-linejoin:round}
+#tidy-hint button{flex:none;height:26px;padding:0 10px;border-radius:var(--r-sm);border:0;background:var(--accent);color:var(--on-accent);font:600 var(--fs-1)/1 var(--font-body);cursor:pointer}
+#tidy-hint button.x{background:transparent;color:var(--muted);padding:0 6px}
+#tidy-card{position:absolute;right:16px;bottom:16px;z-index:5;width:min(300px,calc(100% - 32px));display:none;flex-direction:column;gap:8px;padding:12px 14px;
+  border-radius:var(--r-lg);background:var(--surface-strong);border:1px solid var(--border);box-shadow:var(--shadow-lift,var(--shadow));
+  -webkit-backdrop-filter:blur(var(--blur-2));backdrop-filter:blur(var(--blur-2));font-size:var(--fs-2);color:var(--fg)}
+#tidy-card.on{display:flex;animation:tidy-in var(--dur-3) var(--ease-spring) both}
+#tidy-card.busy{flex-direction:row;align-items:center;gap:10px;color:var(--muted)}
+#tidy-card svg{width:15px;height:15px;stroke:var(--accent);stroke-width:var(--icon-stroke);fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#tidy-card .tc-head{display:flex;align-items:center;gap:8px;font-weight:650}
+#tidy-card ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px}
+#tidy-card li{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:var(--r-pill);background:var(--hover);font-size:var(--fs-1);color:var(--muted)}
+#tidy-card li b{color:var(--fg);font-variant-numeric:tabular-nums}
+#tidy-card .tc-warn{font-size:var(--fs-1);color:var(--warn,var(--muted))}
+#tidy-card .tc-act{display:flex;gap:6px;justify-content:flex-end}
+#tidy-card .tc-act button{height:28px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;border-radius:var(--r-sm);border:1px solid var(--border);
+  background:transparent;color:var(--fg);font:600 var(--fs-1)/1 var(--font-body);cursor:pointer}
+#tidy-card .tc-act button svg{width:13px;height:13px}
+#tidy-card .tc-act button.pri{background:var(--accent);color:var(--on-accent);border-color:transparent}
+.tc-spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:spin .9s linear infinite;flex:none}
+#editor.tidy-flash{animation:tidy-flash var(--dur-5) var(--ease-out)}
+@keyframes tidy-in{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes tidy-flash{0%{background:color-mix(in oklab,var(--accent) 10%,transparent)}100%{background:transparent}}
 /* ── 协作光标 v2：编辑器 overlay（远程 caret/选区 + 评论锚点） ── */
 #ed-overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden;display:none;z-index:2}
 #d-body.edit #ed-overlay,#drawer.wide #ed-overlay{display:block}
@@ -793,6 +824,13 @@ body[data-view="timeline"] .node:hover,body[data-view="kanban"] .node:hover{tran
 .envelope .seal{width:44px;height:44px;border-radius:50%;margin:0 auto 14px}
 .envelope .link{font-family:var(--font-mono);font-size:var(--fs-2);color:var(--accent);word-break:break-all;padding:8px;background:var(--hover);border-radius:var(--r-sm);margin:10px 0}
 .envelope .hint{font-size:var(--fs-1);color:var(--faint)}
+.envelope.local .link{color:var(--muted);text-decoration:line-through;text-decoration-color:color-mix(in oklab,var(--muted) 45%,transparent)}
+.envelope.local .hint{color:var(--fg);text-align:left;line-height:var(--lh-2)}
+.envelope .env-act{display:none;gap:8px;justify-content:center;margin-top:12px}
+.envelope.local .env-act{display:flex}
+.envelope .env-act a,.envelope .env-act button{height:30px;padding:0 12px;display:inline-flex;align-items:center;border-radius:var(--r-sm);border:1px solid var(--border);
+  background:transparent;color:var(--fg);font:600 var(--fs-1)/1 var(--font-body);text-decoration:none;cursor:pointer}
+.envelope .env-act .pri{background:var(--accent);color:var(--on-accent);border-color:transparent}
 
 /* ── 分享面板 / 工作区面板 / 日历 ── */
 #share-overlay{position:fixed;inset:0;z-index:var(--z-overlay);display:none;place-items:center;background:color-mix(in oklab,var(--bg) 72%,transparent);backdrop-filter:blur(var(--blur-1))}
@@ -1575,9 +1613,12 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <span class="edt-sep"></span>
     <button data-md="slash" title="更多插入（表格视图 / 锚点 / 标签…）">/</button>
     <span class="edt-sep"></span>
+    <button id="edt-tidy" title="魔法排版：一键修复复制来的格式（⌥⌘L）"><i data-ic="wand" data-ics="14"></i>魔法排版</button>
+    <span class="edt-sep"></span>
     <button id="edt-comments" title="评论（选区锚定线程）" aria-label="评论"><i data-ic="chat" data-ics="14"></i><span id="edt-cbadge" style="display:none;margin-left:3px;background:var(--accent);color:var(--on-accent);border-radius:8px;padding:0 5px;font-size:var(--fs-1)">0</span></button>
   </div>
-  <div class="drawer-body" id="d-body"><textarea id="editor" spellcheck="false"></textarea><div id="ed-overlay" aria-hidden="true"></div><div id="ed-mirror" aria-hidden="true"></div><iframe id="preview" sandbox="allow-scripts" title="AI-HTML"></iframe></div>
+  <div id="tidy-hint" role="status" aria-live="polite"></div>
+  <div class="drawer-body" id="d-body"><div id="tidy-card" role="dialog" aria-label="魔法排版结果"></div><textarea id="editor" spellcheck="false"></textarea><div id="ed-overlay" aria-hidden="true"></div><div id="ed-mirror" aria-hidden="true"></div><iframe id="preview" sandbox="allow-scripts" title="AI-HTML"></iframe></div>
 </aside>
 
 <div class="overlay" id="palette-ov"><div class="panel">
@@ -1841,9 +1882,10 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <div class="ripple"></div><div class="ripple ripple2"></div>
     <div class="envelope" id="envelope">
       <div class="seal lmark"></div>
-      <div style="font-weight:700;font-size:var(--fs-4);margin-bottom:4px">已发布</div>
+      <div style="font-weight:700;font-size:var(--fs-4);margin-bottom:4px" id="env-title">已发布</div>
       <div class="link" id="env-link"></div>
-      <div class="hint">点击复制链接</div>
+      <div class="hint" id="env-hint">点击复制链接</div>
+      <div class="env-act" id="env-act"></div>
     </div>
   </div>
 </div>
@@ -2019,7 +2061,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
   <div style="color:var(--faint);font-size:var(--fs-2);margin-bottom:10px">内容 AES-GCM 加密，密钥在链接 # 后面——服务器永远看不到</div>
   <input id="share-pass" placeholder="自定义密码（可选，增强安全）">
   <div class="link" id="share-link"></div>
-  <div class="hint">点击链接复制 · 收件人打开即可查看（无需安装）</div>
+  <div class="hint" id="share-hint">点击链接复制 · 收件人打开即可查看（无需安装）</div>
   <br><button class="act" onclick="document.getElementById('share-overlay').classList.remove('open')" style="margin-top:10px">关闭</button>
 </div></div>
 <div id="ws-panel">
@@ -3497,13 +3539,31 @@ async function openDoc(path){
     if(mode==='studio'||mode==='organize'){saveTreeUI({lastDoc:path});locateInTree(path);}
     /* 协作 presence + 评论 */
     broadcastState();loadComments(path);
+    /* 魔法排版：换文档收起结果卡，并对新文档做一次格式体检 */
+    if(!tidyUndo||tidyUndo.path!==path){$('tidy-card')?.classList.remove('on');tidyUndo=null;}
+    tidyDiagnose();
   }catch(e){toast('打开失败：'+e.message,'err');}
   finally{dr.classList.remove('loading');$('d-body').style.opacity='';}
 }
 async function saveDoc(){
   if(!current)return;
   try{await api('/doc?path='+encodeURIComponent(current),{method:'PUT',body:$('editor').value,headers:{'content-type':'text/markdown'}});
-    dirty=false;toast('已保存 '+current,'ok');await openDoc(current);
+    dirty=false;
+    /* 一级标题 = 文件名；没有标题且文件名是占位时 AI 起名（未配模型取首句） */
+    let path=current,named=false;
+    if(currentFormat==='markdown'&&/\.md$/i.test(path)){
+      try{const r=await api('/doc/autoname',{method:'POST',json:{path}});
+        if(r.renamed){
+          docTabs=docTabs.map(t=>t===path?r.path:t);saveDocTabs();
+          path=r.path;current=r.path;named=true;
+          const how=r.source==='h1'?'一级标题':r.source==='ai'?'AI 起的名字':'首句';
+          toast(`已保存，并按${how}命名为「${r.path.split('/').pop().replace(/\.md$/i,'')}」`+(r.relinked?`（同步更新了 ${r.relinked} 篇的双链）`:''),'ok');
+          refreshAll().catch(()=>{});
+        }
+      }catch{}
+    }
+    if(!named)toast('已保存 '+current,'ok');
+    await openDoc(path);
     // 内容保存不动树结构：只刷统计，不做全量 refreshAll（那会连拉 /tree+/browse+/docs）
     loadStatus().catch(()=>{});
   }catch(e){toast('保存失败：'+e.message,'err');}
@@ -3516,7 +3576,8 @@ async function newDoc(){
   const parts=title.split('/').map(s=>s.trim()).filter(Boolean);
   const name=parts.pop()||'未命名';
   const sub=parts.map(s=>s.replace(/[^\p{L}\p{N}\u4e00-\u9fa5_ -]+/gu,'-').trim()).filter(Boolean).join('/');
-  const slug=name.replace(/[^\p{L}\p{N}\u4e00-\u9fa5]+/gu,'-').replace(/^-|-$/g,'').toLowerCase()||('note-'+Date.now());
+  /* 文件名 = 标题（只替换文件系统非法字符，保留中文、大小写与空格） */
+  const slug=name.replace(/[\/\\:*?"<>|#^\[\]]+/g,'-').replace(/\s+/g,' ').trim().replace(/^[-. ]+|[-. ]+$/g,'')||('note-'+Date.now());
   const path='Notes/'+(sub?sub+'/':'')+slug+'.md';
   try{
     await api('/doc?path='+encodeURIComponent(path),{method:'PUT',body:'# '+name+'\n\n',headers:{'content-type':'text/markdown'}});
@@ -3528,6 +3589,76 @@ async function newDoc(){
     toast(`已创建：${path}`,'ok');
   }catch(e){toast('创建失败：'+e.message,'err');}
 }
+/* ───────── 魔法排版（规则离线 / AI 深度，只动格式不动字）───────── */
+let tidyUndo=null;
+const TIDY_MINOR=['blank-lines','invisible','spaces','title','fullwidth'];
+function tidyIssuesText(issues,max){
+  return issues.slice(0,max).map(i=>i.label+(i.count>1?' ×'+i.count:'')).join('、')+(issues.length>max?` 等 ${issues.length} 类`:'');
+}
+async function tidyDiagnose(){
+  const hint=$('tidy-hint');if(!hint)return;
+  hint.classList.remove('on');
+  if(currentFormat!=='markdown'||!current)return;
+  const md=$('editor').value;if(md.length<20)return;
+  const path=current;
+  try{
+    const r=await api('/doc/tidy',{method:'POST',json:{markdown:md,mode:'diagnose'}});
+    if(path!==current)return;
+    const major=(r.issues||[]).filter(i=>!TIDY_MINOR.includes(i.kind)||i.count>=3);
+    if(!r.changed||r.total<3||!major.length)return;
+    hint.innerHTML=iconSvg('wand',14)+`<span>检测到 <b>${r.total}</b> 处格式问题：${escH(tidyIssuesText(major,3))}</span><button type="button">一键排版</button><button type="button" class="x" aria-label="忽略">${iconSvg('x',12)}</button>`;
+    hint.classList.add('on');
+    hint.querySelector('button').onclick=()=>magicTidy('rule');
+    hint.querySelector('.x').onclick=()=>hint.classList.remove('on');
+  }catch{}
+}
+async function magicTidy(mode){
+  if(!current||currentFormat!=='markdown'){toast('魔法排版只用于 Markdown 文档','err');return;}
+  const dr=$('drawer'),body=$('d-body');
+  if(!body.classList.contains('edit')&&!dr.classList.contains('wide'))$('d-mode').click();
+  const ed=$('editor');
+  const before=(mode==='ai'&&tidyUndo&&tidyUndo.path===current)?tidyUndo.before:ed.value;
+  const card=$('tidy-card');
+  card.className='on busy';
+  card.innerHTML=`<span class="tc-spin"></span><span>${mode==='ai'?'AI 正在排版（只动格式，不改文字）…':'正在排版…'}</span>`;
+  card.onclick=null;
+  try{
+    const r=await api('/doc/tidy',{method:'POST',json:{markdown:before,mode}});
+    $('tidy-hint')?.classList.remove('on');
+    if(!r.changed){
+      card.className='on';card.innerHTML=`<div class="tc-head">${iconSvg('check',15)}<span>格式已经很清爽，没有要修的地方</span></div>`;
+      setTimeout(()=>card.classList.remove('on'),2200);return;
+    }
+    tidyUndo={before,path:current};
+    ed.value=r.markdown;ed.dispatchEvent(new Event('input',{bubbles:true}));dirty=true;
+    if(!reducedMotion()){ed.classList.remove('tidy-flash');void ed.offsetWidth;ed.classList.add('tidy-flash');}
+    const list=(r.issues||[]).map(i=>`<li>${escH(i.label)}<b>${i.count}</b></li>`).join('');
+    card.className='on';
+    card.innerHTML=`<div class="tc-head">${iconSvg(mode==='ai'?'spark':'wand',15)}<span>${mode==='ai'?'AI 排版完成':'已修复 '+r.total+' 处格式问题'}</span></div>`
+      +(list?`<ul>${list}</ul>`:'')
+      +(r.warning?`<div class="tc-warn">${escH(r.warning)}</div>`:'')
+      +`<div class="tc-act"><button type="button" data-a="undo">撤销</button>`
+      +(mode==='ai'?'':`<button type="button" data-a="ai" title="交给模型再理一遍：标题层级、段落归并等规则判断不了的地方">${iconSvg('spark',13)}AI 深度排版</button>`)
+      +`<button type="button" data-a="save" class="pri">保存</button></div>`;
+    card.onclick=e=>{
+      const a=e.target.closest('button')?.dataset.a;if(!a)return;
+      if(a==='undo'){
+        if(tidyUndo&&tidyUndo.path===current){ed.value=tidyUndo.before;ed.dispatchEvent(new Event('input',{bubbles:true}));dirty=true;}
+        tidyUndo=null;card.classList.remove('on');toast('已撤销排版','ok');
+      }
+      if(a==='ai')magicTidy('ai');
+      if(a==='save'){card.classList.remove('on');tidyUndo=null;saveDoc();}
+    };
+  }catch(e){
+    card.className='on';
+    card.innerHTML=`<div class="tc-warn">${escH(e.message)}</div><div class="tc-act"><button type="button">关闭</button></div>`;
+    card.onclick=e2=>{if(e2.target.closest('button'))card.classList.remove('on')};
+  }
+}
+$('edt-tidy')&&($('edt-tidy').onclick=()=>magicTidy('rule'));
+addEventListener('keydown',e=>{if(e.altKey&&(e.metaKey||e.ctrlKey)&&(e.code==='KeyL')){e.preventDefault();magicTidy('rule')}});
+/* 大段粘贴后体检一次：复制来的文字最容易乱 */
+$('editor').addEventListener('paste',()=>setTimeout(()=>{if($('editor').value.length>=20)tidyDiagnose()},60));
 $b('d-save').onclick=saveDoc;$b('d-close').onclick=()=>{$('drawer').classList.remove('open');$('toc').classList.remove('open');$('toc-line').classList.remove('on')};
 /* ── 侧栏折叠（记忆状态；窄窗默认收起，用 #rail-open 唤出） ── */
 function setRailClosed(closed,silent,persist=true){
@@ -5134,24 +5265,41 @@ $b('memo-send').onclick=sendMemo;
 $('memo-input').addEventListener('keydown',e=>{if(e.key==='Enter')sendMemo()});
 
 /* ───────── 发布水滴特效 ───────── */
-function showWaterEffect(url){
+/* 发布结果：公网链接 → 点信封复制；只有本机链接 → 明说别人打不开，给「下载 HTML / 配置公开发布」两条路 */
+function showWaterEffect(url,opt={}){
+  const env=$b('envelope'),local=!!opt.local;
+  env.classList.toggle('local',local);
+  $('env-title').textContent=local?'已生成（仅本机可见）':'已发布';
   $('env-link').textContent=url;
+  $('env-hint').textContent=local?(opt.hint||'这个链接只在你的电脑上能打开，别人看不到。'):'点击复制链接，发给任何人都能打开';
+  const act=$('env-act');act.innerHTML='';
+  if(local){
+    const dl=document.createElement('a');dl.className='pri';dl.textContent='下载 HTML 发给别人';
+    dl.href=url;dl.download=(opt.title||'分享')+'.html';dl.onclick=e=>e.stopPropagation();
+    const cfg=document.createElement('button');cfg.type='button';cfg.textContent='配置公开发布';
+    cfg.onclick=e=>{e.stopPropagation();$('water-overlay').classList.remove('open');openOverlay('pub-ov');loadPublishTargets().catch(()=>{});};
+    act.append(dl,cfg);
+  }
   $('water-overlay').classList.add('open');
-  setTimeout(()=>$b('envelope').onclick=()=>{
+  env.onclick=null;
+  setTimeout(()=>env.onclick=()=>{
+    if(local)return;
     navigator.clipboard?.writeText(url);
     toast('链接已复制','ok');
     setTimeout(()=>$('water-overlay').classList.remove('open'),600);
   },1300);
-  setTimeout(()=>$('water-overlay').classList.remove('open'),5000);
+  $('water-overlay').onclick=e=>{if(e.target===$('water-overlay'))$('water-overlay').classList.remove('open')};
+  if(!local)setTimeout(()=>$('water-overlay').classList.remove('open'),6000);
 }
-// 覆盖 doPublish 的 toast，改用水滴特效
-const _oldDoPublish=doPublish;
+const isLoopback=()=>/^(127\.|localhost$|\[?::1\]?$|0\.0\.0\.0$)/.test(location.hostname);
 async function doPublish(path){
   try{
     const r=await api('/publish',{method:'POST',json:{path}});
-    const url=location.origin+BASE+r.url;
     $('water-overlay').classList.remove('open');
-    showWaterEffect(url);
+    if(r.public_url)showWaterEffect(r.public_url);
+    /* 自建服务器上打开的鹿蕊：本身就是公网地址，直接可分享 */
+    else if(!isLoopback())showWaterEffect(location.origin+BASE+r.url);
+    else showWaterEffect(location.origin+BASE+r.url,{local:true,hint:r.hint,title:r.title});
     await loadPublishList();await loadPublishTargets();
   }catch(e){toast('发布失败：'+e.message,'err')}
 }
@@ -5169,6 +5317,9 @@ async function shareEncrypted(path){
     const id=await api('/share',{method:'POST',json:{content:b64,iv:Array.from(iv)}}).then(r=>r.id);
     const url=`${location.origin}${BASE}/s/${id}#k=${btoa(pass)}`;
     $('share-link').textContent=url;
+    $('share-hint').textContent=isLoopback()
+      ?'注意：这是本机地址，别人打不开。加密分享需要鹿蕊跑在自建服务器上；想直接发给别人，用「发布」生成公网链接或下载 HTML。'
+      :'点击链接复制 · 收件人打开即可查看（无需安装）';
     $('share-overlay').classList.add('open');
     $b('share-link').onclick=()=>{navigator.clipboard?.writeText(url);toast('链接已复制','ok')};
   }catch(e){toast('分享失败：'+e.message,'err')}

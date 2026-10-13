@@ -12,6 +12,7 @@ pub use kernel_design::{
     import_path, parse_css, parse_design_md,
 };
 pub use kernel_md::{Block, DocModel, from_markdown, to_html, to_markdown};
+pub use kernel_md::tidy;
 pub use kernel_store::{
     AiConfig, BrowserConfig, Cas, ConnectionConfig, PublishConfig, PublishTarget, StoreError, Vault,
     VaultConfig, events_dir, list_docs, new_doc_id, refs,
