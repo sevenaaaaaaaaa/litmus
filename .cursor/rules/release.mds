@@ -1,0 +1,30 @@
+---
+description: 鹿蕊 Litmus 发版流程（桌面 + 移动 + 自更新）
+globs:
+alwaysApply: false
+---
+
+# 发版必须完成（缺一不可）
+
+1. **版本号**：`desktop/tauri.conf.json` 的 `version` 先 bump。
+2. **推 tag 触发 CI**（主力路径）：`git tag vX.Y.Z && git push origin vX.Y.Z` →
+   `.github/workflows/desktop.yml` 产出三平台产物（dmg/msi/exe/deb/AppImage/rpm）
+   **+ 全平台 latest.json**（tauri-action `includeUpdaterJson: true`）并附到 GitHub Release。
+3. **latest.json 是硬性要求**：没有它，App 内"检查更新"直接报
+   `Could not fetch a valid release JSON from the remote`。
+4. **移动端** CI 不含 Android，需手动：`cargo tauri android build --apk --target aarch64`，
+   APK 重命名为 `Litmus-mobile-X.Y.Z-arm64.apk` 上传 Release。
+5. **一键脚本**：`scripts/release.sh vX.Y.Z`（`--local` 为 CI 挂掉时的 macOS 手工补救）。
+
+# 踩坑记录（重发/排障必读）
+
+- **CI 报 `Missing comment in secret key`** = 仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`
+  丢失或损坏。用 `gh secret list` 检查；重写：仓库公钥
+  （`gh api repos/sevenaaaaaaaaa/thirdc/actions/secrets/public-key`）+ pynacl SealedBox
+  加密 `~/.tauri/thirdc-updater.key` 全文后 `gh api -X PUT .../actions/secrets/TAURI_SIGNING_PRIVATE_KEY`。
+  口令为空，`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 无需设置。
+- **重发同一 tag**：先 `gh release delete-asset <tag> <name> --yes` 清掉同名资产
+  （tauri-action 上传撞名会失败），再 `git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z`。
+- **本机 DNS 拦截**（127.0.0.1 对部分域名回 NXDOMAIN）：`uploads.github.com`、
+  `static.rust-lang.org`。上传用 DoH（1.1.1.1 dns-query）解析后 `curl --resolve` 绕过。
+- 本地更新归档签名打包：`cd desktop && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/thirdc-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" cargo tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":true}}'`。
