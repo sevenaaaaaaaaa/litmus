@@ -4,7 +4,7 @@ set -euo pipefail
 SSH_KEY="$(dirname "$0")/.ssh_key"
 SSH_PORT="28766"; USER_="root"; HOST="172.96.253.73"
 REMOTE_DIR="/www/wwwroot/thirdc"
-SSH_CMD="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=no ${USER_}@${HOST}"
+SSH_CMD="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new ${USER_}@${HOST}"
 
 echo "① 同步源码..."
 tar --exclude=.git --exclude=target --exclude=.thirdc --exclude='*.db' -cf - . | \

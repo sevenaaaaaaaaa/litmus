@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 SSH_KEY="./.deploy-ssh/key"
 SSH_PORT="28766"; USER_="root"; HOST="172.96.253.73"
 REMOTE_DIR="/www/wwwroot/thirdc"
-SSH_OPTS="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=no"
+SSH_OPTS="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new"
 SSH_CMD="${SSH_OPTS} ${USER_}@${HOST}"
 GITLEAKS="${GITLEAKS:-$HOME/.local/bin/gitleaks}"
 
