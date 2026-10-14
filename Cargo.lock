@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-a2ui"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-backup"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "age",
  "flate2",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-browser"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "futures-channel",
  "futures-sink",
@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-convert"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "flate2",
  "kernel-md",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-core"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "kernel-browser",
  "kernel-design",
@@ -3040,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-deploy"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "hex",
  "hmac",
@@ -3057,7 +3057,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-design"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "kernel-md",
  "kernel-store",
@@ -3069,7 +3069,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-md"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "hex",
  "serde",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-store"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "hex",
  "kernel-md",
@@ -3097,7 +3097,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-sync"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "automerge",
  "kernel-md",
@@ -5878,7 +5878,7 @@ dependencies = [
 
 [[package]]
 name = "thirdc"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "clap",
@@ -5893,7 +5893,7 @@ dependencies = [
 
 [[package]]
 name = "thirdc-desktop"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "axum",
@@ -5917,7 +5917,7 @@ dependencies = [
 
 [[package]]
 name = "thirdc-mcp"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5929,7 +5929,7 @@ dependencies = [
 
 [[package]]
 name = "thirdc-server"
-version = "0.1.12"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "axum",
