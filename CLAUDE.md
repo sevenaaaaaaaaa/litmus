@@ -72,7 +72,7 @@ scripts/daily-release.sh --force      # 自上个 tag 无新提交也发
 - 中途失败可直接重跑：HEAD 若已是 `chore(release)` 提交会续跑未完成的步骤；全部完成则跳过。日志：`~/Library/Logs/litmus-daily-release.log`。
 - CI 分工：推 tag 后 `desktop.yml` 仍负责 Windows/Linux 包、签名的 macOS 更新包 `Litmus_aarch64.app.tar.gz` 与 **`latest.json`（应用内更新靠它，不能缺）**。macOS 侧 CI 只打 `.app`，再用同一个 `make-dmg.sh` 出 DMG；若 Release 上已有本地上传的同名 DMG 则跳过，不覆盖。
 - **macOS 打开助手**：本机只有 Apple Development 证书，无 Developer ID / 公证，DMG 为 ad-hoc 签名。每个 DMG 内含 `Litmus.app`、`Applications` 链接、`打不开？双击我.command`（去 `com.apple.quarantine`，签名损坏时 ad-hoc 重签，然后打开应用）、`安装说明.txt`。模板在 `packaging/macos/`（`open-helper.command`、`install-readme.txt`，`@APP_NAME@` 打包时替换）。
-- 定时：`packaging/macos/com.nownexts.litmus.daily-release.plist`（每天 23:30，安装方法见文件头注释，需手动 `launchctl bootstrap`）。
+- 定时：由全局 launchd `com.nownexts.daily-release-all` 每天 23:00 统一调度（`~/.local/bin/daily-release-all.sh`，依次跑 Litmus → Liana → LinkTo）；`packaging/macos/` 里的单项目 plist 模板不要再装，避免重复发版。
 - `scripts/release.sh vX.Y.Z` 仍可用于手动指定版本发版 / `--local` 补救。
 
 ## 笔记数据（硬性规则）
