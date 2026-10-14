@@ -50,6 +50,8 @@ lint：无专门配置（可用 `cargo clippy`）。
     - GitHub 轨（公开仓库，只放干净代码）：gitleaks 扫描暂存区 → `git add -A`（`.gitignore` 已排除 keystore、签名口令、`server-kb/`、`.deploy-ssh/` 等）→ commit → `git push origin main`；无变更则跳过 commit
     - 服务器轨：从工作区 rsync 源码到 `/www/wwwroot/thirdc/src/`（沿用旧排除项与 `--delete`，另排除 `*.keystore`、`desktop/android-signing.properties`）→ 服务器 cargo build → 重启 systemd
     - `--server-only` 跳过 git；`--dry-run` 只做 `rsync -n` 预演，不提交/推送/构建/重启
+    - 只允许从 `main` 部署（含 `--server-only`）；其他分支直接拒绝，`--dry-run` 仅告警
+    - 仓库根 `ops/` 不进 `src/`（rsync `--exclude '/ops'`），单独同步到 `/www/ops/litmus/`（见「开发工具 vs 使用工具」）
   - 本地 `.git/hooks/pre-commit` 会跑 gitleaks，发现密钥即阻止提交
   - Android 签名口令：环境变量 `TAURI_KEYSTORE_PASSWORD` / `TAURI_KEY_PASSWORD`，或 gitignored 的 `desktop/android-signing.properties`；keystore `desktop/thirdc-release.keystore` 仅本地保存（已移出 git 跟踪）
   - 服务器上自更新：`/www/wwwroot/thirdc/update.sh`（从 GitHub `main` 拉取 → 构建 → 重启）
@@ -82,6 +84,16 @@ scripts/daily-release.sh --force      # 自上个 tag 无新提交也发
 - **GitHub（公开仓库 `sevenaaaaaaaaa/litmus`）上一篇真实笔记都不能有**：代码仓库里的 `kb/`、`server-kb/` 已 gitignore；部署脚本排除 `/kb`、`server-kb`、`.thirdc`，且只同步到服务器 `src/`，不碰服务器 `kb/`。笔记库的 git 远端只能指向自己的服务器，禁止指向 GitHub。
 - 笔记库里的 `.thirdc/`（op-log、索引、`machine.toml` 设备密钥）永不出设备；`gitops::ensure_repo` 会自动写入 `.gitignore` 保证这一点。
 - 2026-10-14 已核查：代码仓库历史中不含真实笔记（仅 `examples/plugins` 示例）。
+
+## 开发工具 vs 使用工具（硬性规则）
+
+| 类别 | 例子 | 放哪 | GitHub | 服务器 |
+|---|---|---|---|---|
+| 开发工具（产品代码） | 源码、测试、部署脚本、文档 | 原目录 | ✅ | ✅（部署同步） |
+| 使用工具的产物 | 用 Litmus 干活时写的批处理/一次性修复脚本、批次文件、导出数据 | **`ops/`** | ❌ | ✅ 仅 `/www/ops/litmus/`（web 根之外，`--update` 只增不删） |
+
+- `/ops/` 已 gitignore；`deploy/deploy.sh` 把 `ops/` 单独同步到服务器 `/www/ops/litmus/`（不进 web 根、不进 GitHub；`ops/` 为空时跳过）。
+- 拿不准时按第二类处理（放 `ops/`，不进 GitHub），再问用户。
 
 ## 注意事项
 

@@ -27,3 +27,7 @@ kb/
 .env
 .env.*
 !.env.example
+
+# Tool-usage workspace: scripts/batches/data produced while *using* Litmus.
+# Never on GitHub; deploy/deploy.sh pushes it to the server only (/www/ops/litmus/).
+/ops/
