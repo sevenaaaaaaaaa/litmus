@@ -28,3 +28,8 @@ alwaysApply: false
 - **本机 DNS 拦截**（127.0.0.1 对部分域名回 NXDOMAIN）：`uploads.github.com`、
   `static.rust-lang.org`。上传用 DoH（1.1.1.1 dns-query）解析后 `curl --resolve` 绕过。
 - 本地更新归档签名打包：`cd desktop && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/thirdc-updater.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" cargo tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":true}}'`。
+- **本机打包报 `dlopen ... mis-aligned LINKEDIT string pool` / `can't find crate for xxx_derive`**
+  （macOS 27 + Xcode 27 的新 ld-27037 链接 rustc proc-macro dylib 的兼容问题）：
+  本地打包/构建一律加 `RUSTFLAGS="-C link-arg=-ld_classic"`；若仍报错，先
+  `find target/release/deps -name '*.dylib' -delete && rm -rf target/release/.fingerprint`
+  再重编。CI 的 Xcode 版本不同，不受影响。
