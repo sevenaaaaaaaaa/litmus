@@ -86,28 +86,9 @@ print("✅ /tmp/latest.json 生成")
 PY
 
 # ---------- 上传（含 DNS fallback）----------
-upload_asset() { # upload_asset <本地文件>
-  local f="$1" name
-  name="$(basename "$f")"
-  if python3 -c 'import socket;socket.gethostbyname("uploads.github.com")' 2>/dev/null; then
-    gh release upload "$TAG" "$f" --clobber
-  else
-    # 本机 DNS 拦截（NXDOMAIN）→ DoH 解析 + curl --resolve 绕过
-    echo "→ DNS 拦截 uploads.github.com，DoH 解析..."
-    local ip rel_id token
-    ip=$(curl -s "https://1.1.1.1/dns-query?name=uploads.github.com&type=A" \
-      -H "accept: application/dns-json" \
-      | python3 -c 'import json,sys;print(json.load(sys.stdin)["Answer"][-1]["data"])')
-    rel_id=$(gh api "repos/sevenaaaaaaaaa/litmus/releases/tags/$TAG" --jq .id)
-    token=$(gh auth token)
-    curl --fail --progress-bar -X POST \
-      -H "Authorization: Bearer $token" -H "Content-Type: application/octet-stream" \
-      --resolve "uploads.github.com:443:$ip" \
-      "https://uploads.github.com/repos/sevenaaaaaaaaa/litmus/releases/$rel_id/assets?name=$name" \
-      --data-binary "@$f"
-  fi
-  echo "✅ 上传 $name"
-}
+# shellcheck source=lib/gh-upload.sh
+source scripts/lib/gh-upload.sh
+upload_asset() { gh_upload_asset "$TAG" "$1" --clobber; } # upload_asset <本地文件>
 
 gh release view "$TAG" --json assets --jq '.assets[].name' | grep -q "^latest.json$" \
   && gh release delete-asset "$TAG" latest.json --yes

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd template: run scripts/daily-release.sh every day at 23:30.
+     Install (manual, opt-in):
+       cp packaging/macos/com.nownexts.litmus.daily-release.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nownexts.litmus.daily-release.plist
+     Uninstall:
+       launchctl bootout gui/$(id -u)/com.nownexts.litmus.daily-release
+     Adjust the repo path below if the checkout moves. Log: ~/Library/Logs/litmus-daily-release.log -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nownexts.litmus.daily-release</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/seveno/ThirdC/scripts/daily-release.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>23</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/litmus-daily-release.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/litmus-daily-release.launchd.log</string>
+</dict>
+</plist>

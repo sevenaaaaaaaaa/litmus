@@ -1,4 +1,4 @@
-# ThirdC 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg）
+# ThirdC 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg，DMG 内置打开助手）
 # 触发：手动（Actions 页 Run workflow）或推 v* 标签（自动附到 GitHub Release）
 # 前端是纯静态 server/web，无需 node 构建；内核 reqwest 走 rustls，无 openssl 依赖
 #
@@ -24,7 +24,8 @@ jobs:
         include:
           - os: windows-latest # → .msi + setup.exe
           - os: ubuntu-22.04 # → .deb + .AppImage + .rpm
-          - os: macos-14 # → .app + .dmg（aarch64）
+          - os: macos-14 # → .app + updater .app.tar.gz；DMG 由下方步骤用 packaging/macos/make-dmg.sh 打（内置打开助手）
+            args: --bundles app
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +53,27 @@ jobs:
           releaseName: ${{ github.ref_type == 'tag' && format('鹿蕊 Litmus {0}', github.ref_name) || '' }}
           releaseDraft: false
           includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+      # macOS DMG 未公证：统一用 packaging/macos/make-dmg.sh 打包，内置「打不开？双击我.command」+ 安装说明。
+      # scripts/daily-release.sh 会先上传本地打好的同名 DMG；已存在则跳过，不覆盖。
+      - name: macOS DMG（内置 Gatekeeper 打开助手）
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(python3 -c "import json;print(json.load(open('desktop/tauri.conf.json'))['version'])")
+          DMG="target/release/bundle/dmg/Litmus_${VER}_aarch64.dmg"
+          bash packaging/macos/make-dmg.sh target/release/bundle/macos/Litmus.app "$DMG" Litmus
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq "$(basename "$DMG")"; then
+              echo "Release 已有 $(basename "$DMG")（本地 daily-release 上传），跳过"
+            else
+              gh release upload "$TAG" "$DMG"
+            fi
+          fi
 
       - name: 收集产物
         shell: bash

@@ -16,8 +16,9 @@
 - `kernel/crates/` — 内核 crates（kernel-core / md / store / sync / design / browser / a2ui / deploy / backup / convert）
 - `server/` — `thirdc` 二进制（serve 守护进程 + Web UI `server/web/`）
 - `cli/`、`mcp/` — CLI 与 MCP server；`desktop/` — Tauri 应用（`desktop/gen/` 为生成物）
+- `packaging/macos/` — DMG 打包脚本与 Gatekeeper 打开助手模板、launchd 定时模板
 - `deploy/` — 服务器部署脚本、systemd unit、Apache 反代配置、R2 同步
-- `scripts/` — 发版脚本 `release.sh`、性能门禁 `perf-check.sh`、各类一次性 patch 脚本
+- `scripts/` — 每日发版入口 `daily-release.sh`、手动发版 `release.sh`、性能门禁 `perf-check.sh`、各类一次性 patch 脚本
 - `docs/` — 产品/设计规范（`docs/spec/`）、ADR、性能契约 `docs/PERF.md`
 - `third_party/swift-rs` — vendored 补丁；`_cowork/` — 本地补丁/bundle（gitignored）
 
@@ -53,8 +54,26 @@ lint：无专门配置（可用 `cargo clippy`）。
   - Android 签名口令：环境变量 `TAURI_KEYSTORE_PASSWORD` / `TAURI_KEY_PASSWORD`，或 gitignored 的 `desktop/android-signing.properties`；keystore `desktop/thirdc-release.keystore` 仅本地保存（已移出 git 跟踪）
   - 服务器上自更新：`/www/wwwroot/thirdc/update.sh`（从 GitHub `main` 拉取 → 构建 → 重启）
   - 备选：`deploy/native.sh`；推荐用 CI `server.yml` 产出的 musl 静态二进制替换 `bin/thirdc`，避免生产机 cargo OOM。
-- **桌面发版**：`scripts/release.sh vX.Y.Z` → 推 `v*` tag 触发 `.github/workflows/desktop.yml`（三平台产物 + `latest.json` → GitHub Release，可选同步 R2）。先 bump `desktop/tauri.conf.json` 的 `version`；Android 需手动构建上传。详见 `.cursor/rules/release.mds`。
+- **桌面发版**：日常用 `scripts/daily-release.sh`（见下文「发版（每日）」）；手动指定版本用 `scripts/release.sh vX.Y.Z` → 推 `v*` tag 触发 `.github/workflows/desktop.yml`（三平台产物 + `latest.json` → GitHub Release，可选同步 R2）。先 bump `desktop/tauri.conf.json` 的 `version`；Android 需手动构建上传。详见 `.cursor/rules/release.mds`。
 - CI：`kernel.yml`、`server.yml` 在 push `main` 时触发（server 限相关路径），`desktop.yml` 由 tag 或手动触发。
+
+## 发版（每日）
+
+**硬性规则：每天开发结束必须跑一次 daily-release（或由 launchd 自动跑）。**
+
+```bash
+scripts/daily-release.sh              # 正式发版
+scripts/daily-release.sh --dry-run    # 只测试 + 本地打 app/DMG，不 commit/tag/push/release/安装
+scripts/daily-release.sh --no-install # 发版但不替换本机 /Applications/Litmus.app
+scripts/daily-release.sh --force      # 自上个 tag 无新提交也发
+```
+
+- 流程：必须在 `main` 且工作区干净（不干净则打印改动并以「skipped」退出 0，绝不替你提交 WIP）→ `git fetch`，落后则 `pull --rebase --autostash`（冲突即 abort 并失败退出）→ 跑内核测试（同 `kernel.yml`；本机无 wasm32 target 时跳过 wasm 检查）→ 自上个 `v*` tag 无新提交则跳过 → patch 版本 +1，同步写入 `Cargo.toml`（`[workspace.package]`）、`desktop/tauri.conf.json`、`Cargo.lock` → 提交 `chore(release): vX.Y.Z` + 附注 tag → 本地 `cargo tauri build --bundles app`（自动带 `-ld_classic`）+ `packaging/macos/make-dmg.sh` 打 DMG → push main 与 tag → `gh release create`（说明 = 上个 tag 以来的提交标题）并上传 DMG → 优雅退出本机 Litmus、`ditto` 替换 `/Applications/Litmus.app`、去隔离、原来在运行则重启。
+- 中途失败可直接重跑：HEAD 若已是 `chore(release)` 提交会续跑未完成的步骤；全部完成则跳过。日志：`~/Library/Logs/litmus-daily-release.log`。
+- CI 分工：推 tag 后 `desktop.yml` 仍负责 Windows/Linux 包、签名的 macOS 更新包 `Litmus_aarch64.app.tar.gz` 与 **`latest.json`（应用内更新靠它，不能缺）**。macOS 侧 CI 只打 `.app`，再用同一个 `make-dmg.sh` 出 DMG；若 Release 上已有本地上传的同名 DMG 则跳过，不覆盖。
+- **macOS 打开助手**：本机只有 Apple Development 证书，无 Developer ID / 公证，DMG 为 ad-hoc 签名。每个 DMG 内含 `Litmus.app`、`Applications` 链接、`打不开？双击我.command`（去 `com.apple.quarantine`，签名损坏时 ad-hoc 重签，然后打开应用）、`安装说明.txt`。模板在 `packaging/macos/`（`open-helper.command`、`install-readme.txt`，`@APP_NAME@` 打包时替换）。
+- 定时：`packaging/macos/com.nownexts.litmus.daily-release.plist`（每天 23:30，安装方法见文件头注释，需手动 `launchctl bootstrap`）。
+- `scripts/release.sh vX.Y.Z` 仍可用于手动指定版本发版 / `--local` 补救。
 
 ## 笔记数据（硬性规则）
 
