@@ -31,3 +31,8 @@ kb/
 # Tool-usage workspace: scripts/batches/data produced while *using* Litmus.
 # Never on GitHub; deploy/deploy.sh pushes it to the server only (/www/ops/litmus/).
 /ops/
+
+# Local simulator screenshots and locally built extension packages (kept on disk, never on GitHub)
+/sim-verify/
+/thirdc-firefox.xpi
+*.xpi
