@@ -562,7 +562,7 @@ fn desktop_focus_main(app: AppHandle) {
     show_main(&app);
 }
 
-/// 当前 App 版本（来自 tauri.conf.json / package_info），供「关于」页显示。
+/// 当前 App 版本（Cargo.toml 版本源，Nightly 构建时注入 -nightly 后缀；package_info），供「关于」页显示。
 #[tauri::command]
 fn desktop_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()

@@ -1,5 +1,12 @@
 # ThirdC 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg，DMG 内置打开助手）
-# 触发：手动（Actions 页 Run workflow）或推 v* 标签（自动附到 GitHub Release）
+# 触发：手动（Actions 页 Run workflow）、推 v* 标签（正式版，附到同名 Release 并成为 Latest）
+#       或推 nightly 标签（scripts/daily-release.sh 每日强制移动；附到唯一的预发布「Nightly」）。
+#
+# 版本：唯一版本源是 Cargo.toml [workspace.package].version，tauri.conf.json 不写 version。
+#   - v* 标签：版本 = 版本源，且必须与标签一致（防止 latest.json 报错版本）。
+#   - nightly 标签：版本取自附注标签首行「nightly X.Y.Z-nightly.YYYYMMDD」，只写进 CI 工作区，不提交。
+#     Nightly 是 prerelease，GitHub 的 releases/latest 不含预发布，应用内更新（latest.json）永远拿不到它；
+#     semver 预发布排序也保证它低于下一个正式版。
 # 前端是纯静态 server/web，无需 node 构建；内核 reqwest 走 rustls，无 openssl 依赖
 #
 # 在线更新：createUpdaterArtifacts=true 会产出 *.sig 与 updater 归档，
@@ -11,7 +18,7 @@ name: desktop
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    tags: ["v*", "nightly"]
 
 permissions:
   contents: write
@@ -29,6 +36,49 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 解析版本（正式 / Nightly）并写入 CI 工作区的 tauri.conf.json
+        id: ver
+        shell: bash
+        run: |
+          PY=$(command -v python3 || command -v python)
+          BASE=$("$PY" -c "import re;s=open('Cargo.toml').read();print(re.search(r'\[workspace\.package\][^\[]*?^version\s*=\s*\"([^\"]+)\"',s,re.S|re.M).group(1))")
+          PRERELEASE=false
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == "nightly" ]]; then
+            git fetch --force --depth=1 origin "+refs/tags/nightly:refs/tags/nightly"
+            VER=$(git for-each-ref refs/tags/nightly --format='%(contents:subject)' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}' || true)
+            [[ -n "$VER" ]] || { echo "::error::nightly 标签缺少版本（应为附注标签：nightly X.Y.Z-nightly.YYYYMMDD）"; exit 1; }
+            D=${VER##*.}
+            NAME="Nightly · ${D:0:4}-${D:4:2}-${D:6:2}"
+            PRERELEASE=true
+          else
+            VER="$BASE"
+            if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" != "v$VER" ]]; then
+              echo "::error::标签 ${{ github.ref_name }} 与 Cargo.toml 版本 $VER 不一致"; exit 1
+            fi
+            NAME="鹿蕊 Litmus v$VER"
+          fi
+          # MSI needs a purely numeric version (build field <= 65535): nightly uses days since 2026-01-01.
+          "$PY" - "$VER" <<'PYEOF'
+          import datetime, json, sys
+          ver = sys.argv[1]
+          core, _, pre = ver.partition("-")
+          wix = core
+          if pre:
+              d = datetime.datetime.strptime(pre.rsplit(".", 1)[1], "%Y%m%d").date()
+              wix = f"{core}.{(d - datetime.date(2026, 1, 1)).days}"
+          p = "desktop/tauri.conf.json"
+          c = json.load(open(p, encoding="utf-8"))
+          c["version"] = ver
+          b = c.setdefault("bundle", {})
+          b.setdefault("macOS", {})["bundleVersion"] = core
+          b.setdefault("windows", {}).setdefault("wix", {})["version"] = wix
+          json.dump(c, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+          PYEOF
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "版本 $VER（prerelease=$PRERELEASE）"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -50,26 +100,27 @@ jobs:
         with:
           projectPath: desktop
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('鹿蕊 Litmus {0}', github.ref_name) || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && steps.ver.outputs.name || '' }}
           releaseDraft: false
+          prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
       # macOS DMG 未公证：统一用 packaging/macos/make-dmg.sh 打包，内置「打不开？双击我.command」+ 安装说明。
-      # scripts/daily-release.sh 会先上传本地打好的同名 DMG；已存在则跳过，不覆盖。
+      # scripts/daily-release.sh / release.sh 会先上传本地打好的同名 DMG；已存在则跳过，不覆盖。
       - name: macOS DMG（内置 Gatekeeper 打开助手）
         if: runner.os == 'macOS'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VER=$(python3 -c "import json;print(json.load(open('desktop/tauri.conf.json'))['version'])")
+          VER="${{ steps.ver.outputs.version }}"
           DMG="target/release/bundle/dmg/Litmus_${VER}_aarch64.dmg"
           bash packaging/macos/make-dmg.sh target/release/bundle/macos/Litmus.app "$DMG" Litmus
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq "$(basename "$DMG")"; then
-              echo "Release 已有 $(basename "$DMG")（本地 daily-release 上传），跳过"
+              echo "Release 已有 $(basename "$DMG")（本地脚本已上传），跳过"
             else
               gh release upload "$TAG" "$DMG"
             fi

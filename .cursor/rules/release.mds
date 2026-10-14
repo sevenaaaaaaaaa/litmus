@@ -6,7 +6,7 @@ alwaysApply: false
 
 # 发版必须完成（缺一不可）
 
-1. **版本号**：`desktop/tauri.conf.json` 的 `version` 先 bump。
+1. **版本号**：唯一版本源是 `Cargo.toml` `[workspace.package].version`（`tauri.conf.json` 不写 version）；正式版由 `scripts/release.sh X.Y.0` 写入并提交，Nightly 只在构建时注入 `X.(Y+1).0-nightly.YYYYMMDD`。
 2. **推 tag 触发 CI**（主力路径）：`git tag vX.Y.Z && git push origin vX.Y.Z` →
    `.github/workflows/desktop.yml` 产出三平台产物（dmg/msi/exe/deb/AppImage/rpm）
    **+ 全平台 latest.json**（tauri-action `includeUpdaterJson: true`）并附到 GitHub Release。
@@ -14,12 +14,13 @@ alwaysApply: false
    `Could not fetch a valid release JSON from the remote`。
 4. **移动端** CI 不含 Android，需手动：`cargo tauri android build --apk --target aarch64`，
    APK 重命名为 `Litmus-mobile-X.Y.Z-arm64.apk` 上传 Release。
-5. **一键脚本**：日常 `scripts/daily-release.sh`（自动 bump patch + 本地 DMG + Release + 更新本机，`--dry-run` 预演）；
-   手动指定版本 `scripts/release.sh vX.Y.Z`（`--local` 为 CI 挂掉时的 macOS 手工补救）。
+5. **一键脚本**：每日 `scripts/daily-release.sh`（Nightly：不改版本、移动 `nightly` tag、更新唯一预发布，`--dry-run` 预演）；
+   正式版 `scripts/release.sh X.Y.0`（说明取自 CHANGELOG.md；`--updater-only` 为 CI 挂掉时的 macOS 更新包手工补救）。
 6. **macOS DMG 必须内置打开助手**（无 Developer ID / 公证）：统一用 `packaging/macos/make-dmg.sh` 打包，
    CI 的 macOS 任务只 `--bundles app`，DMG 由该脚本产出；本地已上传同名 DMG 时 CI 跳过。
 7. **tag 与版本号必须一致**：v0.1.13 曾在 `tauri.conf.json` 仍为 0.1.12 时打 tag，导致 latest.json 报 0.1.12、
-   旧版本收不到更新。daily-release 会先写版本号再打 tag，并校验产物版本。
+   旧版本收不到更新。release.sh 会先写版本号再打 tag 并校验产物版本；desktop.yml 对 v* tag 也校验 tag == 版本源。
+8. **Nightly 不进应用内更新**：Nightly 是 prerelease，`releases/latest/download/latest.json` 不含预发布。
 
 # 踩坑记录（重发/排障必读）
 
