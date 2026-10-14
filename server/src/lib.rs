@@ -3114,10 +3114,10 @@ mod tests {
         // 复现线上场景：先逐个删除子文件夹（它们都以 <父目录>/ 为容器躺在回收站，
         // 清单里只有子项记录），再删除父目录本身——rename 目标撞上那个非空容器
         // 报 ENOTEMPTY (os error 66)，用户表现为"文件夹怎么都删不掉"。
-        // 修复后：trash_unique_rel 连文件系统一起查重，父目录落到 MindRe.1。
+        // 修复后：trash_unique_rel 连文件系统一起查重，父目录落到 Projects.1。
         let (app, token, dir) = test_router();
         let auth = format!("Bearer {token}");
-        for rel in ["Notes/MindRe/a.md", "Notes/MindRe/子/b.md"] {
+        for rel in ["Notes/Projects/a.md", "Notes/Projects/子/b.md"] {
             let resp = app
                 .clone()
                 .oneshot(
@@ -3133,13 +3133,13 @@ mod tests {
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
         }
-        // 先删子文件夹「子」→ 回收站容器 Notes/MindRe/ 出现且非空
+        // 先删子文件夹「子」→ 回收站容器 Notes/Projects/ 出现且非空
         let resp = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri("/doc?path=Notes/MindRe/子")
+                    .uri("/doc?path=Notes/Projects/子")
                     .header("authorization", &auth)
                     .body(Body::empty())
                     .unwrap(),
@@ -3147,24 +3147,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        assert!(dir.path().join(".thirdc/trash/Notes/MindRe/子/b.md").is_file());
+        assert!(dir.path().join(".thirdc/trash/Notes/Projects/子/b.md").is_file());
 
-        // 再删父目录 MindRe：目标名 trash/Notes/MindRe 已被非空容器占用
+        // 再删父目录 Projects：目标名 trash/Notes/Projects 已被非空容器占用
         let resp = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri("/doc?path=Notes/MindRe")
+                    .uri("/doc?path=Notes/Projects")
                     .header("authorization", &auth)
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "父目录删除应绕开非空容器落去 MindRe.1");
-        assert!(!dir.path().join("Notes/MindRe").exists());
-        assert!(dir.path().join(".thirdc/trash/Notes/MindRe.1/a.md").is_file());
+        assert_eq!(resp.status(), StatusCode::OK, "父目录删除应绕开非空容器落去 Projects.1");
+        assert!(!dir.path().join("Notes/Projects").exists());
+        assert!(dir.path().join(".thirdc/trash/Notes/Projects.1/a.md").is_file());
         // 旧子项的清单记录不受影响，仍可恢复
         let resp = app
             .clone()
@@ -3174,13 +3174,13 @@ mod tests {
                     .uri("/trash/restore")
                     .header("authorization", &auth)
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"path":"Notes/MindRe/子"}"#))
+                    .body(Body::from(r#"{"path":"Notes/Projects/子"}"#))
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "旧子项记录应仍可恢复");
-        assert!(dir.path().join("Notes/MindRe/子/b.md").is_file());
+        assert!(dir.path().join("Notes/Projects/子/b.md").is_file());
     }
 
     #[test]

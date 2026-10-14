@@ -63,7 +63,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
   <img src="docs/img/appendix/present-mode.png" alt="Feynman 展示模式" width="49%">
 </p>
 
-*左：Flow 自由画布（MindRe 库的 PARA 结构）。右：Feynman 展示模式（蒸汽波风格 + 大纲缩略图）。*
+*左：Flow 自由画布（按 PARA 结构组织的示例库）。右：Feynman 展示模式（蒸汽波风格 + 大纲缩略图）。*
 
 ## 🔁 双向 AI
 
@@ -86,7 +86,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 
 - **核心功能永久开源**（AGPL-3.0）：画布、编辑器、检索、发布、MCP，全部在这仓库里
 - **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 连接器**接入，鹿蕊也可作为 MCP server 被其他 agent 调用（`thirdc mcp`）
-- **插件友好**：浏览器扩展（Chrome / Firefox / Safari）源码在库；文件真相 = Open Knowledge Format（Markdown 语义 + YAML 元数据 + 块锚点 + JSON-LD），开发者可按[规范](docs/spec/modes-and-roadmap.md)直接读写
+- **插件友好**：浏览器扩展（Chrome / Firefox / Safari）源码在库；文件真相 = Open Knowledge Format（Markdown 语义 + YAML 元数据 + 块锚点 + JSON-LD），开发者可按[规范](docs/spec/okf.md)直接读写
 
 ## 快速上手
 
@@ -132,12 +132,12 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 | MFlow | **风媒** | 内容生产管线——情报→生产→门禁→分发→回流 |
 | WebsFlow | **魔块** | 落地页工场——44 模块 · 千人千面 |
 | PayFlow | **芭乐 Pay** | 收款单件——一行 script，三分钟开始收钱 |
-| LearnFlow | **芭乐派** | 课程交付单件——芭乐派学院旗舰 |
+| LearnFlow | **林下学院** | 课程交付单件——林下学院旗舰 |
 | InputFlow | **松萝 Liana** | 隐私输入法——纯本地引擎，零服务器 |
 | V2HTML | **成章** | 视频内容引擎——看完一条视频，出口成章 |
 | ZeroZen | **零真** | 广告与弹窗净化——零广告，见真话 |
 
-分层：**OpenFlow = 入口层**（TIPS all-in-one，让一人团队 OPC 与中小团队低门槛完成数字化 + AI 化）；**Flow 家族 = 进阶层**（按需进阶，各自深耕一个业务场景）；**本地工具层**（鹿蕊 / 松萝 / 成章 / 零真）；**芭乐派学院**为教育线品牌（LearnFlow 归属）。
+分层：**OpenFlow = 入口层**（TIPS all-in-one，让一人团队 OPC 与中小团队低门槛完成数字化 + AI 化）；**Flow 家族 = 进阶层**（按需进阶，各自深耕一个业务场景）；**本地工具层**（鹿蕊 / 松萝 / 成章 / 零真）；**林下学院**为教育线品牌（LearnFlow 归属）。
 
 与 OpenFlow 矩阵是**松耦合**:鹿蕊不依赖 OpenFlow 即可完整使用;共享同一套设计契约(全 oklch · 零 hex · 弹簧缓动 · 玻璃拟态 · 圆角三档),未来通过 MCP / 本地 API 成为矩阵的知识与文档工作台——Flow 产品产生的报告、素材、文档,都可以落进鹿蕊的文件真相里被人和 agent 共同使用。
 
@@ -174,7 +174,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 
 ![Flow 画布](docs/img/appendix/flow-canvas-folder.png)
 
-**是什么**：库 = 画布。文件夹自动聚合成组节点（如 MindRe 下的 PARA 结构），文档/采集/附件各有彩色标识点；节点有景深远近（前台清晰、背景淡出），画布布的是点阵网格。
+**是什么**：库 = 画布。文件夹自动聚合成组节点（如示例库里的 PARA 结构），文档/采集/附件各有彩色标识点；节点有景深远近（前台清晰、背景淡出），画布布的是点阵网格。
 **怎么用**：拖空白平移 · `⌘+滚轮` 缩放 · **双击文件夹节点下钻**、双击文档打开阅读 · 拖节点头重排 · 布局自动持久化（下次打开原样）。
 
 #### A2 · 三种视图透镜：画布 / 时间线 / 看板
@@ -474,5 +474,5 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 AGPL-3.0 — 商用与私有部署欢迎,二次开发请遵守同源许可。
 
 <div align="center">
-<sub>芭乐派产品矩阵 · Studio 套件成员 · 与 <a href="https://github.com/sevenaaaaaaaaa/openflow">OpenFlow</a> 同源的设计契约</sub>
+<sub>林下 Understory 产品矩阵 · Studio 套件成员 · 与 <a href="https://github.com/sevenaaaaaaaaa/openflow">OpenFlow</a> 同源的设计契约</sub>
 </div>

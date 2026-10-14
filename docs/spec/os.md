@@ -88,7 +88,7 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 
 1. 凭据只进 `thirdc.toml` / `.thirdc/machine.toml`，**永不进 git**（仓库公开）。
 2. 三件套（GitHub / 服务器 / 安装包）完成后 `git status` 必须清零；Release dmg 必须 sha256 回读校验。
-3. Lovart 审计结论长期有效：外部素材字样不得写入 tracked 文件。
+3. 素材审计结论长期有效：外部素材与第三方品牌字样不得写入 tracked 文件。
 
 ## §9 设备路线（远期）
 
