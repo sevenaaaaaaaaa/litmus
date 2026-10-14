@@ -51,7 +51,7 @@ cargo tauri signer generate -w ~/.tauri/thirdc-updater.key
 默认指向 GitHub Releases 的 `latest.json`：
 
 ```
-https://github.com/sevenaaaaaaaaa/thirdc/releases/latest/download/latest.json
+https://github.com/sevenaaaaaaaaa/litmus/releases/latest/download/latest.json
 ```
 
 迁到 R2 后改为 R2 自定义域名下的 `latest.json`（见下）。

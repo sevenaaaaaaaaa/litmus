@@ -20,7 +20,7 @@ alwaysApply: false
 
 - **CI 报 `Missing comment in secret key`** = 仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`
   丢失或损坏。用 `gh secret list` 检查；重写：仓库公钥
-  （`gh api repos/sevenaaaaaaaaa/thirdc/actions/secrets/public-key`）+ pynacl SealedBox
+  （`gh api repos/sevenaaaaaaaaa/litmus/actions/secrets/public-key`）+ pynacl SealedBox
   加密 `~/.tauri/thirdc-updater.key` 全文后 `gh api -X PUT .../actions/secrets/TAURI_SIGNING_PRIVATE_KEY`。
   口令为空，`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 无需设置。
 - **重发同一 tag**：先 `gh release delete-asset <tag> <name> --yes` 清掉同名资产

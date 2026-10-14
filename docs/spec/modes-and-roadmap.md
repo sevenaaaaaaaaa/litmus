@@ -69,6 +69,6 @@
 
 ## 六、发布与监测
 
-- **已开源**：github.com/sevenaaaaaaaaa/thirdc（main）
+- **已开源**：github.com/sevenaaaaaaaaa/litmus（main）
 - **服务器**：Docker 化部署于 172.96.253.73（127.0.0.1:7700），域名挂载 `nownexts.com/thirdc`（Apache Alias，按 DEPLOY-CONVENTIONS 需手动确认后加）
 - **监测**：`/metrics`（Prometheus 文本）；**审计**：`events/publish.jsonl` + a2ui-actions

@@ -4,7 +4,7 @@
   "submit": "社区收录：向本仓库提交 PR 修改 server/web/plugin-index.json（entry = repo + 可选 path，仓库根或该目录含 manifest.json）",
   "plugins": [
     {
-      "repo": "sevenaaaaaaaaa/thirdc",
+      "repo": "sevenaaaaaaaaa/litmus",
       "path": "examples/plugins/hello-thirdc",
       "id": "hello-thirdc",
       "name": "Hello ThirdC",
@@ -14,7 +14,7 @@
       "tags": ["示例", "官方"]
     },
     {
-      "repo": "sevenaaaaaaaaa/thirdc",
+      "repo": "sevenaaaaaaaaa/litmus",
       "path": "examples/plugins/demo-daily-note",
       "id": "demo-daily-note",
       "name": "每日速记",

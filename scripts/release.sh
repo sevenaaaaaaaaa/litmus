@@ -78,7 +78,7 @@ latest = {
     "pub_date": pub,
     "platforms": {"darwin-aarch64": {
         "signature": sig,
-        "url": f"https://github.com/sevenaaaaaaaaa/thirdc/releases/download/v{ver}/Litmus.app.tar.gz",
+        "url": f"https://github.com/sevenaaaaaaaaa/litmus/releases/download/v{ver}/Litmus.app.tar.gz",
     }},
 }
 pathlib.Path("/tmp/latest.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2))
@@ -98,12 +98,12 @@ upload_asset() { # upload_asset <本地文件>
     ip=$(curl -s "https://1.1.1.1/dns-query?name=uploads.github.com&type=A" \
       -H "accept: application/dns-json" \
       | python3 -c 'import json,sys;print(json.load(sys.stdin)["Answer"][-1]["data"])')
-    rel_id=$(gh api "repos/sevenaaaaaaaaa/thirdc/releases/tags/$TAG" --jq .id)
+    rel_id=$(gh api "repos/sevenaaaaaaaaa/litmus/releases/tags/$TAG" --jq .id)
     token=$(gh auth token)
     curl --fail --progress-bar -X POST \
       -H "Authorization: Bearer $token" -H "Content-Type: application/octet-stream" \
       --resolve "uploads.github.com:443:$ip" \
-      "https://uploads.github.com/repos/sevenaaaaaaaaa/thirdc/releases/$rel_id/assets?name=$name" \
+      "https://uploads.github.com/repos/sevenaaaaaaaaa/litmus/releases/$rel_id/assets?name=$name" \
       --data-binary "@$f"
   fi
   echo "✅ 上传 $name"
@@ -114,4 +114,4 @@ gh release view "$TAG" --json assets --jq '.assets[].name' | grep -q "^latest.js
 upload_asset /tmp/latest.json
 upload_asset "$ARCHIVE"
 upload_asset "$SIG"
-echo "🎉 完成。endpoint 验证: curl -sL https://github.com/sevenaaaaaaaaa/thirdc/releases/latest/download/latest.json | python3 -m json.tool"
+echo "🎉 完成。endpoint 验证: curl -sL https://github.com/sevenaaaaaaaaa/litmus/releases/latest/download/latest.json | python3 -m json.tool"

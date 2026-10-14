@@ -304,6 +304,25 @@ mod tests {
     }
 
     #[test]
+    fn gitops_never_tracks_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path();
+        std::fs::create_dir_all(v.join(".thirdc")).unwrap();
+        std::fs::write(v.join(".thirdc/machine.toml"), "key = 1").unwrap();
+        std::fs::create_dir_all(v.join("Notes")).unwrap();
+        std::fs::write(v.join("Notes/a.md"), "# a").unwrap();
+        gitops::ensure_repo(v).unwrap();
+        gitops::ensure_repo(v).unwrap(); // idempotent
+        let gi = std::fs::read_to_string(v.join(".gitignore")).unwrap();
+        assert_eq!(gi.lines().filter(|l| *l == ".thirdc/").count(), 1);
+        Command::new("git").current_dir(v).args(["add", "-A"]).output().unwrap();
+        let out = Command::new("git").current_dir(v).args(["ls-files", "--cached"]).output().unwrap();
+        let tracked = String::from_utf8_lossy(&out.stdout);
+        assert!(tracked.contains("Notes/a.md"));
+        assert!(!tracked.contains(".thirdc"));
+    }
+
+    #[test]
     fn local_target_reports_files() {
         let dir = tempfile::tempdir().unwrap();
         let site = dir.path().join("site");
@@ -387,17 +406,47 @@ mod tests {
 pub mod gitops {
     use super::{DeployError, git as _git};
 
+    /// Paths that must never leave the device: `.thirdc/` holds the op-log, index
+    /// and machine.toml (device key / per-vault E2EE key); it is rebuilt from files.
+    const VAULT_GITIGNORE: &[&str] = &[".thirdc/", ".DS_Store"];
+
     pub fn ensure_repo(dir: &std::path::Path) -> Result<(), DeployError> {
-        if dir.join(".git").is_dir() {
+        if !dir.join(".git").is_dir() {
+            let out = std::process::Command::new("git")
+                .current_dir(dir)
+                .args(["init", "-b", "main"])
+                .output()?;
+            if !out.status.success() {
+                return Err(DeployError::Git(String::from_utf8_lossy(&out.stderr).into()));
+            }
+        }
+        ensure_gitignore(dir)
+    }
+
+    fn ensure_gitignore(dir: &std::path::Path) -> Result<(), DeployError> {
+        let path = dir.join(".gitignore");
+        let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+        let missing: Vec<&str> = VAULT_GITIGNORE
+            .iter()
+            .copied()
+            .filter(|p| !text.lines().any(|l| l.trim() == *p))
+            .collect();
+        if missing.is_empty() {
             return Ok(());
         }
-        let out = std::process::Command::new("git")
-            .current_dir(dir)
-            .args(["init", "-b", "main"])
-            .output()?;
-        if !out.status.success() {
-            return Err(DeployError::Git(String::from_utf8_lossy(&out.stderr).into()));
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
         }
+        for p in missing {
+            text.push_str(p);
+            text.push('\n');
+        }
+        std::fs::write(&path, text)?;
+        // Untrack anything already committed under ignored paths (keeps local files).
+        let _ = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["rm", "-r", "--cached", "-q", "--ignore-unmatch", ".thirdc"])
+            .output();
         Ok(())
     }
 

@@ -10,15 +10,15 @@
 
 不做 Obsidian、Notion 的替代品——它们为你组织知识，鹿蕊让知识自己长成样子：**人随手记、AI 帮你建，一切落在磁盘上一堆普通的 Markdown 上，人和 agent 共享同一个真相。**
 
-[![Release](https://img.shields.io/github/v/release/sevenaaaaaaaaa/thirdc?style=flat-square&color=4a6cf7)](https://github.com/sevenaaaaaaaaa/thirdc/releases)
-[![License](https://img.shields.io/github/license/sevenaaaaaaaaa/thirdc?style=flat-square)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/sevenaaaaaaaaa/litmus?style=flat-square&color=4a6cf7)](https://github.com/sevenaaaaaaaaa/litmus/releases)
+[![License](https://img.shields.io/github/license/sevenaaaaaaaaa/litmus?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Web%20%7C%20CLI%20%7C%20Android%20%7C%20iOS-111111?style=flat-square)](#-快速开始)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-DEA584?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![Docs](https://img.shields.io/badge/docs-spec%20%E2%9C%94-4a6cf7?style=flat-square)](docs/spec/PRODUCT.md)
 
 **本地优先 · 核心永久开源（AGPL-3.0）· 无锁定** — 数据永远是你磁盘上的 Markdown / HTML / 附件，任何编辑器都能打开，任何 agent 都能读写。
 
-[下载桌面客户端](https://github.com/sevenaaaaaaaaa/thirdc/releases) · [快速开始](#-快速开始) · [设计规范](docs/spec/) · [超详细功能附录](#附录超详细功能清单每图必讲)
+[下载桌面客户端](https://github.com/sevenaaaaaaaaa/litmus/releases) · [快速开始](#-快速开始) · [设计规范](docs/spec/) · [超详细功能附录](#附录超详细功能清单每图必讲)
 
 <img src="docs/img/hero.png" alt="鹿蕊 Litmus — Flow 画布 + Feynman 阅读 + 50 款设计风格" width="100%">
 
@@ -92,7 +92,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 
 ### 桌面客户端(推荐)
 
-从 [Releases](https://github.com/sevenaaaaaaaaa/thirdc/releases) 下载 `Litmus_x.x.x_aarch64.dmg`(Apple Silicon,macOS 12+)。
+从 [Releases](https://github.com/sevenaaaaaaaaa/litmus/releases) 下载 `Litmus_x.x.x_aarch64.dmg`(Apple Silicon,macOS 12+)。
 未做公证,首次打开:**右键 → 打开**,或 `xattr -cr "/Applications/Litmus.app"`。
 
 默认库 `~/Documents/ThirdC`，首次启动自动创建；应用内库选择器可切换，`THIRDC_VAULT` 环境变量亦可。Windows（msi/nsis）与 Linux（deb/AppImage）由 CI 构建见 Releases，Android / iOS 客户端初版已可自[源码](desktop/)构建。

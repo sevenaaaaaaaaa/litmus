@@ -62,6 +62,7 @@ rsync $RSYNC_FLAGS --delete -e "${SSH_OPTS}" \
   --exclude 'desktop/gen' --exclude 'third_party' --exclude '.v2c' --exclude '.video_agent' \
   --exclude '.DS_Store' \
   --exclude '*.keystore' --exclude 'desktop/android-signing.properties' \
+  --exclude '.gradle-mobile' --exclude '.venv*' --exclude '_cowork' --exclude 'node_modules' --exclude '/kb' \
   ./ "${USER_}@${HOST}:${REMOTE_DIR}/src/"
 
 if [ "$DRY_RUN" = 1 ]; then

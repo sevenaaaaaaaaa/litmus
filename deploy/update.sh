@@ -3,7 +3,7 @@
 # 用法（服务器上）：/www/wwwroot/thirdc/update.sh
 set -euo pipefail
 APP=/www/wwwroot/thirdc
-REPO=https://github.com/sevenaaaaaaaaa/thirdc.git
+REPO=https://github.com/sevenaaaaaaaaa/litmus.git
 export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "① 拉取最新代码"
