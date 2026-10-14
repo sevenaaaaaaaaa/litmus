@@ -30,21 +30,35 @@ for arg in "$@"; do
 done
 [[ "$DRY_RUN" == 1 ]] && INSTALL=0
 
-# launchd starts with a minimal PATH.
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+# launchd starts with a minimal PATH. Append (never prepend) so the toolchain matches the
+# interactive shell: Homebrew rustc first, rustup's ~/.cargo/bin only for cargo-tauri etc.
+# Mixing toolchains between runs breaks proc-macro crates ("can't find crate for phf_macros").
+for d in /opt/homebrew/bin /usr/local/bin "$HOME/.cargo/bin" "$HOME/.local/bin" /usr/bin /bin /usr/sbin /sbin; do
+  case ":$PATH:" in *":$d:"*) ;; *) PATH="$PATH:$d" ;; esac
+done
+export PATH
 
 mkdir -p "$(dirname "$LOG")"
+exec 3>&2   # original stderr, used by on_exit (tee may already be gone)
 exec > >(tee -a "$LOG") 2>&1
 
 STEP="init"
 START_TS=$(date +%s)
 log()  { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 step() { STEP="$1"; echo; log "== $1"; }
-skip() { log "SKIPPED: $*"; exit 0; }
+DONE=0
+skip() { log "SKIPPED: $*"; DONE=1; exit 0; }
 on_exit() {
   local rc=$?
   rm -rf "${LOCK_DIR:-/nonexistent}" 2>/dev/null || true
-  if [[ $rc -ne 0 ]]; then log "✗ FAILED at step: $STEP (exit $rc)"; fi
+  # bash 3.2 reports $?=0 in the EXIT trap after `set -u` aborts, so success is tracked explicitly.
+  if [[ $rc -ne 0 || "$DONE" != 1 ]]; then
+    [[ $rc -ne 0 ]] || rc=1
+    local msg
+    msg="[$(date '+%H:%M:%S')] ✗ FAILED at step: $STEP (exit $rc)"
+    echo "$msg" >> "$LOG"; echo "$msg" >&3
+    exit "$rc"
+  fi
 }
 trap on_exit EXIT
 
@@ -65,7 +79,7 @@ echo $$ > "$LOCK_DIR/pid"
 # ---------- 1. preconditions ----------
 step "preconditions"
 BRANCH="$(git branch --show-current)"
-[[ "$BRANCH" == "main" ]] || skip "当前分支是 $BRANCH，不是 main"
+[[ "$BRANCH" == "main" ]] || skip "当前分支是 ${BRANCH}，不是 main"
 
 if [[ -n "$(git status --porcelain)" ]]; then
   log "工作区有未提交改动（不会替你提交）："
@@ -74,9 +88,17 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 step "sync with origin"
-git fetch --quiet --tags origin
+fetch_ok=0
+for attempt in 1 2 3; do
+  if git fetch --quiet --tags origin; then fetch_ok=1; break; fi
+  log "git fetch 失败（第 $attempt 次），10s 后重试"; sleep 10
+done
+if [[ "$fetch_ok" == 0 ]]; then
+  if [[ "$DRY_RUN" == 1 ]]; then log "⚠ 无法连接 origin，dry-run 用本地已有的 origin/main 继续"
+  else log "✗ 无法连接 origin（网络/DNS），本次不发版"; exit 1; fi
+fi
 read -r BEHIND AHEAD < <(git rev-list --left-right --count origin/main...HEAD)
-log "相对 origin/main：落后 $BEHIND，领先 $AHEAD"
+log "相对 origin/main：落后 ${BEHIND}，领先 $AHEAD"
 if [[ "$BEHIND" -gt 0 ]]; then
   if [[ "$DRY_RUN" == 1 ]]; then
     log "dry-run：不执行 pull（正式运行会 git pull --rebase --autostash）"
@@ -130,7 +152,7 @@ else
   VER="$MA.$MI.$((PA + 1))"
 fi
 TAG="v$VER"
-log "目标版本：$TAG（上个 tag：${LATEST_TAG:-无}，新提交 $SINCE 个）"
+log "目标版本：${TAG}（上个 tag：${LATEST_TAG:-无}，新提交 $SINCE 个）"
 
 # ---------- 2. tests ----------
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -230,7 +252,7 @@ bash packaging/macos/make-dmg.sh "$APP_OUT" "$DMG_OUT" "$APP_NAME"
 if [[ "$DRY_RUN" == 1 ]]; then
   echo
   log "dry-run 完成：$TAG  DMG=$DMG_OUT ($(du -h "$DMG_OUT" | cut -f1))  总耗时 $(( $(date +%s) - START_TS ))s"
-  exit 0
+  DONE=1; exit 0
 fi
 
 # ---------- 5. push + GitHub Release ----------
@@ -266,7 +288,7 @@ rm -f "$NOTES"
 # CI (desktop.yml) skips its own DMG upload when this asset already exists, so nothing is clobbered.
 DMG_NAME="$(basename "$DMG_OUT")"
 if gh_release_has_asset "$TAG" "$DMG_NAME"; then
-  log "Release 已有 $DMG_NAME，跳过上传"
+  log "Release 已有 ${DMG_NAME}，跳过上传"
 else
   gh_upload_asset "$TAG" "$DMG_OUT"
 fi
@@ -284,7 +306,7 @@ if [[ "$INSTALL" == 1 ]]; then
     WAS_RUNNING=0
     if app_running; then
       WAS_RUNNING=1
-      log "正在退出 $APP_NAME…"
+      log "正在退出 ${APP_NAME}…"
       osascript -e "quit app \"$APP_NAME\"" >/dev/null 2>&1 || true
       for _ in $(seq 1 60); do app_running || break; sleep 1; done
       if app_running; then
@@ -298,7 +320,7 @@ if [[ "$INSTALL" == 1 ]]; then
     xattr -dr com.apple.quarantine "$STAGED" 2>/dev/null || true
     rm -rf "$INSTALL_PATH"
     mv "$STAGED" "$INSTALL_PATH"
-    INSTALLED_NOTE="$INSTALL_PATH（$INSTALLED_VER → $VER）"
+    INSTALLED_NOTE="${INSTALL_PATH}（$INSTALLED_VER → ${VER}）"
     if [[ "$WAS_RUNNING" == 1 ]]; then open "$INSTALL_PATH"; log "已重新启动 $APP_NAME"; fi
   fi
 fi
@@ -311,3 +333,4 @@ echo "  DMG:      $DMG_OUT"
 echo "  本机应用: $INSTALLED_NOTE"
 echo "  CI:       gh run list -R $REPO_SLUG --workflow=desktop.yml --limit 1（Win/Linux 包 + latest.json）"
 echo "  耗时:     $(( $(date +%s) - START_TS ))s   日志: $LOG"
+DONE=1

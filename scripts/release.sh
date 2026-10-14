@@ -27,14 +27,14 @@ LOCAL=0
 VER="${TAG#v}"
 [[ -z "$(git status --porcelain)" ]] || { echo "✗ 工作区不干净，先提交"; exit 1; }
 BRANCH="$(git branch --show-current)"
-[[ "$BRANCH" == "main" ]] || { echo "✗ 当前在 $BRANCH，请切到 main"; exit 1; }
+[[ "$BRANCH" == "main" ]] || { echo "✗ 当前在 ${BRANCH}，请切到 main"; exit 1; }
 git fetch -q origin main
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || {
   echo "✗ 本地 main 与 origin/main 不同步，先 push"; exit 1; }
 
 CONF_VER=$(python3 -c "import json;print(json.load(open('desktop/tauri.conf.json'))['version'])")
 [[ "$CONF_VER" == "$VER" ]] || {
-  echo "✗ desktop/tauri.conf.json 版本为 $CONF_VER ≠ $VER，先 bump 再发"; exit 1; }
+  echo "✗ desktop/tauri.conf.json 版本为 $CONF_VER ≠ ${VER}，先 bump 再发"; exit 1; }
 
 # ---------- tag 处理 ----------
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
