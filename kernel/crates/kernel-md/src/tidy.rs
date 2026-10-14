@@ -164,6 +164,10 @@ fn width(s: &str) -> usize {
 
 // ───────────────────────── 0. 规范化 ─────────────────────────
 
+const KANGXI: &str = "一丨丶丿乙亅二亠人儿入八冂冖冫几凵刀力勹匕匚匸十卜卩厂厶又口囗土士夂夊夕大女子宀寸小尢尸屮山巛工己巾干幺广廴廾弋弓彐彡彳心戈戶手支攴文斗斤方无日曰月木欠止歹殳毋比毛氏气水火爪父爻爿片牙牛犬玄玉瓜瓦甘生用田疋疒癶白皮皿目矛矢石示禸禾穴立竹米糸缶网羊羽老而耒耳聿肉臣自至臼舌舛舟艮色艸虍虫血行衣襾見角言谷豆豕豸貝赤走足身車辛辰辵邑酉釆里金長門阜隶隹雨靑非面革韋韭音頁風飛食首香馬骨高髟鬥鬯鬲鬼魚鳥鹵鹿麥麻黃黍黑黹黽鼎鼓鼠鼻齊齒龍龜龠";
+/// 部首补充区里的简化部首：成对出现（部首, 常用字）
+const RADICAL_SUP: &str = "⻅见⻆角⻉贝⻋车⻔门⻓长⻚页⻛风⻜飞⻝食⻢马⻦鸟⻤鬼⻥鱼⻨麦⻩黄⻬齐⻮齿⻯龙⻳龟⺟母⺠民⻊足⻈讠⻏阝⺮竹⺈刀⺊卜⺌小⺍小⺕彐⺗心⺡氵⺢水⺣灬⺤爫⺨犭⺶羊⺻聿⻂衤⻎辶";
+
 fn normalize(md: &str, cx: &mut Ctx) -> String {
     let s = md.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = String::with_capacity(s.len());
@@ -182,6 +186,16 @@ fn normalize(md: &str, cx: &mut Ctx) -> String {
                 if !line_start {
                     out.push(' ');
                 }
+            }
+            // PDF 抽出的康熙部首 / 部首补充（⼀ ⽣ ⻚）→ 常用字
+            c if ('\u{2f00}'..='\u{2fd5}').contains(&c) => {
+                n += 1;
+                out.push(KANGXI.chars().nth(c as usize - 0x2f00).unwrap_or(c));
+            }
+            c if ('\u{2e80}'..='\u{2ef3}').contains(&c) && RADICAL_SUP.contains(c) => {
+                n += 1;
+                let k = RADICAL_SUP.chars().position(|x| x == c).unwrap_or(0);
+                out.push(RADICAL_SUP.chars().nth(k + 1).unwrap_or(c));
             }
             '\u{000c}' | '\u{000b}' => {
                 n += 1;

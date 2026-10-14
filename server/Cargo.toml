@@ -13,6 +13,7 @@ kernel-core = { path = "../kernel/crates/kernel-core" }
 thirdc-mcp = { path = "../mcp" }
 kernel-a2ui = { path = "../kernel/crates/kernel-a2ui" }
 kernel-deploy = { path = "../kernel/crates/kernel-deploy" }
+kernel-convert = { path = "../kernel/crates/kernel-convert" }
 kernel-backup = { path = "../kernel/crates/kernel-backup" }
 axum.workspace = true
 tokio.workspace = true

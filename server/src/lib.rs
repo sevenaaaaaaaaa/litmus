@@ -229,6 +229,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/ingest/web", post(ingest_web))
         .route("/ingest/html", post(ingest_html))
         .route("/ingest/file", post(ingest_file))
+        .route("/export/{fmt}", get(export_doc))
         .route("/desktop/info", get(desktop_info))
         .route("/desktop/import", post(desktop_import))
         .route("/desktop/terminal", post(desktop_terminal))
@@ -645,8 +646,9 @@ async fn asset_file(
     h: HeaderMap,
     Query(q): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    if let Err(e) = check_token(&st, &h) {
-        return e.into_response();
+    // <img src> 带不了 header：query token 兜底
+    if check_token(&st, &h).is_err() && q.get("token").map(|t| t != &st.token).unwrap_or(true) {
+        return err(StatusCode::UNAUTHORIZED, "invalid or missing token").into_response();
     }
     let path = q.get("path").cloned().unwrap_or_default();
     if !path.starts_with("Assets/") || path.contains("..") || path.contains('\\') {
@@ -5226,6 +5228,220 @@ async fn share_get(AxumPath(id): AxumPath<String>) -> impl IntoResponse {
     err(StatusCode::NOT_FOUND, "share not found (需要完整路径)").into_response()
 }
 
+/* ───────── 文档格式互转：导入（结构保真）/ 导出（docx · odt · 打印版 PDF） ───────── */
+
+/// 任意文档文件 → 结构化 Markdown（图片尚未落库，占位 kc-img://n）。返回 (结果, 抽取器名)。
+/// 原生：docx/odt/pptx/odp/xlsx/ods/epub/rtf/html；PDF：pdftotext → 版式清理；
+/// .doc：macOS textutil(HTML) → LibreOffice 转 docx → 失败提示另存。
+fn import_document(ext: &str, bytes: &[u8]) -> Result<(kernel_convert::Converted, String), String> {
+    let ext = ext.to_ascii_lowercase();
+    if kernel_convert::supports(&ext) {
+        return kernel_convert::convert(&ext, bytes).map(|c| (c, format!("native-{ext}")));
+    }
+    let tmp_dir = std::env::temp_dir().join(format!("thirdc-imp-{}-{}", std::process::id(), now_secs()));
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let tmp = tmp_dir.join(format!("in.{ext}"));
+    let _ = std::fs::write(&tmp, bytes);
+    let run = |prog: &str, args: &[&str]| -> Option<Vec<u8>> {
+        std::process::Command::new(prog).args(args).output().ok().filter(|o| o.status.success()).map(|o| o.stdout)
+    };
+    let p = tmp.to_string_lossy().to_string();
+    let out = match ext.as_str() {
+        "pdf" => {
+            let text = run("pdftotext", &["-enc", "UTF-8", &p, "-"]).map(|b| String::from_utf8_lossy(&b).into_owned()).filter(|t| !t.trim().is_empty());
+            let text = text.or_else(|| python_extract(&tmp));
+            match text {
+                Some(t) => Ok((kernel_convert::Converted { markdown: pdf_text_to_md(&t), ..Default::default() }, "pdftotext".to_string())),
+                None => Err("本机没有 PDF 解析器：请在客户端导入（浏览器内解析），或安装 poppler（pdftotext）".to_string()),
+            }
+        }
+        "doc" | "wps" | "wpd" | "pages" | "wordml" | "webarchive" => {
+            // macOS：textutil 转 HTML 保留标题 / 列表 / 表格 / 粗斜体
+            if let Some(html) = run("textutil", &["-convert", "html", "-stdout", &p]) {
+                kernel_convert::html(&String::from_utf8_lossy(&html)).map(|c| (c, "textutil".to_string()))
+            } else if run("soffice", &["--headless", "--convert-to", "docx", "--outdir", &tmp_dir.to_string_lossy(), &p]).is_some() {
+                let docx = std::fs::read(tmp_dir.join("in.docx")).map_err(|e| e.to_string())?;
+                kernel_convert::convert("docx", &docx).map(|c| (c, "libreoffice".to_string()))
+            } else {
+                Err(format!(".{ext} 是旧版二进制格式：请在 Word / WPS 里另存为 .docx 后再导入"))
+            }
+        }
+        _ => match python_extract(&tmp) {
+            Some(t) => Ok((kernel_convert::Converted { markdown: t, ..Default::default() }, "python".to_string())),
+            None => Err(format!("暂不支持 .{ext}")),
+        },
+    };
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let (mut c, x) = out?;
+    if x == "pdftotext" || x == "python" {
+        let r = kernel_core::tidy::tidy(&c.markdown, &kernel_core::tidy::TidyOptions { promote_title: true, pangu: false });
+        c.markdown = r.markdown;
+    }
+    Ok((c, x))
+}
+
+/// 旧路径：scripts/extract_doc.py（服务器部署形态常备 PyMuPDF / python-docx）。
+fn python_extract(path: &std::path::Path) -> Option<String> {
+    let script = std::env::var("THIRDC_EXTRACT_SCRIPT").ok().map(std::path::PathBuf::from).filter(|p| p.is_file())
+        .or_else(|| Some(std::path::PathBuf::from("scripts/extract_doc.py")).filter(|p| p.is_file()))
+        .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("../src/scripts/extract_doc.py"))).filter(|p| p.is_file()))?;
+    let python = std::env::var("THIRDC_PYTHON").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "python3".to_string());
+    let o = std::process::Command::new(python).arg(&script).arg(path).output().ok()?;
+    let v: Value = serde_json::from_slice(&o.stdout).ok()?;
+    v["ok"].as_bool().filter(|x| *x)?;
+    v["text"].as_str().map(String::from).filter(|t| !t.trim().is_empty())
+}
+
+/// PDF 抽出的纯文本 → 版式清理：去掉每页重复的页眉页脚与页码，换页处接回被截断的句子，
+/// 其余（硬换行、列表、标题）交给魔法排版规则。
+fn pdf_text_to_md(text: &str) -> String {
+    let pages: Vec<Vec<&str>> = text.split('\u{c}').map(|p| p.lines().collect()).filter(|p: &Vec<&str>| p.iter().any(|l| !l.trim().is_empty())).collect();
+    let n = pages.len();
+    // 页眉页脚：每页首/末 2 行里，去掉数字后在 ≥ 一半页面重复出现的行
+    let norm = |l: &str| l.chars().filter(|c| !c.is_ascii_digit() && !c.is_whitespace()).collect::<String>();
+    let mut freq: HashMap<String, usize> = HashMap::new();
+    if n >= 3 {
+        for p in &pages {
+            let ls: Vec<&&str> = p.iter().filter(|l| !l.trim().is_empty()).collect();
+            let mut edge: Vec<String> = ls.iter().take(2).chain(ls.iter().rev().take(2)).map(|l| norm(l)).collect();
+            edge.sort();
+            edge.dedup();
+            for e in edge {
+                *freq.entry(e).or_default() += 1;
+            }
+        }
+    }
+    let repeated: std::collections::HashSet<String> = freq.into_iter().filter(|(k, c)| *c * 2 >= n && k.chars().count() <= 40).map(|(k, _)| k).collect();
+    let mut out: Vec<String> = Vec::new();
+    for p in pages {
+        let ls: Vec<&str> = p.into_iter().collect();
+        let nonblank: Vec<usize> = ls.iter().enumerate().filter(|(_, l)| !l.trim().is_empty()).map(|(i, _)| i).collect();
+        let edges: std::collections::HashSet<usize> = nonblank.iter().take(2).chain(nonblank.iter().rev().take(2)).copied().collect();
+        for (i, l) in ls.iter().enumerate() {
+            let t = l.trim();
+            if edges.contains(&i) && (repeated.contains(&norm(t)) || t.chars().all(|c| c.is_ascii_digit() || "-–— /第页共Page of".contains(c))) && !t.is_empty() {
+                continue;
+            }
+            out.push(t.to_string());
+        }
+        // 换页：上一页末行没收句就直接接下一页
+        out.push("\u{0}PAGE".into());
+    }
+    let mut md = String::new();
+    let mut prev = String::new();
+    for l in out {
+        if l == "\u{0}PAGE" {
+            if !prev.is_empty() && "。！？.!?：:；;".contains(prev.chars().last().unwrap_or('。')) {
+                md.push('\n');
+            }
+            continue;
+        }
+        md.push_str(&l);
+        md.push('\n');
+        if !l.is_empty() {
+            prev = l;
+        }
+    }
+    md
+}
+
+/// 存图片并换占位符，返回完整 Markdown（# 标题 + 正文）。
+fn materialize(k: &mut Kernel, mut c: kernel_convert::Converted, fallback_title: &str) -> String {
+    c.resolve_images(|img| k.put_asset(&img.name, &img.bytes).ok().map(|m| m.rel));
+    c.document(fallback_title)
+}
+
+/// GET /export/{fmt}?path=…&token=…  fmt = docx | odt | md | html | print
+async fn export_doc(
+    State(st): State<Arc<AppState>>,
+    h: HeaderMap,
+    AxumPath(fmt): AxumPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    // 下载走 <a href>：带不了 header，query token 兜底
+    if check_token(&st, &h).is_err() && q.get("token").map(|t| t != &st.token).unwrap_or(true) {
+        return err(StatusCode::UNAUTHORIZED, "invalid or missing token").into_response();
+    }
+    let path = q.get("path").cloned().unwrap_or_default();
+    if !is_safe_doc_path(&path) {
+        return err(StatusCode::BAD_REQUEST, "path must be under Notes/").into_response();
+    }
+    let (md, title, root, html) = {
+        let mut k = st.kernel.lock().unwrap();
+        let _ = k.sync_throttled();
+        let model = match k.get_doc(&path) {
+            Ok(m) => m,
+            Err(e) => return err(StatusCode::NOT_FOUND, e).into_response(),
+        };
+        let html = if fmt == "print" || fmt == "html" { k.render_doc_html(&path).unwrap_or_else(|_| kernel_core::to_html(&model)) } else { String::new() };
+        let raw = std::fs::read_to_string(k.vault.root.join(&path)).unwrap_or_else(|_| kernel_core::to_markdown(&model));
+        (raw, model.title.clone().unwrap_or_else(|| stem_of(&path)), k.vault.root.clone(), html)
+    };
+    let stem = safe_file_stem(&title);
+    let stem = if stem.is_empty() { stem_of(&path) } else { stem };
+    let root2 = root.clone();
+    let load = move |src: &str| -> Option<Vec<u8>> {
+        let rel = src.strip_prefix("/asset-file?path=").unwrap_or(src).trim_start_matches("./").replace("%2F", "/");
+        if rel.contains("..") || !(rel.starts_with("Assets/") || rel.starts_with("Notes/")) {
+            return None;
+        }
+        std::fs::read(root2.join(rel)).ok()
+    };
+    let opts = kernel_convert::export::ExportOpts { title: None, load_image: &load };
+    let (bytes, mime, ext): (Vec<u8>, &str, &str) = match fmt.as_str() {
+        "docx" => match kernel_convert::export::to_docx(&strip_frontmatter(&md), &opts) {
+            Ok(b) => (b, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        },
+        "odt" => match kernel_convert::export::to_odt(&strip_frontmatter(&md), &opts) {
+            Ok(b) => (b, "application/vnd.oasis.opendocument.text", "odt"),
+            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        },
+        "md" => (md.into_bytes(), "text/markdown; charset=utf-8", "md"),
+        "html" => (inline_vault_assets(&html, &root).into_bytes(), "text/html; charset=utf-8", "html"),
+        "print" => {
+            let auto = q.get("auto").map(|v| v == "1").unwrap_or(false);
+            let page = print_html(&inline_vault_assets(&html, &root), auto);
+            return ([(header::CONTENT_TYPE, "text/html; charset=utf-8".to_string())], page).into_response();
+        }
+        _ => return err(StatusCode::BAD_REQUEST, "fmt 只支持 docx / odt / md / html / print").into_response(),
+    };
+    let fname = format!("{stem}.{ext}");
+    let ascii: String = fname.chars().map(|c| if c.is_ascii_alphanumeric() || ".-_".contains(c) { c } else { '_' }).collect();
+    let disp = format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{}", urlenc_query(&fname));
+    ([(header::CONTENT_TYPE, mime.to_string()), (header::CONTENT_DISPOSITION, disp)], bytes).into_response()
+}
+
+fn strip_frontmatter(md: &str) -> String {
+    if let Some(rest) = md.strip_prefix("---\n") {
+        if let Some(end) = rest.find("\n---") {
+            return rest[end + 4..].trim_start_matches('\n').to_string();
+        }
+    }
+    md.to_string()
+}
+
+/// 打印版：A4 页面、页边距、标题不落页尾、表格/代码/图片不被拦腰截断、链接打印出地址。
+fn print_html(html: &str, auto: bool) -> String {
+    let css = "<style data-print>\
+@page{size:A4;margin:20mm 18mm 22mm}\
+@media print{html,body{background:#fff!important}body{max-width:none!important;padding:0!important;font-size:11pt!important;line-height:1.7!important}\
+h1,h2,h3,h4{break-after:avoid;page-break-after:avoid}h1{break-before:avoid}\
+table,pre,blockquote,img,figure,.kb-embed,.math-display,pre.mermaid{break-inside:avoid;page-break-inside:avoid}\
+p,li{orphans:3;widows:3}thead{display:table-header-group}tr{break-inside:avoid}\
+pre{white-space:pre-wrap;word-break:break-word;box-shadow:none!important;border:1px solid #ddd}\
+img{box-shadow:none!important;max-height:240mm}\
+a[href^=\"http\"]::after{content:\" (\" attr(href) \")\";font-size:.8em;color:#777;word-break:break-all}\
+.kb-embed{display:none}}</style>";
+    let script = if auto {
+        "<script>addEventListener('load',()=>setTimeout(()=>{try{window.print()}catch(e){}},400))</script>"
+    } else {
+        ""
+    };
+    let extra = format!("{css}{script}");
+    if html.contains("</head>") { html.replacen("</head>", &format!("{extra}</head>"), 1) } else { format!("{extra}{html}") }
+}
+
 /// PDF / DOCX 内容解析：上传文件 → shell python3 extract_doc.py → 导入为文档。
 async fn ingest_file(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
@@ -5237,63 +5453,70 @@ async fn ingest_file(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     };
     let name = req.get("name").and_then(|n| n.as_str()).unwrap_or("file.pdf").to_string();
     let content_b64 = req.get("content_base64").and_then(|c| c.as_str()).unwrap_or("").to_string();
-    if content_b64.is_empty() {
-        return err(StatusCode::BAD_REQUEST, "需要 content_base64").into_response();
-    }
+    // 客户端已解析好的 Markdown（PDF 走浏览器内 pdf.js 版式分析）
+    let client_md = req.get("markdown").and_then(|c| c.as_str()).map(String::from).filter(|s| !s.trim().is_empty());
     use base64::Engine;
-    let bytes = match base64::engine::general_purpose::STANDARD.decode(&content_b64) {
-        Ok(b) => b,
-        Err(e) => return err(StatusCode::BAD_REQUEST, format!("base64: {e}")).into_response(),
+    let bytes = if content_b64.is_empty() {
+        Vec::new()
+    } else {
+        match base64::engine::general_purpose::STANDARD.decode(&content_b64) {
+            Ok(b) => b,
+            Err(e) => return err(StatusCode::BAD_REQUEST, format!("base64: {e}")).into_response(),
+        }
     };
+    if bytes.is_empty() && client_md.is_none() {
+        return err(StatusCode::BAD_REQUEST, "需要 content_base64 或 markdown").into_response();
+    }
     let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
-    if !["pdf", "docx", "doc", "xlsx", "pptx", "odt", "ods", "odp"].contains(&ext.as_str()) {
-        return err(StatusCode::BAD_REQUEST, "仅支持 pdf/docx/doc/xlsx/pptx/odt/ods/odp").into_response();
-    }
+    let stem = name.rsplit_once('.').map(|(a, _)| a).unwrap_or(&name).to_string();
 
-    // 写临时文件 → python3 提取
-    let tmp = std::env::temp_dir().join(format!("thirdc-{}.{ext}", std::process::id()));
-    std::fs::write(&tmp, &bytes).unwrap_or(());
-    // 脚本定位：环境变量 > cwd > 可执行文件同级 src/（部署形态 /www/wwwroot/thirdc/bin/thirdc）
-    let script = std::env::var("THIRDC_EXTRACT_SCRIPT").ok().map(std::path::PathBuf::from)
-        .filter(|p| p.is_file())
-        .or_else(|| std::path::PathBuf::from("scripts/extract_doc.py").is_file().then(|| std::path::PathBuf::from("scripts/extract_doc.py")))
-        .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("../src/scripts/extract_doc.py"))))
-        .filter(|p| p.is_file())
-        .unwrap_or_else(|| std::path::PathBuf::from("scripts/extract_doc.py"));
-    // 解释器定位：THIRDC_PYTHON > python3（服务器侧装新版 Python 时经 systemd 注入，绕开系统 py3.6）
-    let python = std::env::var("THIRDC_PYTHON").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "python3".to_string());
-    let out = tokio::process::Command::new(python)
-        .arg(&script).arg(&tmp)
-        .output().await;
-    let _ = std::fs::remove_file(&tmp);
-    let out = match out {
-        Ok(o) if o.status.success() => o,
-        Ok(o) => return err(StatusCode::BAD_REQUEST, format!("解析失败：{}", String::from_utf8_lossy(&o.stderr).chars().take(200).collect::<String>())).into_response(),
-        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    let (conv, extractor) = match client_md {
+        Some(md) => {
+            let r = kernel_core::tidy::tidy(&md, &kernel_core::tidy::TidyOptions { promote_title: true, pangu: false });
+            let mut c = kernel_convert::Converted { markdown: r.markdown, ..Default::default() };
+            // 客户端带来的图片（PDF 页内图）：[{name, content_base64}]，正文里用 kc-img://n 占位
+            if let Some(arr) = req.get("images").and_then(|v| v.as_array()) {
+                for (i, im) in arr.iter().enumerate() {
+                    let b = im.get("content_base64").and_then(|x| x.as_str()).and_then(|x| base64::engine::general_purpose::STANDARD.decode(x).ok());
+                    if let Some(b) = b {
+                        c.images.push(kernel_convert::Image { token: format!("kc-img://{i}"), name: im.get("name").and_then(|x| x.as_str()).unwrap_or("image.png").to_string(), bytes: b });
+                    }
+                }
+            }
+            (c, "client".to_string())
+        }
+        None => match tokio::task::spawn_blocking({
+            let ext = ext.clone();
+            let bytes = bytes.clone();
+            move || import_document(&ext, &bytes)
+        })
+        .await
+        {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        },
     };
-    let parsed: Value = match serde_json::from_slice(&out.stdout) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-    };
-    if !parsed["ok"].as_bool().unwrap_or(false) {
-        return err(StatusCode::BAD_REQUEST, parsed["error"].as_str().unwrap_or("解析失败")).into_response();
+    if conv.markdown.trim().is_empty() && conv.images.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "提取出的内容为空（扫描件需要 OCR）").into_response();
     }
-    let text = parsed["text"].as_str().unwrap_or("").to_string();
-    if text.trim().is_empty() {
-        return err(StatusCode::BAD_REQUEST, "提取出的内容为空").into_response();
-    }
-    // 标题：第一行非空行
-    let title = text.lines().find(|l| !l.trim().is_empty()).unwrap_or(&name).trim().to_string();
-    let title = if title.chars().count() > 80 { title.chars().take(80).collect() } else { title };
+    let title = conv.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| stem.clone());
+    let title: String = title.chars().take(80).collect();
 
     let mut k = st.kernel.lock().unwrap();
-    let uri = format!("upload://{}-{}", kernel_core::Cas::hash_hex(name.as_bytes())[..12].to_string(), kernel_core::Cas::hash_hex(&bytes)[..8].to_string());
-    match k.import_capture("upload", &uri, Some(&title), &text, "text/markdown") {
+    let full = materialize(&mut k, conv, &title);
+    // 正文去掉首行标题（import_capture 会写 # 标题 + 来源行）
+    let body_md = full.strip_prefix(&format!("# {}\n", full.lines().next().unwrap_or("").trim_start_matches("# "))).unwrap_or(&full).trim_start().to_string();
+    let doc_title = full.lines().next().and_then(|l| l.strip_prefix("# ")).unwrap_or(&title).to_string();
+    let uri = format!("upload://{}-{}", &kernel_core::Cas::hash_hex(name.as_bytes())[..12], &kernel_core::Cas::hash_hex(if bytes.is_empty() { body_md.as_bytes() } else { &bytes })[..8]);
+    match k.import_capture("upload", &uri, Some(&doc_title), &body_md, "text/markdown") {
         Ok(rel) => {
             // 附件本体也入库（原文可下载）
-            let _ = k.put_asset(&name, &bytes);
-            audit_log(&k.vault.sidecar(), "ingest-file", &json!({"name": name, "rel": rel, "bytes": bytes.len()}));
-            Json(json!({ "title": title, "rel": rel, "text_len": text.len(), "file_size": bytes.len() })).into_response()
+            if !bytes.is_empty() {
+                let _ = k.put_asset(&name, &bytes);
+            }
+            audit_log(&k.vault.sidecar(), "ingest-file", &json!({"name": name, "rel": rel, "bytes": bytes.len(), "extractor": extractor}));
+            Json(json!({ "title": doc_title, "rel": rel, "text_len": body_md.len(), "file_size": bytes.len(), "extractor": extractor })).into_response()
         }
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
@@ -6751,6 +6974,21 @@ async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
                 "txt" => Some((plain_to_md(&String::from_utf8_lossy(&bytes)), "native".into(), "md")),
                 _ if kernel_core::VERBATIM_EXTS.contains(&ext.as_str()) => {
                     Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), &ext))
+                }
+                // 办公 / 开源文档 / PDF：结构保真转换（图片落 Assets）
+                _ if kernel_convert::supports(&ext) || matches!(ext.as_str(), "pdf" | "doc" | "wps" | "pages" | "wordml" | "webarchive") => {
+                    match import_document(&ext, &bytes) {
+                        Ok((c, x)) => {
+                            let stem = p.file_stem().and_then(|x| x.to_str()).unwrap_or("doc").to_string();
+                            let mut k = st.kernel.lock().unwrap();
+                            let full = materialize(&mut k, c, &stem);
+                            Some((full, x, "md"))
+                        }
+                        Err(_) => match extract_text(&p) {
+                            Some((t, x)) => Some((plain_to_md(&t), x, "md")),
+                            None => None,
+                        },
+                    }
                 }
                 _ => match extract_text(&p) {
                     Some((t, x)) => Some((plain_to_md(&t), x, "md")),

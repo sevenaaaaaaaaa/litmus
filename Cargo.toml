@@ -10,6 +10,7 @@ members = [
     "kernel/crates/kernel-a2ui",
     "kernel/crates/kernel-deploy",
     "kernel/crates/kernel-backup",
+    "kernel/crates/kernel-convert",
     "server",
     "mcp",
     "cli",

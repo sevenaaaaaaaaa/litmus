@@ -23,4 +23,6 @@ commands.allow = [
   "desktop_reveal_path",
   "desktop_open_path",
   "desktop_kernel_api",
+  "desktop_save_download",
+  "desktop_print_url",
 ]

@@ -3011,6 +3011,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-convert"
+version = "0.1.12"
+dependencies = [
+ "flate2",
+ "kernel-md",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "kernel-core"
 version = "0.1.12"
 dependencies = [
@@ -5886,6 +5897,7 @@ version = "0.1.12"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "cocoa",
  "kernel-core",
  "objc",
@@ -5926,6 +5938,7 @@ dependencies = [
  "hex",
  "kernel-a2ui",
  "kernel-backup",
+ "kernel-convert",
  "kernel-core",
  "kernel-deploy",
  "notify",

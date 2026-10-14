@@ -186,11 +186,21 @@ fn push_block(out: &mut String, b: &Block) {
             }
         }
         Block::List { ordered, items, .. } => {
-            for (i, item) in items.iter().enumerate() {
+            // 嵌套：条目文本前导空格即层级（每级 2 格），序号按层级各自计数
+            let mut counters = [0usize; 8];
+            for item in items.iter() {
+                let ind = item.len() - item.trim_start().len();
+                let lvl = (ind / 2).min(7);
+                let text = item.trim_start();
+                let pad = " ".repeat(lvl * 2);
                 if *ordered {
-                    out.push_str(&format!("{}. {}\n", i + 1, item));
+                    counters[lvl] += 1;
+                    for c in counters.iter_mut().skip(lvl + 1) {
+                        *c = 0;
+                    }
+                    out.push_str(&format!("{pad}{}. {}\n", counters[lvl], text));
                 } else {
-                    out.push_str(&format!("- {item}\n"));
+                    out.push_str(&format!("{pad}- {text}\n"));
                 }
             }
             // 列表块末尾不带多余换行，块间距由外层控制
@@ -372,8 +382,9 @@ pub fn from_markdown(src: &str) -> Result<DocModel, MdError> {
         // list
         if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
             let mut items = Vec::new();
+            let mut stack: Vec<usize> = Vec::new();
             while i < lines.len() && (lines[i].trim_start().starts_with("- ") || lines[i].trim_start().starts_with("* ")) {
-                items.push(lines[i].trim_start()[2..].to_string());
+                items.push(format!("{}{}", list_indent(lines[i], &mut stack), &lines[i].trim_start()[2..]));
                 i += 1;
             }
             doc.blocks.push(Block::List { id: next_id(), ordered: false, items });
@@ -381,13 +392,14 @@ pub fn from_markdown(src: &str) -> Result<DocModel, MdError> {
         }
         if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
             let mut items = Vec::new();
+            let mut stack: Vec<usize> = Vec::new();
             while i < lines.len() {
                 let t = lines[i].trim_start();
                 let Some(dot) = t.find(". ") else { break };
                 if !t[..dot].chars().all(|c| c.is_ascii_digit()) {
                     break;
                 }
-                items.push(t[dot + 2..].to_string());
+                items.push(format!("{}{}", list_indent(lines[i], &mut stack), &t[dot + 2..]));
                 i += 1;
             }
             if !items.is_empty() {
@@ -461,6 +473,20 @@ fn extract_anchor(b: &mut Block) -> Option<String> {
         }
     }
     None
+}
+
+/// 列表项缩进 → 规范化为每级 2 个空格。层级按「比上一级缩进更深」相对判定，
+/// 2 格 / 3 格 / 4 格 / tab 的写法都认。
+fn list_indent(line: &str, stack: &mut Vec<usize>) -> String {
+    let w: usize = line.chars().take_while(|c| *c == ' ' || *c == '\t').map(|c| if c == '\t' { 4 } else { 1 }).sum();
+    while stack.last().map_or(false, |&top| top > w) {
+        stack.pop();
+    }
+    if stack.last().map_or(true, |&top| top < w) {
+        stack.push(w);
+    }
+    let lvl = stack.len().saturating_sub(1).min(7);
+    " ".repeat(lvl * 2)
 }
 
 fn is_table_sep(line: &str) -> bool {
@@ -653,6 +679,28 @@ fn inline_spans(s: &str) -> String {
         rest = &after[j + 2..];
     }
     t.push_str(rest);
+    // ![说明](图片地址)：库内相对路径 / http(s) / data:image
+    let mut im = String::new();
+    let mut rest = t.as_str();
+    while let Some(i) = rest.find("![") {
+        let after = &rest[i + 2..];
+        let Some(j) = after.find("](") else { break };
+        let alt = &after[..j];
+        let tail = &after[j + 2..];
+        let Some(k) = tail.find(')') else { break };
+        let src = tail[..k].trim();
+        let ok = src.starts_with("http://") || src.starts_with("https://") || src.starts_with("data:image/")
+            || ((src.starts_with("Assets/") || src.starts_with("Notes/") || src.starts_with("./") || src.starts_with("/asset-file")) && !src.contains(".."));
+        im.push_str(&rest[..i]);
+        if ok && !alt.contains('[') {
+            im.push_str(&format!("<img src=\"{src}\" alt=\"{alt}\" loading=\"lazy\">"));
+        } else {
+            im.push_str(&rest[i..i + 2 + j + 2 + k + 1]);
+        }
+        rest = &tail[k + 1..];
+    }
+    im.push_str(rest);
+    let t = im;
     // [文字](url)
     let mut u = String::new();
     let mut rest = t.as_str();
@@ -804,16 +852,44 @@ pub fn to_html(doc: &DocModel) -> String {
                 body.push_str(&format!("<blockquote{id_attr}>{inner}</blockquote>\n"))
             }
             Block::List { ordered, items, .. } => {
-                let (open, close) = if *ordered { ("ol", "ol") } else { ("ul", "ul") };
-                let inner: String = items.iter().map(|i| format!("<li>{}</li>", list_item(i))).collect();
-                body.push_str(&format!("<{open}{id_attr}>{inner}</{close}>\n"))
+                // 按前导空格还原嵌套
+                let tag = if *ordered { "ol" } else { "ul" };
+                let mut html = format!("<{tag}{id_attr}>");
+                let mut depth = 0usize;
+                let mut open_li = false;
+                for it in items {
+                    let lvl = ((it.len() - it.trim_start().len()) / 2).min(depth + 1);
+                    while depth > lvl {
+                        html.push_str(&format!("</li></{tag}>"));
+                        depth -= 1;
+                    }
+                    if lvl > depth && open_li {
+                        html.push_str(&format!("<{tag}>"));
+                        depth = lvl;
+                    } else if open_li {
+                        html.push_str("</li>");
+                    }
+                    html.push_str(&format!("<li>{}", list_item(it.trim_start())));
+                    open_li = true;
+                }
+                while depth > 0 {
+                    html.push_str(&format!("</li></{tag}>"));
+                    depth -= 1;
+                }
+                if open_li {
+                    html.push_str("</li>");
+                }
+                html.push_str(&format!("</{tag}>\n"));
+                body.push_str(&html)
             }
             Block::Table { header, rows, .. } => {
-                let th: String = header.iter().map(|h| format!("<th>{}</th>", inline_md(h))).collect();
+                // 单元格内换行：Markdown 表格惯用 <br>
+                let cell = |c: &str| inline_md(c).replace("&lt;br&gt;", "<br>").replace("&lt;br/&gt;", "<br>");
+                let th: String = header.iter().map(|h| format!("<th>{}</th>", cell(h))).collect();
                 let trs: String = rows
                     .iter()
                     .map(|r| {
-                        let tds: String = r.iter().map(|c| format!("<td>{}</td>", inline_md(c))).collect();
+                        let tds: String = r.iter().map(|c| format!("<td>{}</td>", cell(c))).collect();
                         format!("<tr>{tds}</tr>")
                     })
                     .collect();
@@ -913,6 +989,9 @@ mod tests {
         assert!(h.contains("player.bilibili.com/player.html?bvid=BV1xx411c7mD"), "{h}");
         assert!(h.contains("youtube-nocookie.com/embed/abc123"), "{h}");
         assert!(h.contains("katex.min.js") && h.contains("mermaid.esm.min.mjs"));
+        let img = inline_md("见图 ![架构](Assets/ab/cd/x.png) 与 ![坏](javascript:alert(1))");
+        assert!(img.contains("<img src=\"Assets/ab/cd/x.png\" alt=\"架构\""), "{img}");
+        assert!(!img.contains("<img src=\"javascript"), "{img}");
         // 没有公式/流程图的文档不加载任何外部脚本
         let plain = to_html(&from_markdown("# T\n\n普通段落。\n").unwrap());
         assert!(!plain.contains("cdn.jsdelivr"));
@@ -1118,7 +1197,7 @@ pub fn from_html(html: &str) -> Result<DocModel, MdError> {
             doc.title = Some(t);
         }
     }
-    if blocks.is_empty() && !html.trim().is_empty() {
+    if blocks.is_empty() && !html.trim().is_empty() && doc.title.is_none() {
         blocks.push(Block::Raw { id: String::new(), text: html.trim().to_string() });
     }
     doc.blocks = blocks;
@@ -1303,9 +1382,22 @@ fn parse_blocks(html: &str) -> Vec<Block> {
                         let mut rest = inner.as_str();
                         while let Some(p) = find_open(rest, "li") {
                             if let Some((li, consumed)) = take_element(rest, p, "li") {
-                                let t = inline_text(&li).trim().to_string();
+                                // 嵌套列表：本项文字 + 子项（模型不分层级，摊平成后续项，免得挤成一行）
+                                let nested = [find_open(&li, "ul"), find_open(&li, "ol")].into_iter().flatten().min();
+                                let (head, tail) = match nested {
+                                    Some(k) => (&li[..k], &li[k..]),
+                                    None => (li.as_str(), ""),
+                                };
+                                let t = inline_text(head).trim().to_string();
                                 if !t.is_empty() {
                                     items.push(t);
+                                }
+                                if !tail.is_empty() {
+                                    for b in parse_blocks(tail) {
+                                        if let Block::List { items: sub, .. } = b {
+                                            items.extend(sub);
+                                        }
+                                    }
                                 }
                                 rest = &rest[consumed..];
                             } else {
@@ -1511,6 +1603,8 @@ fn inline_text(html: &str) -> String {
                 "a" => out.push_str("\u{2}"),
                 "strong" | "b" => out.push_str("**"),
                 "em" | "i" => out.push('*'),
+                "del" | "s" | "strike" => out.push_str("~~"),
+                "mark" => out.push_str("=="),
                 "code" => out.push('`'),
                 _ => {}
             }
@@ -1612,5 +1706,20 @@ fn block_to_text(b: &Block) -> String {
             s
         }
         Block::Divider { .. } => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod nested_list_tests {
+    use super::*;
+    #[test]
+    fn nested_lists_survive_roundtrip_and_render() {
+        let src = "# T\n\n- 甲\n  - 甲一\n    - 甲一一\n- 乙\n\n1. 一\n   1. 一之一\n2. 二\n";
+        let doc = from_markdown(src).unwrap();
+        let md = to_markdown(&doc);
+        assert!(md.contains("- 甲\n  - 甲一\n    - 甲一一\n- 乙"), "{md}");
+        assert!(md.contains("1. 一\n  1. 一之一\n2. 二"), "{md}");
+        let h = to_html(&doc);
+        assert!(h.contains("<li>甲<ul><li>甲一<ul><li>甲一一</li></ul></li></ul></li><li>乙</li></ul>"), "{h}");
     }
 }

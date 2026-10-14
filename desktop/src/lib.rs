@@ -807,6 +807,58 @@ fn quick_capture(app: &AppHandle) {
 
 /// 在系统文件管理器中显示（macOS 访达 / Windows 资源管理器 / Linux 文件管理器）。
 /// 「文件即真相」的原生出口：库里任何文件都要能跳回它的物理位置。
+/// 导出文件落「下载」文件夹（重名自动加序号），返回完整路径；前端随后可 reveal。
+/// WKWebView 对 blob 下载的支持因系统版本而异，桌面端统一走这里更可靠。
+#[tauri::command]
+fn desktop_save_download(app: AppHandle, name: String, data_b64: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_b64.as_bytes()).map_err(|e| e.to_string())?;
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { '-' } else { c }).collect();
+    let (stem, ext) = match safe.rsplit_once('.') {
+        Some((a, b)) => (a.to_string(), format!(".{b}")),
+        None => (safe.clone(), String::new()),
+    };
+    let mut target = dir.join(&safe);
+    let mut n = 2;
+    while target.exists() && n < 1000 {
+        target = dir.join(format!("{stem} {n}{ext}"));
+        n += 1;
+    }
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// 打印 / 存为 PDF：开一个窗口载入打印版页面，加载完成后调起系统打印面板
+/// （macOS 面板左下角「PDF → 存储为 PDF」）。
+#[tauri::command]
+fn desktop_print_url(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("URL 解析失败：{e}"))?;
+    let label = format!(
+        "print-{}",
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+    );
+    let app2 = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = WebviewWindowBuilder::new(&app2, &label, WebviewUrl::External(parsed))
+            .title("打印 / 存为 PDF")
+            .inner_size(880.0, 1000.0)
+            .on_page_load(|w, payload| {
+                if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                    let w2 = w.clone();
+                    std::thread::spawn(move || {
+                        // 等字体与图片排好版再打印
+                        std::thread::sleep(std::time::Duration::from_millis(900));
+                        let _ = w2.print();
+                    });
+                }
+            })
+            .build();
+    })
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn desktop_reveal_path(p: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -920,7 +972,9 @@ pub fn run() {
             desktop_kernel_api,
             native_haptic,
             native_notify,
-            native_share
+            native_share,
+            desktop_save_download,
+            desktop_print_url
         ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![

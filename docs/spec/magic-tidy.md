@@ -28,3 +28,23 @@
 
 - 配置了公网目标（`default_target` 或唯一的 git / s3 / cf-pages 目标）时，把这一页写进目标站点的 `share/` 并推送，返回 `public_url`（`public_base_url` 或 `publish.base_url` + `/share/<slug>.html`）。
 - 没有公网目标时明确告知「仅本机可见」，提供「下载 HTML 发给别人」（库内图片已内联为 data URI，单文件可离线打开）与「配置公开发布」两条路；在自建服务器上打开时本地链接即公网链接。
+
+## 文档导入导出（`kernel-convert`，零新依赖）
+
+只依赖 flate2：zip 读写与 XML 解析是仓内最小实现，桌面端不需要 Python / LibreOffice / pandoc。
+
+| 方向 | 格式 | 保真内容 |
+|---|---|---|
+| 导入 | docx / docm / dotx | 标题层级（样式名、outlineLvl、继承链）、标题自动编号、项目符号与多级编号（含中文编号）、表格（文档序、合并单元格、单格版式表转引用）、超链接（关系 / 域代码）、粗斜体删除线高亮行内代码、上下标、图片与文本框、脚注、公式（OMML → LaTeX）、代码段、引用样式；修订删除内容与目录域不导入 |
+| 导入 | odt / ott / fodt | 同上（ODF 样式链、列表样式、covered cell、Pictures/） |
+| 导入 | pptx / odp | 每页一节：标题、要点层级、表格、图片、备注 |
+| 导入 | xlsx / ods | 每个工作表一张表格（共享字符串、空列裁剪、行数上限） |
+| 导入 | epub / rtf / html | 按 spine 合并章节；RTF 的样式表标题、列表、表格、链接、Unicode、图片 |
+| 导入 | pdf | 客户端 pdf.js 版式分析：字号 → 标题层级、行距与首行缩进 → 段落、页眉页脚去重、跨页接句、列表（含图形符号的无字符列表）、对齐列 → 表格、双栏阅读顺序、康熙部首字形纠正；服务端兜底 pdftotext + 魔法排版 |
+| 导入 | doc / wps / pages | macOS textutil 转 HTML → 结构化；否则 LibreOffice；都没有时提示另存 docx |
+| 导出 | docx | Title / 标题 1–6（可生成目录）、1.5 倍行距、中英文字体、真列表（编号自动续号、多级）、表头底色且跨页重复、等宽底纹代码块、左边线引用、可点击链接、内嵌图片（按页宽缩放）、分隔线 |
+| 导出 | odt | 同等样式的 OpenDocument |
+| 导出 | PDF | 打印版 HTML（A4、页边距、标题不落页尾、表格/代码/图片不拦腰截断、链接打印地址）；桌面端原生打印面板「存储为 PDF」 |
+
+- 内核 Markdown 现在保留嵌套列表层级（之前保存时会被摊平）；`![说明](Assets/…)` 图片在阅读视图里正常显示。
+- 往返测试：md → docx → md、md → odt → md 结构一致（`kernel-convert` roundtrip 测试）。

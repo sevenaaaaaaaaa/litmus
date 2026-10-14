@@ -1585,7 +1585,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <button class="icon-btn" id="d-graph" title="一键生成知识图谱（画布）" aria-label="生成知识图谱"><i data-ic="graph" data-ics="17"></i></button>
     <button class="icon-btn" id="d-export" title="导出分享（长图 / 小红书 / 公众号 / Newsletter）"><svg viewBox="0 0 24 24"><path d="M12 3v13M6 11l6 6 6-6M4 21h16"/></svg></button>
     <button class="icon-btn" id="d-upload" title="上传附件（图片/PDF/DOCX）"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7-7 7 7"/></svg></button>
-    <input type="file" id="d-file" style="display:none" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.doc,.xlsx,.pptx,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml,.toml,.xml,.py,.js,.ts,.jsx,.tsx,.css,.scss,.sh,.rs,.go,.c,.h,.cpp,.java,.kt,.swift,.rb,.php,.sql,.log,.ini,.cfg,.conf">
+    <input type="file" id="d-file" style="display:none" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.docx,.doc,.xlsx,.pptx,.odt,.ods,.odp,.epub,.rtf,.wps,.pages,.md,.txt,.html,.htm,.csv,.tsv,.json,.yaml,.yml,.toml,.xml,.py,.js,.ts,.jsx,.tsx,.css,.scss,.sh,.rs,.go,.c,.h,.cpp,.java,.kt,.swift,.rb,.php,.sql,.log,.ini,.cfg,.conf">
     <button class="icon-btn" id="d-pub" title="发布（站点/AI-HTML）"><svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z"/></svg></button>
     <button class="icon-btn" id="d-mode" title="编辑 / 预览" aria-pressed="false" aria-label="编辑或预览"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
     <button class="icon-btn" id="d-toc" title="目录开关" aria-label="目录开关" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
@@ -1833,6 +1833,13 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
       <button data-exp="wechat"><i data-ic="chat" data-ics="19"></i>公众号 HTML</button>
       <button data-exp="newsletter"><i data-ic="mail" data-ics="19"></i>Newsletter HTML</button>
       <button data-exp="blog"><i data-ic="globe" data-ics="19"></i>博客 HTML</button>
+    </div>
+    <div style="font-size:var(--fs-1);color:var(--faint);margin:10px 0 6px;letter-spacing:.06em">文档格式（排版保真，可继续编辑）</div>
+    <div class="export-grid">
+      <button data-exp="file:docx"><i data-ic="file" data-ics="19"></i>Word .docx</button>
+      <button data-exp="file:print"><i data-ic="download" data-ics="19"></i>PDF（打印 / 存为 PDF）</button>
+      <button data-exp="file:odt"><i data-ic="book" data-ics="19"></i>ODT 开源格式</button>
+      <button data-exp="file:md"><i data-ic="code" data-ics="19"></i>Markdown</button>
     </div>
     <div id="export-status" style="font-size:var(--fs-2);color:var(--faint);min-height:18px;margin-bottom:6px">长图=整篇一张竖图（朋友圈/群聊直接发）；卡片=按比例自动分页；公众号=内联样式 HTML，粘贴进微信编辑器即可；Newsletter/博客=独立 HTML 文件。</div>
     <div id="export-preview"></div>
@@ -3589,6 +3596,204 @@ async function newDoc(){
     toast(`已创建：${path}`,'ok');
   }catch(e){toast('创建失败：'+e.message,'err');}
 }
+/* ───────── 文档导入导出（结构保真）─────────
+   导入：docx / odt / pptx / odp / xlsx / ods / epub / rtf / doc 交给内核原生转换；
+   PDF 先在浏览器里用 pdf.js 做版式分析（字号→标题、行距与缩进→段落、页眉页脚去重、
+   列表、对齐列→表格、双栏阅读顺序），失败再退回服务端抽取。
+   导出：Word(.docx) / 开源 ODT / Markdown / 打印版（存为 PDF）。 */
+const OFFICE_EXTS=['pdf','doc','docx','docm','dotx','odt','ott','fodt','ods','odp','xlsx','xlsm','pptx','epub','rtf','wps','pages'];
+const PDFJS_BASE='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
+let _pdfjs=null;
+async function loadPdfJs(){
+  if(_pdfjs)return _pdfjs;
+  const m=await import(PDFJS_BASE+'build/pdf.min.mjs');
+  m.GlobalWorkerOptions.workerSrc=PDFJS_BASE+'build/pdf.worker.min.mjs';
+  return (_pdfjs=m);
+}
+const isCJK=c=>/[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef\u3000-\u303f]/.test(c||'');
+/* PDF 字体常把常用字映射成康熙部首（⼀ ⼈ ⽣…），只对部首区做 NFKC，别动全角标点 */
+const RADICAL_SUP={'⻅':'见','⻆':'角','⻉':'贝','⻋':'车','⻔':'门','⻓':'长','⻚':'页','⻛':'风','⻜':'飞','⻝':'食','⻢':'马','⻦':'鸟','⻤':'鬼','⻥':'鱼','⻨':'麦','⻩':'黄','⻬':'齐','⻮':'齿','⻯':'龙','⻳':'龟','⺟':'母','⺠':'民','⻊':'足','⻈':'讠','⻏':'阝','⺮':'竹','⺈':'刀','⺊':'卜','⺌':'小','⺍':'小','⺕':'彐','⺗':'心','⺡':'氵','⺢':'水','⺣':'灬','⺤':'爫','⺨':'犭','⺶':'羊','⺻':'聿','⻂':'衤','⻎':'辶'};
+const fixRadicals=s=>s.replace(/[\u2e80-\u2fdf]/g,c=>RADICAL_SUP[c]||c.normalize('NFKC'));
+const SENT_END=/[。！？!?；;：:…」』”)）.]$/;
+const LIST_RE=/^([•·▪◦●○■\-–]|\d{1,2}[.)、．]|[（(]\d{1,2}[)）]|[①-⑳])\s*/;
+async function pdfToMarkdown(buf){
+  const pdfjs=await loadPdfJs();
+  const doc=await pdfjs.getDocument({data:buf,cMapUrl:PDFJS_BASE+'cmaps/',cMapPacked:true,standardFontDataUrl:PDFJS_BASE+'standard_fonts/',isEvalSupported:false}).promise;
+  const pages=[];
+  for(let p=1;p<=Math.min(doc.numPages,400);p++){
+    const page=await doc.getPage(p);
+    const vp=page.getViewport({scale:1});
+    const tc=await page.getTextContent();
+    const items=tc.items.filter(it=>typeof it.str==='string'&&it.str.trim()!=='').map(it=>{
+      const t=it.transform;const size=Math.hypot(t[2],t[3])||it.height||10;
+      const st=tc.styles[it.fontName]||{};
+      return {s:fixRadicals(it.str),x:t[4],y:t[5],w:it.width||it.str.length*size*.5,size,mono:st.fontFamily==='monospace'};
+    });
+    pages.push({w:vp.width,h:vp.height,lines:pdfLines(items)});
+  }
+  if(!pages.some(p=>p.lines.length))return '';
+  // 页眉页脚：边缘行去数字后在 ≥ 一半页面重复
+  const key=t=>t.replace(/[\d\s]/g,'');
+  const edge=(pg,l)=>l.y>pg.h*.9||l.y<pg.h*.08;
+  const freq={};
+  if(pages.length>=3)pages.forEach(pg=>{const seen=new Set();pg.lines.filter(l=>edge(pg,l)).forEach(l=>{const k=key(l.text);if(k.length<=40&&!seen.has(k)){seen.add(k);freq[k]=(freq[k]||0)+1}})});
+  pages.forEach(pg=>{pg.lines=pg.lines.filter(l=>!(edge(pg,l)&&((freq[key(l.text)]||0)*2>=pages.length||/^[\s\d\-–—/第页共Pageof]+$/i.test(l.text))))});
+  // 正文字号：按字符数加权的众数
+  const hist={};pages.forEach(pg=>pg.lines.forEach(l=>{const k=Math.round(l.size*2)/2;hist[k]=(hist[k]||0)+l.text.length}));
+  const body=+Object.entries(hist).sort((a,b)=>b[1]-a[1])[0][0];
+  const headSizes=[...new Set(pages.flatMap(pg=>pg.lines.filter(l=>l.size>=body*1.12&&l.text.length<=80).map(l=>Math.round(l.size*2)/2)))].sort((a,b)=>b-a);
+  const levelOf=sz=>{const i=headSizes.indexOf(Math.round(sz*2)/2);return i<0?0:Math.min(i+1,4)};
+  // 典型行距
+  const gaps=[];pages.forEach(pg=>{for(let i=1;i<pg.lines.length;i++){const a=pg.lines[i-1],b=pg.lines[i];const g=a.y-b.y;if(g>0&&g<body*4&&Math.abs(a.size-body)<1&&Math.abs(b.size-body)<1)gaps.push(g)}});
+  gaps.sort((a,b)=>a-b);const lineGap=gaps.length?gaps[Math.floor(gaps.length/2)]:body*1.5;
+  const blocks=[];let para=null;let lastLine=null;let colLeft=null;let listBase=null;
+  const flush=()=>{if(para){blocks.push(para);para=null}};
+  const join=(a,b)=>{if(!a)return b;if(/[A-Za-z]-$/.test(a)&&/^[a-z]/.test(b))return a.slice(0,-1)+b;return a+(isCJK(a.slice(-1))||isCJK(b[0])?'':' ')+b};
+  for(const pg of pages){
+    colLeft=Math.min(...pg.lines.map(l=>l.x0).filter(x=>x>0),pg.w);
+    const lines=pg.lines;
+    for(let i=0;i<lines.length;i++){
+      const l=lines[i];
+      // 表格：连续 ≥3 行、分段数一致（≥2）且列起点对齐
+      if(l.segs.length>=2&&!LIST_RE.test(l.segs[0].text+' ')&&!(l.segs[0].text.length<=3&&LIST_RE.test(l.text))){
+        let j=i;while(j<lines.length&&lines[j].segs.length===l.segs.length&&lines[j].segs.every((s,k)=>Math.abs(s.x0-l.segs[k].x0)<l.size*2.5||k===0))j++;
+        if(j-i>=3){
+          flush();
+          const rows=lines.slice(i,j).map(r=>r.segs.map(s=>s.text.replace(/\|/g,'\\|')));
+          blocks.push({text:['| '+rows[0].join(' | ')+' |','|'+' --- |'.repeat(rows[0].length),...rows.slice(1).map(r=>'| '+r.join(' | ')+' |')].join('\n')});
+          i=j-1;lastLine=lines[j-1];continue;
+        }
+      }
+      const lvl=l.text.length<=80&&!SENT_END.test(l.text)?levelOf(l.size):0;
+      if(lvl){
+        // 同字号的相邻标题行合并（长标题折行）
+        if(para&&para.head===lvl&&lastLine&&lastLine.y-l.y<l.size*1.8){para.text=join(para.text,l.text);lastLine=l;continue}
+        flush();
+        para={text:'#'.repeat(lvl)+' '+l.text,head:lvl};lastLine=l;continue;
+      }
+      // 等宽字体整行：代码
+      if(l.mono){
+        if(!(para&&para.code))flush();
+        if(!para)para={text:'',code:true,lines:[]};
+        para.lines.push(' '.repeat(Math.max(0,Math.round((l.x0-colLeft)/(l.size*.6))))+l.text);lastLine=l;continue;
+      }
+      if(para&&para.code)flush();
+      if(para&&para.head){flush()}
+      const m=l.text.match(LIST_RE);
+      const gap=lastLine&&lastLine.y>l.y?lastLine.y-l.y:lineGap;
+      const indent=l.x0-colLeft;
+      const prevEnded=lastLine&&SENT_END.test(lastLine.text)&&lastLine.x1<(pg.w-colLeft)*.82+colLeft;
+      const newPara=!para||gap>lineGap*1.45||(indent>l.size*1.2&&!para.list)||prevEnded||!!m;
+      if(newPara){
+        flush();
+        if(m){const mk=m[1];const n=parseInt(mk.replace(/\D/g,''))||0;const rest=l.text.slice(m[0].length);
+          const marker=/^[•·▪◦●○■\-–]$/.test(mk)?'- ':(/[①-⑳]/.test(mk)?(mk.charCodeAt(0)-0x245f)+'. ':n+'. ');
+          if(listBase===null||!(blocks.length&&blocks[blocks.length-1].list))listBase=l.x0;
+          const depth=Math.max(0,Math.min(3,Math.round((l.x0-listBase)/(l.size*1.5))));
+          para={text:'  '.repeat(depth)+marker+rest,list:true};}
+        else para={text:l.text,x0:l.x0,size:l.size,n:1};
+      }else{para.text=join(para.text,l.text);para.n=(para.n||1)+1}
+      lastLine=l;
+    }
+    // 换页：上一段没收句就接着
+    if(para&&!para.head&&SENT_END.test(para.text))flush();
+    lastLine=null;
+  }
+  flush();
+  // 无符号列表（项目符号画成图形的 PDF）：连续 ≥2 个单行、同缩进、多数不收句的短段
+  for(let i=0;i<blocks.length;){
+    const b=blocks[i];
+    const cand=x=>x&&!x.head&&!x.list&&!x.code&&x.n===1&&x.text.length<=60&&x.x0>colLeft+x.size*.8;
+    if(!cand(b)){i++;continue}
+    let j=i;while(j<blocks.length&&cand(blocks[j])&&Math.abs(blocks[j].x0-b.x0)<2)j++;
+    const run=blocks.slice(i,j);
+    if(run.length>=2&&run.filter(x=>!SENT_END.test(x.text)).length*2>=run.length)run.forEach(x=>{x.text='- '+x.text;x.list=true});
+    i=Math.max(j,i+1);
+  }
+  // 一级标题不止一个：除开头外整体降一级，给文档标题让位
+  const h1=blocks.filter(b=>b.head===1).length;
+  const texts=blocks.map((b,i)=>{
+    if(b.code)return '```\n'+b.lines.join('\n')+'\n```';
+    if(b.head&&h1>1&&i>0)return '#'+b.text;
+    return b.text;
+  });
+  let md='';
+  texts.forEach((b,i)=>{const isItem=/^\s*(- |\d+\. )/.test(b);const prevItem=i>0&&/^\s*(- |\d+\. )/.test(texts[i-1]);md+=(i?(isItem&&prevItem?'\n':'\n\n'):'')+b});
+  return md+'\n';
+}
+/* 一页的文字片段 → 行（含分段信息，供表格识别）；双栏按「左栏全部 → 右栏」排阅读顺序 */
+function pdfLines(items){
+  items.sort((a,b)=>(b.y-a.y)||(a.x-b.x));
+  const rows=[];
+  for(const it of items){
+    const r=rows.find(r=>Math.abs(r.y-it.y)<=Math.max(r.size,it.size)*.45);
+    if(r){r.items.push(it);r.size=Math.max(r.size,it.size)}else rows.push({y:it.y,size:it.size,items:[it]});
+  }
+  const lines=rows.map(r=>{
+    r.items.sort((a,b)=>a.x-b.x);
+    const segs=[];let text='';let prev=null;
+    for(const it of r.items){
+      const gap=prev?it.x-(prev.x+prev.w):0;
+      if(prev&&gap>r.size*1.1){segs.push({text:'',x0:it.x});}
+      if(!segs.length)segs.push({text:'',x0:it.x});
+      const seg=segs[segs.length-1];
+      const sp=prev&&gap>r.size*.18&&!(isCJK(seg.text.slice(-1))&&isCJK(it.s[0]))&&seg.text&&!seg.text.endsWith(' ')?' ':'';
+      seg.text+=sp+it.s;prev=it;
+    }
+    segs.forEach(s=>s.text=s.text.trim());
+    text=segs.map(s=>s.text).join(' ').replace(/\s+/g,' ').trim();
+    const last=r.items[r.items.length-1];
+    return {text,x0:r.items[0].x,x1:last.x+last.w,y:r.y,size:r.size,segs:segs.filter(s=>s.text),mono:r.items.every(it=>it.mono)&&!r.items.some(it=>/[⺀-鿿＀-￯]/.test(it.s))};
+  }).filter(l=>l.text);
+  // 双栏
+  if(lines.length>12){
+    const w=Math.max(...lines.map(l=>l.x1));const mid=w/2;
+    const left=lines.filter(l=>l.x1<=mid*1.04),right=lines.filter(l=>l.x0>=mid*.96),span=lines.length-left.length-right.length;
+    if(left.length>lines.length*.25&&right.length>lines.length*.25&&span<lines.length*.15){
+      const spanning=lines.filter(l=>!(l.x1<=mid*1.04)&&!(l.x0>=mid*.96));
+      return [...spanning.filter(l=>l.y>Math.max(...left.map(x=>x.y))),...left,...right,...spanning.filter(l=>l.y<=Math.max(...left.map(x=>x.y)))];
+    }
+  }
+  return lines;
+}
+async function importOfficeFile(f,buf){
+  const ext=f.name.split('.').pop().toLowerCase();
+  let b64='';const chunk=0x8000;for(let i=0;i<buf.length;i+=chunk)b64+=String.fromCharCode(...buf.subarray(i,i+chunk));
+  const payload={name:f.name,content_base64:btoa(b64)};
+  if(ext==='pdf'){
+    try{const md=await pdfToMarkdown(buf.slice().buffer);if(md&&md.replace(/\s/g,'').length>20)payload.markdown=md;}
+    catch(e){console.warn('pdf.js 解析失败，交给服务端',e)}
+  }
+  return api('/ingest/file',{method:'POST',json:payload});
+}
+/* 导出：二进制落盘（桌面端写进「下载」并在访达里显示；浏览器走 blob 下载） */
+async function exportDocFile(fmt){
+  if(!current){toast('先打开一篇文档','err');return ''}
+  if(dirty){await saveDoc()}
+  const url=`${location.origin}${BASE}/export/${fmt}?path=${encodeURIComponent(current)}&token=${encodeURIComponent(token)}`;
+  if(fmt==='print'){
+    if(IS_DESKTOP){await tauriInvoke('desktop_print_url',{url});return '已打开打印窗口：在系统面板左下角选「PDF → 存储为 PDF」'}
+    const w=window.open(url+'&auto=1','_blank');
+    if(!w)throw new Error('浏览器拦截了新窗口，请允许弹出窗口');
+    return '已打开打印版：在打印对话框里选「另存为 PDF」';
+  }
+  const res=await fetch(url,{headers:{authorization:'Bearer '+token}});
+  if(!res.ok)throw new Error((await res.text()).slice(0,160));
+  const blob=await res.blob();
+  const cd=res.headers.get('content-disposition')||'';
+  const m=cd.match(/filename\*=UTF-8''([^;]+)/);
+  const name=m?decodeURIComponent(m[1]):(current.split('/').pop().replace(/\.md$/i,'')+'.'+fmt);
+  if(IS_DESKTOP){
+    const buf=new Uint8Array(await blob.arrayBuffer());
+    let b64='';const chunk=0x8000;for(let i=0;i<buf.length;i+=chunk)b64+=String.fromCharCode(...buf.subarray(i,i+chunk));
+    const saved=await tauriInvoke('desktop_save_download',{name,dataB64:btoa(b64)});
+    tauriInvoke('desktop_reveal_path',{p:saved}).catch(()=>{});
+    return '已保存到「下载」：'+saved.split('/').pop();
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  return '已下载 '+name;
+}
 /* ───────── 魔法排版（规则离线 / AI 深度，只动格式不动字）───────── */
 let tidyUndo=null;
 const TIDY_MINOR=['blank-lines','invisible','spaces','title','fullwidth'];
@@ -3604,7 +3809,7 @@ async function tidyDiagnose(){
   try{
     const r=await api('/doc/tidy',{method:'POST',json:{markdown:md,mode:'diagnose'}});
     if(path!==current)return;
-    const major=(r.issues||[]).filter(i=>!TIDY_MINOR.includes(i.kind)||i.count>=3);
+    const major=(r.issues||[]).filter(i=>!TIDY_MINOR.includes(i.kind)||i.count>=10);
     if(!r.changed||r.total<3||!major.length)return;
     hint.innerHTML=iconSvg('wand',14)+`<span>检测到 <b>${r.total}</b> 处格式问题：${escH(tidyIssuesText(major,3))}</span><button type="button">一键排版</button><button type="button" class="x" aria-label="忽略">${iconSvg('x',12)}</button>`;
     hint.classList.add('on');
@@ -3813,11 +4018,11 @@ $('d-file').addEventListener('change',async e=>{
         t.value=t.value.slice(0,s0)+r.markdown+'\n'+t.value.slice(s0);dirty=true;
         toast(`图片入库 ${r.hash.slice(0,8)}…`,'ok');
       }catch(err){toast('图片上传失败：'+err.message,'err')}
-    } else if(['pdf','docx','doc','xlsx','pptx'].includes(ext)){
-      // PDF/DOCX → /ingest/file 转码：Markdown 代理文档（可检索）+ 原件入 Assets
+    } else if(OFFICE_EXTS.includes(ext)){
+      // 办公 / 开源文档 / PDF → 结构保真转换：Markdown 文档（可检索）+ 原件入 Assets
       try{
-        let b64='';const chunk=0x8000;for(let i=0;i<buf.length;i+=chunk)b64+=String.fromCharCode(...buf.subarray(i,i+chunk));
-        const r=await api('/ingest/file',{method:'POST',json:{name:f.name,content_base64:btoa(b64)}});
+        toast(`正在转换 ${f.name}…`,'ok');
+        const r=await importOfficeFile(f,buf);
         const t=$('editor'),s0=t.selectionStart;
         const embed=`\n[📄 ${f.name}](${r.rel})\n`;
         t.value=t.value.slice(0,s0)+embed+t.value.slice(s0);dirty=true;
@@ -6519,7 +6724,8 @@ document.querySelectorAll('#export-ov [data-exp]').forEach(b=>{
     $('export-preview').innerHTML='';
     try{
       let msg='';
-      if(b.dataset.exp==='wechat')msg=await exportWeChatHtml();
+      if(b.dataset.exp.startsWith('file:'))msg=await exportDocFile(b.dataset.exp.slice(5));
+      else if(b.dataset.exp==='wechat')msg=await exportWeChatHtml();
       else if(b.dataset.exp==='newsletter')msg=await exportNewsletterHtml();
       else if(b.dataset.exp==='blog')msg=await exportBlogHtml();
       else msg=await exportImageFlow(b.dataset.exp);
@@ -7656,6 +7862,8 @@ const DOC_BRIDGE='<script>document.addEventListener("click",function(e){var a=e.
   +'if(a){e.preventDefault();parent.postMessage({type:"thirdc-wiki",target:a.getAttribute("data-wiki")},"*")}})<\/script>';
 function docFrame(html,css=''){
   if(!html)return html;
+  /* 库内图片（Assets/…）：srcdoc 里相对路径解析不到，改走带 token 的附件接口 */
+  html=html.replace(/(<img\b[^>]*?\ssrc=")(Assets\/[^"]+)"/g,(_,a,p)=>`${a}${BASE}/asset-file?path=${encodeURIComponent(p)}&token=${encodeURIComponent(token)}"`);
   let extra=css||'';
   if(!css&&document.documentElement.dataset.theme==='dark'&&html.includes('--doc-bg'))extra=DOC_DARK;
   let out=injectStyle(html,extra);
@@ -8088,7 +8296,7 @@ function pasteDocInto(dir){
 }
 function filePickerTranscode(dir){
   const inp=document.createElement('input');inp.type='file';inp.multiple=true;
-  inp.accept='.pdf,.doc,.docx,.odt,.ods,.odp,.xlsx,.pptx,.csv,.html,.htm,.md,.txt,.json,.yaml,.yml,.toml,.xml';
+  inp.accept='.pdf,.doc,.docx,.odt,.fodt,.ods,.odp,.xlsx,.pptx,.epub,.rtf,.wps,.pages,.csv,.html,.htm,.md,.txt,.json,.yaml,.yml,.toml,.xml';
   inp.onchange=async()=>{
     for(const f of [...inp.files]){
       try{
@@ -8100,9 +8308,8 @@ function filePickerTranscode(dir){
           const base=dir==='Notes'?'Notes':dir;
           await api('/doc?path='+encodeURIComponent(base+'/'+f.name.replace(/\.csv$/i,'')+'.md'),{method:'PUT',body:md,headers:{'content-type':'text/markdown'}});
           toast('CSV 已转 Markdown 表格入库','ok');
-        }else if(['pdf','doc','docx','odt','ods','odp','xlsx','pptx'].includes(ext)){
-          let b64='';const chunk=0x8000;for(let i=0;i<buf.length;i+=chunk)b64+=String.fromCharCode(...buf.subarray(i,i+chunk));
-          const r=await api('/ingest/file',{method:'POST',json:{name:f.name,content_base64:btoa(b64)}});
+        }else if(OFFICE_EXTS.includes(ext)){
+          const r=await importOfficeFile(f,buf);
           toast(`${f.name} 已转码入库 → ${r.rel}`,'ok');
         }else{
           const text=new TextDecoder().decode(buf);
