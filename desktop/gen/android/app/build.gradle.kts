@@ -13,6 +13,31 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val signingProperties = Properties().apply {
+    val propFile = file("../../../android-signing.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingValue(env: String, key: String): String? =
+    System.getenv(env)?.takeIf { it.isNotEmpty() } ?: signingProperties.getProperty(key)
+
+gradle.taskGraph.whenReady {
+    val needsRelease = allTasks.any { it.name.contains("Release") }
+    val missing = listOf(
+        "TAURI_KEYSTORE_PASSWORD" to "storePassword",
+        "TAURI_KEY_PASSWORD" to "keyPassword",
+    ).filter { (env, key) -> signingValue(env, key) == null }
+    if (needsRelease && missing.isNotEmpty()) {
+        throw GradleException(
+            "Android release 签名缺少口令: 请设置环境变量 " + missing.joinToString { it.first } +
+                "，或在 desktop/android-signing.properties 中填写 " +
+                missing.joinToString { it.second } + "（该文件已 gitignore）。"
+        )
+    }
+}
+
 android {
     compileSdk = 36
     namespace = "com.nownexts.thirdc"
@@ -25,12 +50,13 @@ android {
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
     signingConfigs {
-        // 第三方分发签名：keystore 随仓库（dev 口令），正式上架前请换用私有 keystore
+        // 签名口令不入库：优先读环境变量 TAURI_KEYSTORE_PASSWORD / TAURI_KEY_PASSWORD，
+        // 其次读 gitignored 的 desktop/android-signing.properties（storePassword= / keyPassword=）
         create("release") {
             storeFile = file("../../../thirdc-release.keystore")
-            storePassword = System.getenv("TAURI_KEYSTORE_PASSWORD") ?: "thirdc-dev-2026"
+            storePassword = signingValue("TAURI_KEYSTORE_PASSWORD", "storePassword")
             keyAlias = "thirdc"
-            keyPassword = System.getenv("TAURI_KEY_PASSWORD") ?: "thirdc-dev-2026"
+            keyPassword = signingValue("TAURI_KEY_PASSWORD", "keyPassword")
         }
     }
     buildTypes {

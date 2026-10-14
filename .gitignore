@@ -17,3 +17,13 @@ desktop/gen/schemas/
 server-kb/
 .deploy-ssh/
 .zcodeignore
+
+# 签名密钥与本地口令（不入 GitHub）
+*.keystore
+*.jks
+desktop/android-signing.properties
+deploy/.ssh_key
+kb/
+.env
+.env.*
+!.env.example
