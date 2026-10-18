@@ -10,7 +10,7 @@ BIN="$ROOT/target/debug/thirdc"
 
 VAULT="$ROOT/server-kb"
 if [ "${1:-}" = "--vault" ]; then VAULT="${2:?--vault 需要路径}"; fi
-[ -d "$VAULT/Notes" ] || { echo "✗ 库不存在：$VAULT（可用 --vault 指定）"; exit 1; }
+[ -d "$VAULT/Notes" ] || { echo "✗ 库不存在：${VAULT}（可用 --vault 指定）"; exit 1; }
 
 PORT=7799
 TOKEN=$(grep '^token' "$VAULT/.thirdc/machine.toml" | sed 's/.*= *"//;s/"//')

@@ -1351,6 +1351,87 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .tdots .tagchip.mini{height:17px;padding:0 6px;font-size:var(--fs-1);max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tdots .tmore{font:var(--fs-1)/1 var(--font-mono);color:var(--faint);align-self:center}
 .tdots{gap:3px}
+
+/* ═════════ Litmus 三层材质（ui-redesign §8）：外框平、面板贴边、只有内容浮起 ═════════
+   外框 = 顶栏 + 底栏：贴窗口边、无圆角无阴影、磨砂；
+   面板 = 左导航 + 右预览：同一材质、贴住外框、发丝线分隔，不再是浮卡；
+   内容 = 画布卡片：唯一带圆角与阴影的层，是视觉主角。 */
+:root{--panel-bg:color-mix(in oklab,var(--bg-0) 90%,transparent)}
+/* 侧栏开关只留一个家：底栏左端 + ⌘\ + 左缘悬停 */
+#rail-toggle{display:none!important}
+#rail-peek{display:none}
+@media (min-width:1025px){
+  #rail,#inspector{top:var(--chrome-h);bottom:calc(var(--dock-h) + var(--bottom-nav-h,0px));border-radius:0;border:0;box-shadow:none;
+    background:var(--panel-bg);-webkit-backdrop-filter:blur(var(--blur-2)) saturate(180%);backdrop-filter:blur(var(--blur-2)) saturate(180%)}
+  #rail{left:0;width:264px;border-right:1px solid var(--border)}
+  #inspector{right:0;width:300px;border-left:1px solid var(--border);padding:18px 16px 12px}
+  #rail.closed{transform:translateX(-100%)}
+  #inspector.closed{transform:translateX(100%)}
+  /* 悬停滑出态：浮在画布之上，用阴影说明「临时」 */
+  #rail[data-peek]{box-shadow:var(--shadow)}
+  #rail[data-peek]~#rail-peek{pointer-events:none}
+  #rail-peek{display:block;position:fixed;left:0;top:var(--chrome-h);bottom:var(--dock-h);width:8px;z-index:var(--z-rail)}
+  /* 文档抽屉同属面板层：贴住外框与左栏，发丝线分隔 */
+  #drawer{top:var(--chrome-h);right:0;bottom:calc(var(--dock-h) + var(--bottom-nav-h,0px));border:0;border-left:1px solid var(--border);border-radius:0;box-shadow:none}
+  #drawer:not(.open){transform:translateX(100%)}
+  #drawer.wide,body[data-mode="learn"] #drawer{top:var(--chrome-h);left:var(--rail-w,0px);border-left:0}
+}
+@media (min-width:1025px) and (max-width:1439px){#rail{width:240px}#inspector{width:280px}}
+@media (min-width:1025px){
+  body:has(#inspector:not(.closed)) #view-pill{right:calc(300px + 12px)}
+  #hintbar{left:calc(var(--rail-x,16px) + 16px);transform:none}
+}
+@media (min-width:1025px) and (max-width:1439px){body:has(#inspector:not(.closed)) #view-pill{right:calc(280px + 12px)}}
+/* 面包屑并入顶栏：库名 / 路径 · 篇数 */
+#crumb{position:static;transform:none;z-index:auto;display:flex;align-items:center;gap:2px;flex:0 1 auto;min-width:0;max-width:none;
+  padding:0;border:0;border-radius:0;background:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;overflow:hidden;white-space:nowrap;
+  font:500 var(--fs-2)/1 var(--font-body);color:var(--muted)}
+#crumb:empty{display:none}
+#crumb:not(:empty)::before{content:'/';color:var(--faint);margin-right:4px}
+#crumb a{color:var(--muted);text-decoration:none;padding:5px 6px;border-radius:var(--r-sm);overflow:hidden;text-overflow:ellipsis;transition:background var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out)}
+#crumb a:hover{color:var(--fg);background:var(--hover)}
+#crumb a[aria-current]{color:var(--fg);font-weight:600}
+#crumb .cb-sep{color:var(--faint);padding:0 1px}
+#crumb .cb-n{margin-left:8px;font:var(--fs-1)/1 var(--font-mono);color:var(--faint);font-variant-numeric:tabular-nums}
+/* 提示条：退成画布上的一行注脚，不再是第二个胶囊 */
+#hintbar{padding:4px 10px;border:0;border-radius:0;background:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;font-size:var(--fs-1);color:var(--faint)}
+#hintbar b{color:var(--muted)}
+/* 左栏：导航 + Memo 日历，平铺在面板材质上 */
+.rail-lens .tab-pill{height:24px;padding:0 8px;border:0;background:transparent;box-shadow:none}
+.rail-lens .tab-pill.on{background:var(--hover);color:var(--fg);box-shadow:none}
+.rail-widget{border-top:1px solid var(--border);background:none}
+.rail-memo{margin:0;padding:12px 14px 14px;border:0;border-radius:0;background:none}
+.rail-memo .mc-head{padding:12px 0 6px}
+.rail-memo .mc-head b{flex:1;text-align:left;font:600 var(--fs-2)/1 var(--font-body);color:var(--muted)}
+.rail-memo .mc-nav,.rail-memo .mc-full{width:22px;height:22px;display:grid;place-items:center;border:0;background:transparent;color:var(--faint)}
+.rail-memo .mc-nav:hover,.rail-memo .mc-full:hover{background:var(--hover);color:var(--fg)}
+.rail-memo .mc-cell{height:22px}
+.mc-cell.heat-l1{background:color-mix(in oklch,var(--accent-2) 22%,transparent)}
+.mc-cell.heat-l2{background:color-mix(in oklch,var(--accent-2) 45%,transparent);color:var(--fg)}
+.mc-cell.heat-l3{background:color-mix(in oklch,var(--accent-2) 36%,var(--accent));color:var(--on-accent)}
+.mc-cell.heat-l4{background:var(--accent);color:var(--on-accent)}
+.mc-cell[class*="heat-l"] .dot-n{background:currentColor}
+.rail-memo .rm-tags{margin-top:10px}
+.rail-memo .rm-tags:has(.rm-empty){display:none}
+.rail-memo .rm-add{margin-top:10px}
+/* 右预览：动作退成一行幽灵图标钮；摘要去框；空区块不占位 */
+.insp-sec[hidden]{display:none}
+.insp-quick{display:flex;gap:2px;padding-bottom:12px;border-bottom:1px solid var(--border-soft)}
+.insp-quick .iq{flex:1;padding:6px 2px;gap:4px;border:0;background:transparent;box-shadow:none;color:var(--muted)}
+.insp-quick .iq:hover{background:var(--hover);color:var(--fg)}
+.insp-sec{border-top:0;padding-top:0}
+.insp-pv{padding:0;background:none;border-left:0;border-radius:0}
+/* 底栏状态簇：头像 + 同步灯角标 + 协作人数角标 */
+.dk-chip{white-space:nowrap}
+.dk-status{position:relative;display:inline-flex}
+.dk-status .sync-ind{position:absolute;right:5px;bottom:5px;width:8px;height:8px;margin:0;pointer-events:none;box-shadow:0 0 0 2px var(--bg-0)}
+.dk-peers-n{position:absolute;top:1px;right:0;min-width:15px;height:15px;padding:0 4px;border-radius:var(--r-pill);background:var(--accent-2);color:var(--on-accent);
+  font:600 var(--fs-1)/15px var(--font-mono);text-align:center;pointer-events:none}
+.dp-row:disabled{cursor:default}
+.dp-plugins{display:flex;flex-direction:column;padding:0 4px 2px}
+@media (max-width:767px){#dock .dk-right>.dk-status{display:inline-flex!important}}
+/* 画布卡片：类型只由图标瓷片表达，去掉顶边彩条 */
+.node::before{display:none}
 </style>
 </head>
 <body>
@@ -1358,7 +1439,6 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="litmus-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--accent-2)"/><stop offset=".5" style="stop-color:color-mix(in oklch,var(--accent-2),var(--accent))"/><stop offset="1" style="stop-color:var(--accent)"/></linearGradient></defs></svg>
 <div id="grid"></div>
 <div id="aura"></div>
-<div id="crumb"></div>
 <div id="canvas-state"></div>
 <div id="hintbar"></div>
 <div id="boot" style="position:fixed;inset:0;z-index:var(--z-overlay);display:grid;place-items:center;background:var(--bg)">
@@ -1416,6 +1496,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <span class="mark lmark" aria-hidden="true"></span><span class="bname" id="brand-name">鹿蕊</span>
     <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
   </button>
+  <nav id="crumb" aria-label="当前位置"></nav>
     <button class="search-pill dock-legacy" id="search-btn" title="检索与命令（⌘K）">
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <span class="sp-txt">搜索文档、命令…</span><kbd>⌘K</kbd>
@@ -1464,39 +1545,19 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <div class="rail-list" id="rail-list"></div>
     <!-- 新建 / 自动整理已并入底栏 Magic 弧形菜单（降级非顶级入口） -->
   </div>
-  <!-- 工具 Widget 区（Studio/学习共用，三标签）：Memo · 日历 · 插件快捷入口 -->
+  <!-- Memo 日历（Studio/学习共用）：月历即热力图——格子深浅=当天 Memo 数，圆点=当天改过的文档 -->
   <div class="rail-widget" id="rail-widget">
-    <nav class="rw-tabs" role="tablist">
-      <button class="rw-tab" data-rw="memo" role="tab"><i data-ic="memo" data-ics="14"></i>Memo</button>
-      <button class="rw-tab" data-rw="cal" role="tab"><i data-ic="calendar" data-ics="14"></i>日历</button>
-      <button class="rw-tab" data-rw="tools" role="tab"><i data-ic="wrench" data-ics="14"></i>工具</button>
-    </nav>
-    <div class="rw-panes">
-      <div class="rw-pane rail-memo" id="memo-slot" data-pane="memo">
-        <div class="rm-head"><b>Memo</b><span class="rm-total" id="rm-total">—</span><button class="rm-full" id="rm-full">全功能 ›</button></div>
-        <div class="rm-heat" id="rm-heat" title="点击进入全功能 Memo"></div>
-        <div class="rm-tags" id="rm-tags"><span class="rm-empty">暂无标签</span></div>
-        <div class="rm-add"><input id="rm-input" placeholder="随手记… Enter 保存"><button class="rm-send" id="rm-send" title="保存" aria-label="保存"><i data-ic="plus" data-ics="15"></i></button></div>
-      </div>
-      <div class="rw-pane" id="rw-cal" data-pane="cal" hidden>
-        <div class="mc-head"><button class="mc-nav" id="mc-prev" title="上一月" aria-label="上一月"><i data-ic="chevL" data-ics="13"></i></button><b id="mc-title"></b><button class="mc-nav" id="mc-next" title="下一月" aria-label="下一月"><i data-ic="chevR" data-ics="13"></i></button><button class="mc-full" id="mc-full" title="整月视图" aria-label="整月视图"><i data-ic="expand" data-ics="12"></i></button></div>
-        <div class="mc-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
-        <div class="mc-grid" id="mc-grid"></div>
-      </div>
-      <div class="rw-pane" id="rw-tools" data-pane="tools" hidden>
-        <div class="rw-tools">
-          <!-- 工具 = 对库的「工作流动作」（宪法 §5：面板/管理入口归 ⋯ 菜单与固定板） -->
-          <button id="rt-topic" title="输入主题，自动从维基/HN/arXiv 建库"><i data-ic="bolt" data-ics="15"></i><span>采集主题</span></button>
-          <button id="rt-web" title="网页 URL → Markdown 入库"><i data-ic="globe" data-ics="15"></i><span>网页本地化</span></button>
-          <button id="rt-conn" title="MCP 连接器：探测 / 采集"><i data-ic="plug" data-ics="15"></i><span>连接器</span></button>
-          <button id="rt-pub" title="发布当前文档为 AI-HTML 静态站"><i data-ic="upload" data-ics="15"></i><span>发布</span></button>
-        </div>
-        <div class="rw-plug-head">插件</div>
-        <div id="rw-plugins"></div>
-      </div>
+    <div class="rail-memo" id="memo-slot">
+      <div class="rm-head"><b>Memo</b><span class="rm-total" id="rm-total">—</span><button class="rm-full" id="rm-full">全功能 ›</button></div>
+      <div class="mc-head"><b id="mc-title"></b><button class="mc-nav" id="mc-prev" title="上一月" aria-label="上一月"><i data-ic="chevL" data-ics="13"></i></button><button class="mc-nav" id="mc-next" title="下一月" aria-label="下一月"><i data-ic="chevR" data-ics="13"></i></button><button class="mc-full" id="mc-full" title="整月视图" aria-label="整月视图"><i data-ic="expand" data-ics="12"></i></button></div>
+      <div class="mc-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+      <div class="mc-grid" id="mc-grid"></div>
+      <div class="rm-tags" id="rm-tags"><span class="rm-empty">暂无标签</span></div>
+      <div class="rm-add"><input id="rm-input" placeholder="随手记… Enter 保存"><button class="rm-send" id="rm-send" title="保存" aria-label="保存"><i data-ic="plus" data-ics="15"></i></button></div>
     </div>
   </div>
 </aside>
+<div id="rail-peek" aria-hidden="true"></div>
 <button id="rail-open" title="展开侧栏" aria-label="展开侧栏"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
 
 <aside id="inspector" class="closed">
@@ -1537,12 +1598,16 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
       </div>
     </div>
     <div class="dk-right">
-      <button class="dk-chip" id="dock-tokens" title="Token 消耗">¥0.00</button>
+      <button class="dk-chip dock-legacy" id="dock-tokens" title="Token 消耗">¥0.00</button>
+      <button class="dk-chip dock-legacy" id="sb-peers" title="在线协作者">在线 1</button>
       <button class="dk-icon" id="dock-cmdmode" title="命令模式" aria-label="命令模式"><i data-ic="cmd" data-ics="16"></i></button>
-      <button class="dk-chip" id="sb-peers" title="在线协作者">在线 1</button>
-      <button class="dk-icon" id="dock-user" title="个人中心"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></button>
       <button class="dk-icon" id="dock-more" title="更多" aria-label="更多"><i data-ic="more" data-ics="17"></i></button>
-      <span id="dock-sync-ind" class="sync-ind" title=""></span>
+      <!-- 状态簇：头像 + 同步灯 + 协作人数；点开看 Token / 在线 / 设置 -->
+      <span class="dk-status">
+        <button class="dk-icon" id="dock-user" title="状态与个人中心" aria-haspopup="menu"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></button>
+        <span id="dock-sync-ind" class="sync-ind" title=""></span>
+        <b class="dk-peers-n" id="dock-peers-n" hidden></b>
+      </span>
       <button class="dk-icon mf-anchor" id="dock-magic" title="Magic：新建 · 整理 · 模式 · 分享（右键 / 点击）" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" class="mf-star"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4Z"/></svg></button>
       <!-- 旧状态位：既有 JS 仍写入，视觉由右侧新组件承载 -->
       <span id="sb-conn" class="dock-legacy">connecting</span>
@@ -1559,6 +1624,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 <div id="magic-shade" aria-hidden="true"></div>
 <div id="magic-fan" role="menu" aria-label="Magic 菜单" aria-hidden="true">
   <button class="mf-item" data-mf="new" role="menuitem"><i data-ic="plus" data-ics="18"></i><span>新建</span></button>
+  <button class="mf-item" data-mf="ingest" role="menuitem"><i data-ic="bolt" data-ics="18"></i><span>采集</span></button>
   <button class="mf-item" data-mf="organize" role="menuitem"><i data-ic="wand" data-ics="18"></i><span>自动整理</span></button>
   <button class="mf-item" data-mf="studio" role="menuitem"><i data-ic="grid" data-ics="18"></i><span>Studio</span></button>
   <button class="mf-item" data-mf="learn" role="menuitem"><i data-ic="cap" data-ics="18"></i><span>学习</span></button>
@@ -1568,6 +1634,8 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 <!-- 左簇弹层：最近使用（纵向清单）· 手动固定板（Apple dock 式横向放大） -->
 <div class="dock-pop" id="recent-pop" role="menu" aria-label="最近使用" aria-hidden="true"></div>
 <div class="dock-pop dp-dock" id="pin-pop" role="menu" aria-label="固定入口" aria-hidden="true"></div>
+<div class="dock-pop" id="ingest-pop" role="menu" aria-label="采集与工具" aria-hidden="true"></div>
+<div class="dock-pop" id="status-pop" role="menu" aria-label="状态" aria-hidden="true"></div>
 <!-- 底部导航（Pad 竖屏 / 移动，spec §5）：Studio/学习/Memo/Agent——Memo/Agent 是工具态入口 -->
 <nav id="mob-nav" aria-label="主导航">
   <button data-mact="studio"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Studio</button>
@@ -2537,8 +2605,10 @@ function selectNode(id){
   if(graph.edges&&graph.edges.length)updateEdges();
   const n=graph.nodes.find(x=>x.id===id);
   if(!n){$('inspector').classList.add('closed');return;}
+  const wasClosed=$('inspector').classList.contains('closed');
   $('inspector').classList.remove('closed');
   if(innerWidth<=1024)setRailClosed(true,true); /* 窄屏：检查器滑出时侧栏让位 */
+  else{const el=document.querySelector(`#nodes .node[data-id="${CSS.escape(id)}"]`);if(el)requestAnimationFrame(()=>revealNode(el));}
   $('ins-title').textContent=n.title||n.path.split('/').pop();
   $('ins-path').textContent=n.path||'';
   const kinds={doc:'文档',capture:'采集',asset:'附件',query:'检索结果'};
@@ -2588,12 +2658,24 @@ function navNodes(key){
 }
 function pickNode(el){
   clearKbd();selectNode(el.dataset.id);el.classList.add('kbd');
+  revealNode(el);
+}
+/* 面板让位：节点被左栏/检查器/顶栏/底栏遮住时，平移画布把它请出来 */
+function revealNode(el){
+  if(!el||!el.offsetWidth)return;
   const k=vp.k,sx=el.offsetLeft*k+vp.x,sy=el.offsetTop*k+vp.y,sw=el.offsetWidth*k,sh=el.offsetHeight*k;
-  const L=($('rail').classList.contains('closed')?24:290),R=innerWidth-($('inspector').classList.contains('closed')?24:300);
-  const T=72,B=innerHeight-120;let dx=0,dy=0;
+  const ci=canvasInsets(),L=24+ci.l,R=innerWidth-24-ci.r;
+  const T=innerWidth>767?$('chrome').offsetHeight+16:72,B=innerHeight-120;let dx=0,dy=0;
   if(sx<L)dx=L-sx;else if(sx+sw>R)dx=R-(sx+sw);
   if(sy<T)dy=T-sy;else if(sy+sh>B)dy=B-(sy+sh);
   if(dx||dy)withAnim(()=>{vp.x+=dx;vp.y+=dy;applyVP();queueDepth();});
+}
+/* 宽屏下固定的面板占掉的画布宽度（悬停滑出态不算：它浮在画布上） */
+function canvasInsets(){
+  if(innerWidth<=1024)return{l:0,r:0};
+  const rl=$('rail'),ins=$('inspector');
+  return{l:rl&&!rl.classList.contains('closed')&&!rl.dataset.peek?rl.offsetWidth:0,
+         r:ins&&!ins.classList.contains('closed')?ins.offsetWidth:0};
 }
 function fit(){
   const placed=layout();
@@ -2601,17 +2683,18 @@ function fit(){
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   placed.forEach(({x,y})=>{x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+NODE_W);y1=Math.max(y1,y+NODE_H);});
   /* 窄屏自适应：pad 随宽收、k 下限抬高——列表流要可读，宁可超出靠平移 */
-  const pad=Math.min(150,Math.max(24,innerWidth*.1)),w=innerWidth-2*pad,h=innerHeight-2*pad-140;
+  const ci=canvasInsets(),cw=innerWidth-ci.l-ci.r;
+  const pad=Math.min(150,Math.max(24,cw*.1)),w=cw-2*pad,h=innerHeight-2*pad-140;
   const k=Math.min(1.15,Math.max(innerWidth<768?.55:.25,Math.min(w/Math.max(1,x1-x0),h/Math.max(1,y1-y0))));
-  withAnim(()=>{vp.k=k;vp.x=pad-x0*k+Math.max(0,(w-(x1-x0)*k)/2);vp.y=pad-y0*k+90;applyVP();});
+  withAnim(()=>{vp.k=k;vp.x=ci.l+pad-x0*k+Math.max(0,(w-(x1-x0)*k)/2);vp.y=pad-y0*k+90;applyVP();});
 }
 function focusNodes(ids){
   const list=graph.nodes.filter(n=>ids.has(n.id));if(!list.length)return;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   list.forEach(n=>{const p=board.nodes[n.id];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NODE_W);y1=Math.max(y1,p.y+NODE_H);});
-  const pad=200,w=innerWidth-2*pad,h=innerHeight-2*pad-140;
+  const ci=canvasInsets(),pad=Math.min(200,(innerWidth-ci.l-ci.r)*.15),w=innerWidth-ci.l-ci.r-2*pad,h=innerHeight-2*pad-140;
   const k=Math.min(1.25,Math.max(.35,Math.min(w/Math.max(1,x1-x0),h/Math.max(1,y1-y0))));
-  withAnim(()=>{vp.k=k;vp.x=pad-x0*k+(w-(x1-x0)*k)/2;vp.y=pad-y0*k+70;applyVP();});
+  withAnim(()=>{vp.k=k;vp.x=ci.l+pad-x0*k+(w-(x1-x0)*k)/2;vp.y=pad-y0*k+70;applyVP();});
 }
 function tidy(){
   if(view!=='canvas'){toast('时间线/看板按规则自动排布，无需整理','ok');return;}
@@ -3023,10 +3106,11 @@ async function loadGraph(force){
 /* 面包屑 + 规则提示 */
 function renderBrowser(b){
   const el=$('crumb');if(!el)return;
-  el.innerHTML=(b.breadcrumb||[]).map((c,i)=>
-    `<a href="#" data-path="${c.path}" role="link" style="cursor:pointer;color:${i===b.breadcrumb.length-1?'var(--fg)':'var(--accent)'}">${c.name}</a>`
-  ).join('<span style="color:var(--faint)"> / </span>')
-  +`<span style="color:var(--faint);margin-left:10px;font-size:11px">${b.rule} · ${b.total_docs} 篇</span>`;
+  const bc=b.breadcrumb||[];
+  el.innerHTML=bc.map((c,i)=>
+    `<a href="#" data-path="${escH(c.path)}" role="link"${i===bc.length-1?' aria-current="page"':''}>${escH(c.name)}</a>`
+  ).join('<span class="cb-sep">/</span>')
+  +`<span class="cb-n" title="${escH(b.rule||'')}">${b.total_docs} 篇</span>`;
   el.querySelectorAll('a[data-path]').forEach(a=>a.onclick=e=>{e.preventDefault();browsePath=a.dataset.path;loadGraph();});
 }
 let railDocsTimer=null;
@@ -3872,17 +3956,34 @@ function setRailClosed(closed,silent,persist=true){
   /* ≤1024 检查器是底部抽屉，与侧栏同层重叠：两者互斥让位，避免「＋ 新建」被盖住点不到 */
   if(!closed&&innerWidth<=1024){const ins=$('inspector');if(ins)ins.classList.add('closed');}
   /* 只有用户显式点击才持久化；boot/resize 的自动态不写存储（换屏宽各自取合理默认） */
-  if(persist){try{localStorage.setItem('thirdc_rail2',closed?'closed':'open')}catch{}}
+  if(persist){delete r.dataset.peek;try{localStorage.setItem('thirdc_rail2',closed?'closed':'open')}catch{}}
   /* 侧栏开关统一在顶栏左端（紧挨红绿灯）；左缘浮钮退役 */
   const tg=$('rail-toggle');if(tg)tg.setAttribute('aria-pressed',closed?'false':'true');
   /* rail 宽 250（≥1440）/220（1024–1439，P3 紧缩）→ 开启偏移相应取值 */
-  document.documentElement.style.setProperty('--rail-x',closed?'16px':(innerWidth<1440?'240px':'270px'));
-  if(!silent&&closed)toast('侧栏已收起，点左上角侧栏按钮或 ⌘\\ 展开','ok');
+  document.documentElement.style.setProperty('--rail-x',closed||r.dataset.peek?'16px':(innerWidth>1024?r.offsetWidth+'px':'240px'));
+  document.documentElement.style.setProperty('--rail-w',closed||r.dataset.peek||innerWidth<=1024?'0px':r.offsetWidth+'px');
+  if(!silent&&closed)toast('侧栏已收起：底栏左侧按钮、⌘\\ 或鼠标贴左缘可展开','ok');
 }
+/* 左缘悬停：临时滑出（覆盖在画布上，不挤画布），移开即收；点开关/⌘\\ 则转为固定 */
+(function railPeek(){
+  const hot=$('rail-peek'),r=$('rail');if(!hot||!r)return;
+  let t=0;
+  hot.addEventListener('pointerenter',()=>{
+    if(!r.classList.contains('closed')||innerWidth<=1024)return;
+    clearTimeout(t);t=setTimeout(()=>{r.dataset.peek='1';setRailClosed(false,true,false);},160);
+  });
+  hot.addEventListener('pointerleave',()=>clearTimeout(t));
+  /* 指针越过面板右缘 24px 即收（菜单/右键浮层里不算离开） */
+  document.addEventListener('pointermove',e=>{
+    if(!r.dataset.peek||e.clientX<=r.getBoundingClientRect().right+24)return;
+    if(e.target.closest&&e.target.closest('.dock-pop,#ctx,#pin-menu'))return;
+    setRailClosed(true,true,false);delete r.dataset.peek;
+  },{passive:true});
+})();
 $('rail-fold')&&($('rail-fold').onclick=()=>setRailClosed(true));
 $('rail-open')&&($('rail-open').onclick=()=>setRailClosed(false));
-$('rail-toggle')&&($('rail-toggle').onclick=()=>setRailClosed(!$('rail').classList.contains('closed'),true));
-addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&e.key==='\\'){e.preventDefault();const r=$('rail');if(r)setRailClosed(!r.classList.contains('closed'),true)}});
+$('rail-toggle')&&($('rail-toggle').onclick=()=>setRailClosed(!$('rail').classList.contains('closed')&&!$('rail').dataset.peek,true));
+addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&e.key==='\\'){e.preventDefault();const r=$('rail');if(r)setRailClosed(!r.classList.contains('closed')&&!r.dataset.peek,true)}});
 (function initRailState(){
   let pref=null;try{pref=localStorage.getItem('thirdc_rail2')}catch{}
   const narrow=innerWidth<=1024;
@@ -5813,18 +5914,12 @@ function memoDate(ts){
   const d=new Date(ts*1000);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-/* 左栏 Memo 小挂件：热力图（点击进全功能）+ 标签 + 快速记录 */
+/* 左栏 Memo 日历：月历格子即热力图（点日期筛当天 Memo）+ 标签 + 快速记录 */
 async function renderRailMemo(){
-  const heat=$('rm-heat'); if(!heat)return;
+  if(!$('memo-slot'))return;
   let data;
   try{ data=await loadMemo(); }catch{ return; }
-  const byDate={};
-  (data?.docs||[]).forEach(d=>{const k=memoDate(d.mtime);byDate[k]=(byDate[k]||0)+1;});
-  const end=new Date();end.setHours(0,0,0,0);
-  const weeks=13, days=[];
-  for(let i=weeks*7-1;i>=0;i--){const d=new Date(end);d.setDate(end.getDate()-i);days.push(d);}
-  heat.innerHTML='';
-  days.forEach((d,i)=>{const k=memoDate(d.getTime()/1000);heat.appendChild(heatCell(k,byDate[k]||0,Math.floor(i/7),i===days.length-1));});
+  renderMiniCal();
   const total=$('rm-total'); if(total)total.textContent=(data?.total||0)+' 篇';
   const cnt={};
   (data?.docs||[]).forEach(d=>(d.tags||[]).forEach(t=>{if(t.length<=20)cnt[t]=(cnt[t]||0)+1;}));
@@ -5838,7 +5933,6 @@ async function renderRailMemo(){
       openMemo();
     });
   }
-  heat.onclick=()=>{memoFilter={date:null,tag:null,q:''};const pick=$('memo-pick');if(pick)pick.textContent='';openMemo();};
   const full=$('rm-full'); if(full)full.onclick=()=>{memoFilter={date:null,tag:null,q:''};openMemo();};
 }
 async function railMemoAdd(){
@@ -5852,36 +5946,21 @@ async function railMemoAdd(){
 }
 $('rm-send')&&($('rm-send').onclick=railMemoAdd);
 $('rm-input')&&$('rm-input').addEventListener('keydown',e=>{if(e.key==='Enter')railMemoAdd();});
-/* ── 侧栏 Widget 区（Studio/学习共用）：Memo · 日历 · 工具 三标签 ── */
-function setWidgetTab(tab){
-  document.querySelectorAll('.rw-tab').forEach(b=>b.classList.toggle('on',b.dataset.rw===tab));
-  document.querySelectorAll('.rw-pane').forEach(p=>{
-    const on=p.dataset.pane===tab;
-    p.hidden=!on;
-    if(on&&p.dataset.pane==='memo'&&!memoData)loadMemo().catch(()=>{});
-    if(on&&p.dataset.pane==='cal')renderMiniCal();
-    if(on&&p.dataset.pane==='tools')renderPluginsWidget();
-  });
-  try{localStorage.setItem('thirdc_rwtab',tab)}catch{}
-}
-document.querySelectorAll('.rw-tab').forEach(b=>{b.onclick=()=>setWidgetTab(b.dataset.rw);});
-(function initWidgetTab(){
-  let tab='memo';try{tab=localStorage.getItem('thirdc_rwtab')||'memo'}catch{}
-  if(!['memo','cal','tools'].includes(tab))tab='memo';
-  setWidgetTab(tab);
-})();
-/* 学习模式 Memo 入口：确保侧栏展开并切到 Memo 标签 */
-function memoSlotSet(){
+/* 学习模式 Memo 入口：确保侧栏展开（Memo 日历常驻侧栏底部）；memoSlotSet(false) 只复位按钮态 */
+function memoSlotSet(open=true){
+  $('memo-slot-btn')?.setAttribute('aria-expanded',open?'true':'false');
+  if(!open)return;
   if($('rail').classList.contains('closed'))setRailClosed(false,true);
-  setWidgetTab('memo');
-  $('memo-slot-btn')?.setAttribute('aria-expanded','true');
+  if(!memoData)renderRailMemo();
 }
 $('memo-slot-btn')&&($('memo-slot-btn').onclick=()=>memoSlotSet());
 
-/* 迷你日历：与整月视图共用 calY/calM 与文档 mtime 数据 */
+/* Memo 日历：与整月视图共用 calY/calM；格子深浅 = 当天 Memo 数（memoData），圆点 = 当天改动的文档 */
 function renderMiniCal(){
   const grid=$('mc-grid');if(!grid)return;
   $('mc-title').textContent=`${calY} 年 ${calM+1} 月`;
+  const memoBy={};
+  (memoData?.docs||[]).forEach(d=>{const k=memoDate(d.mtime);memoBy[k]=(memoBy[k]||0)+1;});
   grid.innerHTML='';
   const first=new Date(calY,calM,1);
   const lead=(first.getDay()+6)%7;             // 周一为第一列
@@ -5898,14 +5977,17 @@ function renderMiniCal(){
     const cell=document.createElement('div');cell.className='mc-cell';cell.textContent=d;
     const dt=new Date(calY,calM,d);
     if(dt.getTime()===today.getTime())cell.classList.add('today');
+    const mk=memoDate(dt.getTime()/1000),mn=memoBy[mk]||0;
+    if(mn){cell.classList.add('heat-l'+heatLevel(mn));cell.title=`${mk} · ${mn} 条 Memo`;}
     const list=byDay[d]||[];
     if(list.length){
       const dot=document.createElement('i');dot.className='dot-n'+(list.some(n=>n.kind==='capture')?' cap':'');
       dot.title=list.map(n=>n.title||n.path).join('\n');cell.appendChild(dot);
     }
     cell.onclick=async()=>{
+      if(mn){memoFilter={date:mk,tag:null,q:''};const pick=$('memo-pick');if(pick)pick.textContent='日期 '+mk;openMemo();return}
       const dayDocs=byDay[d]||[];
-      if(!dayDocs.length){toast('当天没有文档改动','ok');return}
+      if(!dayDocs.length){toast('当天没有 Memo 或文档改动','ok');return}
       if(dayDocs.length===1)openDoc(dayDocs[0].path);
       else{
         const names=dayDocs.map(n=>n.title||n.path.split('/').pop()).join('\n');
@@ -5920,16 +6002,27 @@ $('mc-prev')&&($('mc-prev').onclick=()=>{calM--;if(calM<0){calM=11;calY--}render
 $('mc-next')&&($('mc-next').onclick=()=>{calM++;if(calM>11){calM=0;calY++}renderMiniCal()});
 $('mc-full')&&($('mc-full').onclick=()=>openCalendar());
 /* 文档图变化后刷新迷你日历（有则刷，静默） */
-function refreshMiniCal(){if($('mc-grid')&&!$('rw-cal').hidden)renderMiniCal()}
+function refreshMiniCal(){if($('mc-grid'))renderMiniCal()}
 
-/* 工具快捷入口：全部复用既有面板/命令，不引入第二套逻辑 */
-$('rt-topic')&&($('rt-topic').onclick=()=>{const c=CMDS.find(c=>c[0]==='采集主题（快速建库）');c&&c[2]()});
-$('rt-web')&&($('rt-web').onclick=()=>openWebIngest());
-$('rt-conn')&&($('rt-conn').onclick=()=>openConnPanel());
-$('rt-pub')&&($('rt-pub').onclick=()=>{
-  if(!current)toast('发布面向当前文档——先在画布或最近里打开一篇','err');
-  $('pub-btn').click();
-});
+/* 采集与工具（Magic → 采集）：全部复用既有面板/命令，不引入第二套逻辑 */
+const INGEST_DEFS=[
+  {ic:'bolt',label:'采集主题',sub:'输入主题，从维基/HN/arXiv 建库',run:()=>{const c=CMDS.find(c=>c[0]==='采集主题（快速建库）');c&&c[2]()}},
+  {ic:'globe',label:'网页本地化',sub:'网页 URL → Markdown 入库',run:()=>openWebIngest()},
+  {ic:'plug',label:'连接器',sub:'MCP 连接器：探测 / 采集',run:()=>openConnPanel()},
+];
+function renderIngestPop(box){
+  box.innerHTML='';
+  INGEST_DEFS.forEach(d=>{
+    const b=document.createElement('button');b.className='dp-row';b.type='button';
+    b.innerHTML=`<span class="ic">${iconSvg(d.ic,14)}</span><b></b><small></small>`;
+    b.querySelector('b').textContent=d.label;b.querySelector('small').textContent=d.sub;
+    b.onclick=()=>{closeDockPop('ingest-pop');d.run()};
+    box.appendChild(b);
+  });
+  const h=document.createElement('h5');h.textContent='插件';box.appendChild(h);
+  const plug=document.createElement('div');plug.className='dp-plugins';box.appendChild(plug);
+  renderPluginsWidget(plug);
+}
 $('rt-design')&&($('rt-design').onclick=()=>openDesign());
 $('rt-matrix')&&($('rt-matrix').onclick=()=>openMatrix());
 $('rt-conflow')&&($('rt-conflow').onclick=()=>openConflow());
@@ -6254,7 +6347,7 @@ let dockPins=(()=>{try{const v=JSON.parse(localStorage.getItem('thirdc_dock_pins
 function saveDockPins(){localStorage.setItem('thirdc_dock_pins',JSON.stringify(dockPins))}
 /* ── 底栏弹层助手：最近使用 / 固定板共用（点外即收，Esc 同收） ── */
 function closeDockPop(id){const p=document.getElementById(id);if(p){p.classList.remove('open');p.setAttribute('aria-hidden','true')}}
-function closeAllDockPops(){closeDockPop('recent-pop');closeDockPop('pin-pop')}
+function closeAllDockPops(){['recent-pop','pin-pop','ingest-pop','status-pop'].forEach(closeDockPop)}
 function toggleDockPop(id,anchor,fill){
   const p=document.getElementById(id);if(!p||!anchor)return false;
   const was=p.classList.contains('open');
@@ -6270,7 +6363,7 @@ function toggleDockPop(id,anchor,fill){
   return true;
 }
 document.addEventListener('pointerdown',e=>{
-  if(e.target.closest&&e.target.closest('#recent-pop,#pin-pop,#dock-recent,#dock-pinhub,#dock-magic'))return;
+  if(e.target.closest&&e.target.closest('#recent-pop,#pin-pop,#ingest-pop,#status-pop,#dock-recent,#dock-pinhub,#dock-magic,#magic-fan,#dock-user'))return;
   closeAllDockPops();
 },true);
 addEventListener('keydown',e=>{if(e.key==='Escape')closeAllDockPops()});
@@ -6335,7 +6428,7 @@ function mfLayout(){
   /* 几何约束：56px 圆钮不互叠（相邻弦长 ≥62px）且整体不压底栏。
      枢轴抬到按钮上方 122px，弧从左下 208° 扫到正上 90°（118° 跨度），
      R=152 → 弦长 152×23.6°rad≈62.6px。 */
-  const R=152;
+  const R=Math.max(152,Math.ceil(62/((118/(MF_ITEMS.length-1))*Math.PI/180)));
   const cy=r.top-122;
   const vx=Math.min(r.left+r.width/2,innerWidth-40);
   MF_ITEMS.forEach((el,i)=>{
@@ -6370,6 +6463,7 @@ $('dock-magic')&&(()=>{
   MF_ITEMS.forEach(el=>el.addEventListener('click',()=>{
     const k=el.dataset.mf;mfSet(false);
     if(k==='new')newDoc();
+    else if(k==='ingest')setTimeout(()=>toggleDockPop('ingest-pop',$('dock-magic'),renderIngestPop),220); /* 等扇面收拢再弹，免得两层叠在一起 */
     else if(k==='organize')runAutoOrganize();
     else if(k==='export')$('d-export')&&$('d-export').click();
     else setMode(k);
@@ -6414,7 +6508,8 @@ function renderRecentPop(box){
 $('dock-recent')&&($('dock-recent').onclick=e=>{e.stopPropagation();toggleDockPop('recent-pop',$('dock-recent'),renderRecentPop)});
 $('dock-rail')&&($('dock-rail').onclick=()=>{
   const r=$('rail');
-  setRailClosed(!r.classList.contains('closed')?true:false);
+  /* 悬停滑出态下点开关 = 固定住，而不是收起 */
+  setRailClosed(!r.classList.contains('closed')&&!r.dataset.peek);
 });
 /* Token 计量：会话累计 + 估算成本（混合费率示例，可按模型调整） */
 let tokTotal=+(localStorage.getItem('thirdc_tokens')||0);
@@ -6448,7 +6543,30 @@ $('dock-tokens')&&($('dock-tokens').onclick=e=>{
   setTimeout(()=>document.addEventListener('pointerdown',function h(ev){if(!menu.contains(ev.target)){menu.remove();document.removeEventListener('pointerdown',h)}}),0);
 });
 $('dock-cmdmode')&&($('dock-cmdmode').onclick=()=>openConnPanel());
-$('dock-user')&&($('dock-user').onclick=()=>openSettings());
+function renderStatusPop(box){
+  box.innerHTML='';
+  const cost=tokTotal/1000*TOK_RATE,ind=$('dock-sync-ind');
+  const rows=[
+    {ic:'chart',label:'Token 消耗',sub:`≈ ¥${cost.toFixed(2)} · ${tokTotal.toLocaleString()} tokens`,run:null},
+    {ic:'user',label:$('sb-peers').textContent.trim()||'在线 1',sub:'查看在线协作者',run:()=>{$('peers-pop').classList.add('open');renderPeersUI()}},
+    {ic:'sync',label:'同步',sub:((ind&&ind.title)||'—')+' · 点击立即同步',run:ind?()=>ind.click():null},
+    {ic:'cog',label:'个人中心与设置',sub:'账号 · 主题 · AI · 同步',run:()=>openSettings()},
+  ];
+  rows.forEach(d=>{
+    const b=document.createElement('button');b.className='dp-row';b.type='button';
+    b.innerHTML=`<span class="ic">${iconSvg(d.ic,14)}</span><b></b><small></small>`;
+    b.querySelector('b').textContent=d.label;b.querySelector('small').textContent=d.sub;
+    if(d.run)b.onclick=e=>{e.stopPropagation();closeDockPop('status-pop');d.run()};else b.disabled=true;
+    box.appendChild(b);
+  });
+}
+$('dock-user')&&($('dock-user').onclick=e=>{e.stopPropagation();toggleDockPop('status-pop',$('dock-user'),renderStatusPop)});
+/* 协作人数镜像到头像角标（>1 人才显示），旧 #sb-peers 仍是数据源 */
+(function mirrorPeers(){
+  const src=$('sb-peers'),dst=$('dock-peers-n');if(!src||!dst)return;
+  const sync=()=>{const n=parseInt(src.textContent.replace(/\D+/g,''))||0;dst.hidden=n<=1;dst.textContent=n;};
+  new MutationObserver(sync).observe(src,{childList:true,characterData:true,subtree:true});sync();
+})();
 /* stopPropagation：防原始点击冒泡到 document 的「点外关闭」监听，把刚打开的菜单同帧关掉 */
 $('dock-more')&&($('dock-more').onclick=(e)=>{e.stopPropagation();document.getElementById('more-btn').click()});
 /* 同步指示灯状态机：绿=已连接已同步 / 蓝⤴=同步中 / 红=未连接或异常 / 黄=有新同步内容 */
@@ -6739,8 +6857,8 @@ document.querySelectorAll('#export-ov [data-exp]').forEach(b=>{
 });
 
 /* ── 插件（Obsidian 式 manifest + GitHub 链接安装；命令为声明式，不执行插件代码） ── */
-async function renderPluginsWidget(){
-  const box=$('rw-plugins');if(!box)return;
+async function renderPluginsWidget(box){
+  if(!box)return;
   try{
     const r=await api('/plugins');
     const on=(r.plugins||[]).filter(p=>p.enabled);
