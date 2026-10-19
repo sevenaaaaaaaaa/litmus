@@ -1472,6 +1472,13 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .tagchip::before{content:'';width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:var(--tc,var(--faint))}
 .rail-memo .rm-tag{color:var(--muted);background:var(--hover);font-family:var(--font-body);font-weight:500}
 .rail-memo .rm-tag:hover{color:var(--fg);background:var(--hover-strong)}
+/* 5 · 交互细节：抽屉关闭钮回到路径行；预览瓷片按面板嵌套缩到 32 */
+.drawer-head .truth-ic{order:-3}
+.drawer-head .path{order:-2;flex:1 1 0;min-width:0}
+.drawer-head #d-close{order:-1;margin-left:4px}
+.drawer-head::after{content:'';order:-1;flex-basis:100%;height:0;margin-top:-6px}
+.insp-hero{align-items:center}
+.insp-tile{width:32px;height:32px;border-radius:var(--r-sm)}
 /* 4 · 等宽字体只给路径 / 代码 / 快捷键 */
 .rm-total,.insp-path,.tree-row .ct,#crumb .cb-n{font-family:var(--font-body);font-variant-numeric:tabular-nums}
 </style>
@@ -1668,7 +1675,6 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
   <button class="mf-item" data-mf="new" role="menuitem"><i data-ic="plus" data-ics="18"></i><span>新建</span></button>
   <button class="mf-item" data-mf="ingest" role="menuitem"><i data-ic="bolt" data-ics="18"></i><span>采集</span></button>
   <button class="mf-item" data-mf="organize" role="menuitem"><i data-ic="wand" data-ics="18"></i><span>自动整理</span></button>
-  <button class="mf-item" data-mf="studio" role="menuitem"><i data-ic="grid" data-ics="18"></i><span>Studio</span></button>
   <button class="mf-item" data-mf="learn" role="menuitem"><i data-ic="cap" data-ics="18"></i><span>学习</span></button>
   <button class="mf-item" data-mf="present" role="menuitem"><i data-ic="image" data-ics="18"></i><span>展示</span></button>
   <button class="mf-item" data-mf="export" role="menuitem"><i data-ic="download" data-ics="18"></i><span>分享导出</span></button>
@@ -2660,7 +2666,7 @@ function selectNode(id){
   $('ins-meta').textContent=`类型 ${kinds[n.kind]||n.kind} · ${fmt}`;
   /* 检查器 v2：类型瓷片 + 键值信息 + 摘要 + 双链（进/出），文件真相暴露在第一屏 */
   const nk=nodeKindOf(n);$('inspector').dataset.nk=nk;
-  $('ins-tile').innerHTML=iconSvg(KIND_IC[nk],20);
+  $('ins-tile').innerHTML=iconSvg(KIND_IC[nk],17);
   $('ins-path').textContent=(n.path||'').replace(/^Notes\/?/,'')||'Notes';
   const kindName={folder:'文件夹',asset:'附件',query:'检索结果',capture:'采集',view:'视图文件',html:'HTML 文档',doc:'Markdown 文档'}[nk];
   const kv=[['类型',kindName],['位置',(n.path||'').split('/').slice(0,-1).join('/')||'Notes'],
