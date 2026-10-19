@@ -103,7 +103,10 @@ package_dmg() {
 install_local_app() {
   local ver="$1" installed staged was_running=0
   installed=$(defaults read "$INSTALL_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo none)
-  if [[ "$installed" == "$ver" ]]; then
+  # Same-day rebuilds share the version string; only skip when the executable is byte-identical too.
+  local exe
+  exe=$(defaults read "$APP_OUT/Contents/Info.plist" CFBundleExecutable 2>/dev/null || echo "")
+  if [[ "$installed" == "$ver" ]] && [[ -n "$exe" ]] && cmp -s "$APP_OUT/Contents/MacOS/$exe" "$INSTALL_PATH/Contents/MacOS/$exe"; then
     INSTALLED_NOTE="$INSTALL_PATH 已是 $ver"; return 0
   fi
   app_running() { pgrep -f "$INSTALL_PATH/Contents/MacOS/" >/dev/null 2>&1; }
