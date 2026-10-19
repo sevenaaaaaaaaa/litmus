@@ -144,3 +144,26 @@ fn backdrop_blur_has_two_tiers_only() {
     }
     assert!(bad.is_empty(), "backdrop-filter 出现两档之外的模糊半径：{bad:?}");
 }
+
+#[test]
+fn radii_come_from_the_token_scale() {
+    // 圆角即层级（ui-redesign.md §2 / §9）：只许 --r-xs/sm/md/lg/pill，外加 0 / 50% 形状与 inherit
+    let s = shell();
+    let mut bad = Vec::new();
+    for (i, line) in s.lines().enumerate() {
+        let mut rest = line;
+        while let Some(j) = rest.find("border-radius:") {
+            let tail = &rest[j + 14..];
+            let decl: String = tail.chars().take_while(|&c| c != ';' && c != '}' && c != '"' && c != '\'').collect();
+            let ok = decl.split_whitespace().all(|v| {
+                let v = v.trim_end_matches("!important");
+                v.is_empty() || v == "0" || v == "50%" || v == "inherit" || v.starts_with("var(--r-")
+            });
+            if !ok {
+                bad.push(format!("L{}: border-radius:{decl}", i + 1));
+            }
+            rest = &tail[decl.len().min(tail.len())..];
+        }
+    }
+    assert!(bad.is_empty(), "壳里出现 token 之外的圆角（应改用 --r-xs/sm/md/lg/pill）：\n{}", bad.join("\n"));
+}

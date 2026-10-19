@@ -34,6 +34,7 @@ docker compose up -d                       # 7700 端口
 # 测试（同 CI kernel.yml）
 cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser
 cargo check -p kernel-md -p kernel-a2ui --target wasm32-unknown-unknown
+cargo test -p thirdc-server --test craft --test palette   # 前端壳工艺/配色纪律（改 server/web 必跑）
 bash scripts/perf-check.sh                 # 性能预算门禁
 
 # 桌面 / 移动
