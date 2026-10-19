@@ -132,14 +132,14 @@ RESUME=0
 if [[ -n "$NIGHTLY_SHA" && "$NIGHTLY_SHA" == "$HEAD_SHA" && -n "$NIGHTLY_TAG_VER" && "$FORCE" == 0 ]]; then
   VER="$NIGHTLY_TAG_VER"
   if [[ "$DRY_RUN" == 1 ]]; then
-    log "dry-run：HEAD 已是 Nightly $VER，仍按该版本本地构建"
+    log "dry-run：HEAD 已是 Nightly ${VER}，仍按该版本本地构建"
   elif gh release view "$NIGHTLY_TAG" -R "$REPO_SLUG" --json assets --jq '.assets[].name' 2>/dev/null \
         | grep -Fq "${APP_NAME}_${VER}_" \
      && { [[ "$INSTALL" == 0 ]] || [[ "$(defaults read "$INSTALL_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null)" == "$VER" ]]; }; then
     skip "自上次 Nightly（$VER @ ${SHORT_SHA}）以来没有新提交（--force 可强制重建）"
   else
     RESUME=1
-    log "HEAD 即 Nightly $VER，但上次未完成，继续未完成的步骤"
+    log "HEAD 即 Nightly ${VER}，但上次未完成，继续未完成的步骤"
   fi
 else
   VER="$(nightly_version "$BASE_VER" "$(date +%Y%m%d)")"
@@ -229,7 +229,7 @@ fi
 
 # ---------- 7. summary ----------
 step "summary"
-echo "  版本:     $VER（$SHORT_SHA）"
+echo "  版本:     ${VER}（${SHORT_SHA}）"
 echo "  Release:  $RELEASE_URL"
 echo "  DMG:      $DMG_OUT"
 echo "  本机应用: $INSTALLED_NOTE"
