@@ -17,6 +17,15 @@
 name: desktop
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "补发到已有 Release 的标签（如 v0.2.0；留空 = 只出 Artifacts）"
+        required: false
+        default: ""
+      only:
+        description: "只构建一个平台（windows-latest / ubuntu-22.04 / macos-14；留空 = 全部）"
+        required: false
+        default: ""
   push:
     tags: ["v*", "nightly"]
 
@@ -28,11 +37,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest # → .msi + setup.exe
-          - os: ubuntu-22.04 # → .deb + .AppImage + .rpm
-          - os: macos-14 # → .app + updater .app.tar.gz；DMG 由下方步骤用 packaging/macos/make-dmg.sh 打（内置打开助手）
-            args: --bundles app
+        # 手动补发可只跑一个平台（inputs.only），避免与 Release 上已有的同名资产撞车
+        # windows-latest → .msi + setup.exe；ubuntu-22.04 → .deb + .AppImage + .rpm；
+        # macos-14 → .app + updater .app.tar.gz（DMG 由下方步骤用 packaging/macos/make-dmg.sh 打，内置打开助手）
+        # 不用 include 挂 macOS 参数：include 匹配不到组合时会新增任务，单平台补发会被它带回 macOS
+        os: ${{ fromJSON(inputs.only && format('["{0}"]', inputs.only) || '["windows-latest","ubuntu-22.04","macos-14"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +51,7 @@ jobs:
         shell: bash
         run: |
           PY=$(command -v python3 || command -v python)
-          BASE=$("$PY" -c "import re;s=open('Cargo.toml').read();print(re.search(r'\[workspace\.package\][^\[]*?^version\s*=\s*\"([^\"]+)\"',s,re.S|re.M).group(1))")
+          BASE=$("$PY" -c "import re;s=open('Cargo.toml',encoding='utf-8').read();print(re.search(r'\[workspace\.package\][^\[]*?^version\s*=\s*\"([^\"]+)\"',s,re.S|re.M).group(1))")
           PRERELEASE=false
           if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == "nightly" ]]; then
             git fetch --force --depth=1 origin "+refs/tags/nightly:refs/tags/nightly"
@@ -55,6 +64,9 @@ jobs:
             VER="$BASE"
             if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" != "v$VER" ]]; then
               echo "::error::标签 ${{ github.ref_name }} 与 Cargo.toml 版本 $VER 不一致"; exit 1
+            fi
+            if [[ -n "${{ inputs.tag }}" && "${{ inputs.tag }}" != "v$VER" ]]; then
+              echo "::error::补发标签 ${{ inputs.tag }} 与 Cargo.toml 版本 $VER 不一致"; exit 1
             fi
             NAME="鹿蕊 Litmus v$VER"
           fi
@@ -99,12 +111,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && steps.ver.outputs.name || '' }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || '' }}
+          releaseName: ${{ (github.ref_type == 'tag' || inputs.tag != '') && steps.ver.outputs.name || '' }}
           releaseDraft: false
           prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.os == 'macos-14' && '--bundles app' || '' }}
 
       # macOS DMG 未公证：统一用 packaging/macos/make-dmg.sh 打包，内置「打不开？双击我.command」+ 安装说明。
       # scripts/daily-release.sh / release.sh 会先上传本地打好的同名 DMG；已存在则跳过，不覆盖。
