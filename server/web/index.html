@@ -1493,6 +1493,70 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .insp-tile{width:32px;height:32px;border-radius:var(--r-sm)}
 /* 4 · 等宽字体只给路径 / 代码 / 快捷键 */
 .rm-total,.insp-path,.tree-row .ct,#crumb .cb-n{font-family:var(--font-body);font-variant-numeric:tabular-nums}
+/* ═══════════ v5 · 纸与石蕊（2026-10-22）═══════════
+   不换布局，换材质：纸、墨、石蕊显色。
+   颜色只留给"正在发生"的地方（AI、选中、同步），其余交给纸的明度与字的浓淡。 */
+
+/* 顶栏：纸面 + 品牌下一道石蕊 */
+#chrome{background:color-mix(in oklab,var(--surface-1) 94%,transparent);border-bottom:1px solid var(--border-1)}
+.brand{position:relative}
+.brand .bname{font-family:var(--font-serif);font-weight:600;font-size:var(--fs-4);letter-spacing:-.01em}
+.brand::after{content:'';position:absolute;left:12px;right:12px;bottom:2px;height:2px;border-radius:var(--r-pill);
+  background:var(--accent-grad);opacity:.50;transition:opacity var(--dur-2) var(--ease-out)}
+.brand:hover::after{opacity:.9}
+
+/* 画布：桌面，不是虚空——顶部一层受光，其余是纸的本色 */
+#canvas{background:
+  radial-gradient(100% 68% at 50% -10%, color-mix(in oklab,var(--surface-1) 55%,transparent), transparent 62%),
+  var(--bg-1)}
+#grid{opacity:.9;background-image:radial-gradient(var(--grid-dot) 1px,transparent 1px)}
+
+/* 卡片：一张纸。去掉镜面与毛玻璃，只留纸边和接触影 */
+.node{background:var(--surface-2);border-color:var(--border-2);box-shadow:inset 0 1px 0 oklch(100% 0 0/.55),0 1px 0 oklch(30% .04 60/.06),0 14px 30px -20px oklch(30% .04 60/.40)}
+.node:hover,.node.on{-webkit-backdrop-filter:none;backdrop-filter:none}
+.node:hover{border-color:var(--border-2);box-shadow:var(--shadow-sm)}
+.node.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 0 4px var(--accent-soft),var(--node-shadow)}
+.n-title{font-family:var(--font-serif);font-weight:600;font-size:calc(var(--fs-4) * 1.1);letter-spacing:0}
+.n-body{color:var(--text-2)}
+/* 纸更薄：卡片收到 r-md，像一张裁好的纸 */
+.node{border-radius:var(--r-md)}
+/* 文档标签：书页索引，不是胶囊 */
+.doc-tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;height:36px;padding:0 8px}
+.doc-tab:hover{background:transparent;color:var(--text-1);border-bottom-color:var(--border-2)}
+.doc-tab.on{background:transparent;color:var(--text-1);font-weight:600;border-bottom-color:var(--text-1)}
+
+/* 选中：卡片上沿一道石蕊——显色即"这张纸正在被读" */
+.node.on::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent-grad);opacity:.9;z-index:2}
+
+/* 首屏：也是一张纸，不再是玻璃 */
+.ob-card{background:var(--surface-3);border-color:var(--border-1)}
+.ob-card h2{font-family:var(--font-serif);font-size:calc(var(--fs-5) * 1.2);letter-spacing:-.01em}
+
+/* 面板标题：衬线，给界面一点"书"的语气 */
+.panel-head h3,.insp-title{font-family:var(--font-serif);font-weight:600;letter-spacing:-.01em}
+
+/* 底栏：纸；对话输入是纸上的一条横线，不是一个玻璃胶囊 */
+.dockbar{background:color-mix(in oklab,var(--surface-1) 94%,transparent)}
+.say-wrap{background:color-mix(in oklab,var(--surface-2) 88%,transparent);border-color:var(--border-1);box-shadow:inset 0 1px 0 oklch(100% 0 0/.4)}
+.say-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),inset 0 1px 0 oklch(100% 0 0/.4)}
+
+/* 左栏与检查器：纸面（不透视，窄屏覆盖态也读得清） */
+#rail,#inspector{background:var(--surface-1)}
+
+/* 选中/激活：石蕊显色只出现在"正在发生"的地方 */
+.tab-pill.on{background:var(--accent-soft);color:var(--accent-strong)}
+
+/* 库根封面：桌面上的大标题，卡片会从它上面滑过（在 #viewport 之下，所以不抢内容） */
+#cover{position:absolute;left:calc(var(--rail-x,0px) + 34px);top:calc(var(--chrome-h) + 22px);max-width:min(560px,54vw);pointer-events:none;
+  opacity:0;transform:translateY(6px);transition:opacity var(--dur-3) var(--ease-out),transform var(--dur-3) var(--ease-spring)}
+#cover.on{opacity:1;transform:none}
+#cover .cv-k{font:600 var(--fs-1)/1 var(--font-mono);letter-spacing:.22em;text-transform:uppercase;color:var(--text-3)}
+#cover .cv-t{margin-top:12px;font-family:var(--font-serif);font-weight:600;font-size:calc(var(--fs-5) * 2.4);line-height:1.06;letter-spacing:-.02em;color:var(--text-1)}
+#cover .cv-s{margin-top:10px;font:var(--fs-2)/1.5 var(--font-mono);color:var(--text-3);font-variant-numeric:tabular-nums}
+#cover::after{content:'';display:block;width:88px;height:3px;margin-top:14px;border-radius:var(--r-pill);background:var(--accent-grad);opacity:.7}
+@media (max-width:767px){#cover{display:none}}
+/* 窄屏隐藏面包屑（1397 行的 display:flex 晚于断点，需要在这里再压一次） */
+@media (max-width:767px),(min-width:768px) and (max-width:1024px) and (orientation:portrait){#crumb{display:none}}
 </style>
 </head>
 <body>
@@ -1532,7 +1596,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
     <div id="ob-upd"></div>
   </details>
 </div></div>
-<div id="canvas"><div id="viewport"><svg id="edges"></svg><div id="cols"></div><div id="axis"></div><div id="nodes"></div><div id="peers"></div></div></div>
+<div id="canvas"><div id="cover" aria-hidden="true"><div class="cv-k">Understory · 林下</div><div class="cv-t" id="cv-title">鹿蕊 Litmus</div><div class="cv-s" id="cv-sub"></div></div><div id="viewport"><svg id="edges"></svg><div id="cols"></div><div id="axis"></div><div id="nodes"></div><div id="peers"></div></div></div>
 <div id="lasso"></div>
 <!-- Studio 视图胶囊（§3.1）：画布/时间线/看板只是 Studio 的排布方式，出了 Studio 无意义 -->
 <div id="view-pill">
@@ -2595,6 +2659,22 @@ function layoutMeta(){
 }
 
 /* ───────── 画布渲染 ───────── */
+/* 库根封面：只在一级根、画布视图、非展示时出现（卡片从它上面滑过） */
+function updateCover(){
+  const cover=$('cover'); if(!cover)return;
+  const root=(browsePath||'').replace(/^Notes\/?/,'')==='';
+  const on=root&&view==='canvas'&&!document.body.classList.contains('present');
+  cover.classList.toggle('on',on);
+  if(!on)return;
+  const name=((typeof vaultName!=='undefined'&&vaultName)||($('brand-name')&&$('brand-name').textContent)||'鹿蕊 Litmus').trim();
+  const t=$('cv-title'); if(t&&t.textContent!==name)t.textContent=name;
+  const vis=graph.nodes||[];
+  const folders=vis.filter(n=>n.kind==='folder').length;
+  const docs=vis.filter(n=>n.kind!=='folder').length;
+  const latest=Math.max(0,...vis.map(n=>n.mtime||0));
+  const s=[folders?folders+' 个文件夹':'',docs?docs+' 篇文档':'',latest?'最近改动 '+relTime(latest):''].filter(Boolean).join(' · ');
+  const el=$('cv-sub'); if(el&&el.textContent!==s)el.textContent=s;
+}
 function renderGraph(){
   const wrap=$('nodes'),svg=$('edges');
   const placed=layout();
@@ -2653,6 +2733,7 @@ function renderGraph(){
   $('cols').innerHTML=meta.cols.map(c=>`<div class="col" data-col="${c.title}" style="left:${c.x}px;top:40px;height:${maxY}px"></div>`).join('');
   updateEdges(ids);
   known=new Set(graph.nodes.map(n=>n.id));
+  updateCover();
 }
 function updateEdges(ids){
   const svg=$('edges');if(!ids)ids=new Set(graph.nodes.filter(n=>lens==='all'||n.kind===lens).map(n=>n.id));
@@ -2778,11 +2859,13 @@ function fit(){
     timer=setTimeout(()=>{
       if(Math.abs(innerWidth-lastW)<200)return;
       lastW=innerWidth;
-      const vis=[...document.querySelectorAll('#nodes .node')].filter(el=>{
+      const all=[...document.querySelectorAll('#nodes .node')];
+      const vis=all.filter(el=>{
         const r=el.getBoundingClientRect();
         return r.right>0&&r.left<innerWidth&&r.bottom>0&&r.top<innerHeight;
       });
-      if(vis.length<2){try{fit()}catch{}}
+      /* 只有零星几张露出边角时也算"看不见"：少于一半就重新取景 */
+      if(all.length&&vis.length<Math.max(2,Math.ceil(all.length*0.5))){try{fit()}catch{}}
     },240);
   });
 })();
@@ -5973,6 +6056,7 @@ function setMode(m){
   const ds=$('dock-studio');if(ds)ds.classList.toggle('on',m==='studio');
   const def=MODES[m];
   if(def&&def.enter)def.enter();
+  updateCover();
   broadcastState();renderRemoteCarets();
 }
 document.querySelectorAll('#mode-seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
