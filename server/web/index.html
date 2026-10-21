@@ -2529,19 +2529,37 @@ function layoutMissing(){const miss=graph.nodes.filter(n=>!board.nodes[n.id]);
   const per=Math.max(1,Math.ceil(Math.sqrt(miss.length||1)));
   miss.forEach((n,i)=>board.nodes[n.id]={x:(i%per)*COL,y:Math.floor(i/per)*ROW});}
 
+/* 时间线模型：同一天同一泳道会有多张卡（文件夹更是常常同一天），
+   必须按格错开并撑开泳道，否则会叠成一摞、只剩最上面那张能点。 */
+function timelineModel(vis){
+  /* 文件夹没有 mtime（节点里是 0）：不要落进 1970 年，单独一列「未标日期」放最后 */
+  const day=(t)=>{if(!t)return '未标日期';const d=new Date(t*1000);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
+  const days=[...new Set(vis.map(n=>day(n.mtime)))].sort();
+  const lanes={doc:0,capture:1,asset:2,query:3};
+  const counts=[0,0,0,0,0], cells={};
+  vis.forEach(n=>{
+    const l=lanes[n.kind]??4, k=day(n.mtime)+'|'+l;
+    cells[k]=(cells[k]||0)+1;
+    counts[l]=Math.max(counts[l],cells[k]);
+  });
+  const tops=[]; let y=150;
+  for(let l=0;l<5;l++){tops[l]=y;y+=Math.max(1,counts[l])*(NODE_H+14)+30;}
+  return {day,days,lanes,tops};
+}
+
 /* ───────── 布局（画布 / 时间线 / 看板） ───────── */
 function visibleNodes(){return graph.nodes.filter(n=>lens==='all'||n.kind===lens||(lens==='doc'&&n.kind==='folder'))}
 function layout(){
   const vis=visibleNodes();
   if(view==='canvas')return vis.map(n=>({n,x:(board.nodes[n.id]||{x:0,y:0}).x,y:(board.nodes[n.id]||{x:0,y:0}).y}));
   if(view==='timeline'){
-    const day=(t)=>{const d=new Date((t||0)*1000);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-    const days=[...new Set(vis.map(n=>day(n.mtime)))].sort();
-    const lanes={doc:0,capture:1,asset:2,query:3};
+    const m=timelineModel(vis), seen={};
     return vis.map(n=>{
-      const ci=Math.max(0,days.indexOf(day(n.mtime)));
-      const lane=lanes[n.kind]??4;
-      return {n,x:200+ci*330,y:150+lane*190};
+      const ci=Math.max(0,m.days.indexOf(m.day(n.mtime)));
+      const lane=m.lanes[n.kind]??4;
+      const key=ci+':'+lane, idx=seen[key]=(seen[key]||0);
+      seen[key]=idx+1;
+      return {n,x:200+ci*330,y:m.tops[lane]+idx*(NODE_H+14)};
     });
   }
   // 看板：按集合分栏
@@ -2558,11 +2576,10 @@ function layout(){
 function layoutMeta(){
   const vis=visibleNodes();
   if(view==='timeline'){
-    const day=(t)=>{const d=new Date((t||0)*1000);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-    const days=[...new Set(vis.map(n=>day(n.mtime)))].sort();
+    const m=timelineModel(vis);
     const lanes=['文档','采集','附件','检索'];
-    const labels=days.map((d,i)=>({text:d,x:200+i*330,y:110,day:true}))
-      .concat(lanes.map((t,i)=>({text:t,x:40,y:150+i*190+20,day:false})));
+    const labels=m.days.map((d,i)=>({text:d,x:200+i*330,y:110,day:true}))
+      .concat(lanes.map((t,i)=>({text:t,x:40,y:m.tops[i]+20,day:false})));
     return {labels,cols:[]};
   }
   if(view==='kanban'){
