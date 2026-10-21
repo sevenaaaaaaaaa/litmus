@@ -111,6 +111,11 @@ fn switch_and_navigate(app: &AppHandle, path: PathBuf, name: String) -> Result<S
     reg.vaults.insert(0, entry.clone());
     reg.current = Some(entry);
     save_registry(app, &reg)?;
+    /* 切换库后重建主菜单：Open Recent 的打勾与列表立刻更新 */
+    #[cfg(target_os = "macos")]
+    if let Ok(menu) = build_app_menu(app) {
+        let _ = app.set_menu(menu);
+    }
     if let Some(w) = app.get_webview_window("main") {
         w.navigate(url.parse().map_err(|e| format!("地址解析失败：{e}"))?)
             .map_err(|e| format!("窗口导航失败：{e}"))?;
@@ -411,6 +416,244 @@ fn dispatch_main(app: &AppHandle, name: &str, detail: &str) {
         );
         let _ = w.eval(&js);
     }
+}
+
+/// 让窗口标题跟随当前知识库（Mission Control / 窗口菜单里可见）。
+#[cfg(desktop)]
+#[tauri::command]
+fn desktop_set_title(app: AppHandle, title: String) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_title(&title);
+    }
+}
+
+/// 窗口几何：像原生 App 一样记住上次的大小与位置（独立于 localStorage）。
+#[cfg(desktop)]
+fn window_state_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("window.json"))
+}
+
+#[cfg(desktop)]
+fn load_window_state(app: &AppHandle) -> Option<(f64, f64, f64, f64)> {
+    let p = window_state_path(app)?;
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()?;
+    Some((
+        v.get("w")?.as_f64()?,
+        v.get("h")?.as_f64()?,
+        v.get("x")?.as_f64()?,
+        v.get("y")?.as_f64()?,
+    ))
+}
+
+#[cfg(desktop)]
+fn save_window_state(app: &AppHandle, window: &tauri::Window) {
+    let (Ok(size), Ok(pos), Ok(scale)) = (
+        window.inner_size(),
+        window.outer_position(),
+        window.scale_factor(),
+    ) else {
+        return;
+    };
+    let Some(p) = window_state_path(app) else { return };
+    let body = serde_json::json!({
+        "w": size.width as f64 / scale,
+        "h": size.height as f64 / scale,
+        "x": pos.x as f64 / scale,
+        "y": pos.y as f64 / scale,
+    });
+    let _ = std::fs::write(p, body.to_string());
+}
+
+/// Resized / Moved 会连续触发：700ms 内只落一次盘，避免拖窗口时频繁写文件。
+#[cfg(desktop)]
+fn maybe_save_window_state(window: &tauri::Window) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    if now.saturating_sub(LAST.load(Ordering::Relaxed)) < 700 {
+        return;
+    }
+    LAST.store(now, Ordering::Relaxed);
+    save_window_state(&window.app_handle(), window);
+}
+
+/// 用系统默认程序打开 URL（帮助 / 发布说明 / 问题反馈）。
+#[cfg(desktop)]
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+}
+
+/// macOS 主菜单：App / 文件 / 编辑 / 视图 / 窗口 / 帮助。
+/// 自定义项只发事件给壳（menu:*），具体动作仍由网页里的同一套函数执行。
+#[cfg(desktop)]
+fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{
+        AboutMetadata, CheckMenuItem, MenuBuilder, MenuItemBuilder, PredefinedMenuItem,
+        SubmenuBuilder,
+    };
+    let pkg = app.package_info();
+
+    let about = PredefinedMenuItem::about(
+        app,
+        Some("关于鹿蕊 Litmus"),
+        Some(AboutMetadata {
+            name: Some("鹿蕊 Litmus".into()),
+            version: Some(pkg.version.to_string()),
+            short_version: Some(pkg.version.to_string()),
+            copyright: Some("AGPL-3.0-or-later · 林下 Understory".into()),
+            credits: Some("本地优先的知识 OS".into()),
+            ..Default::default()
+        }),
+    )?;
+    let check_update = MenuItemBuilder::with_id("m-check-update", "检查更新…").build(app)?;
+    let settings = MenuItemBuilder::with_id("m-settings", "设置…")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+    let services = PredefinedMenuItem::services(app, Some("服务"))?;
+    let hide = PredefinedMenuItem::hide(app, Some("隐藏鹿蕊 Litmus"))?;
+    let hide_others = PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?;
+    let show_all = PredefinedMenuItem::show_all(app, Some("显示全部"))?;
+    let quit = PredefinedMenuItem::quit(app, Some("退出鹿蕊 Litmus"))?;
+    let app_menu = SubmenuBuilder::new(app, "鹿蕊 Litmus")
+        .item(&about)
+        .separator()
+        .item(&check_update)
+        .separator()
+        .item(&settings)
+        .separator()
+        .item(&services)
+        .separator()
+        .item(&hide)
+        .item(&hide_others)
+        .item(&show_all)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    let new_doc = MenuItemBuilder::with_id("m-new-doc", "新建文档")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let new_folder = MenuItemBuilder::with_id("m-new-folder", "新建文件夹")
+        .accelerator("CmdOrCtrl+Shift+N")
+        .build(app)?;
+    let sticky = MenuItemBuilder::with_id("m-sticky", "新建便利贴").build(app)?;
+    let reveal = MenuItemBuilder::with_id("m-reveal-vault", "在访达中显示知识库").build(app)?;
+    let close = PredefinedMenuItem::close_window(app, Some("关闭窗口"))?;
+
+    /* Open Recent：注册表里的库，当前库打勾；切换库后菜单会重建 */
+    let reg = load_registry(app);
+    let mut recent = SubmenuBuilder::new(app, "最近的知识库");
+    if reg.vaults.is_empty() {
+        recent = recent.item(&MenuItemBuilder::with_id("m-vault-none", "暂无").build(app)?);
+    } else {
+        for (i, v) in reg.vaults.iter().take(8).enumerate() {
+            let current = reg
+                .current
+                .as_ref()
+                .map(|c| c.path == v.path)
+                .unwrap_or(false);
+            recent = recent.item(&CheckMenuItem::with_id(
+                app,
+                format!("m-vault:{i}"),
+                &v.name,
+                true,
+                current,
+                None::<&str>,
+            )?);
+        }
+    }
+    let recent = recent.build()?;
+
+    let file_menu = SubmenuBuilder::new(app, "文件")
+        .item(&new_doc)
+        .item(&new_folder)
+        .item(&sticky)
+        .separator()
+        .item(&recent)
+        .separator()
+        .item(&reveal)
+        .separator()
+        .item(&close)
+        .build()?;
+
+    let undo = PredefinedMenuItem::undo(app, Some("撤销"))?;
+    let redo = PredefinedMenuItem::redo(app, Some("重做"))?;
+    let cut = PredefinedMenuItem::cut(app, Some("剪切"))?;
+    let copy = PredefinedMenuItem::copy(app, Some("复制"))?;
+    let paste = PredefinedMenuItem::paste(app, Some("粘贴"))?;
+    let select_all = PredefinedMenuItem::select_all(app, Some("全选"))?;
+    let edit_menu = SubmenuBuilder::new(app, "编辑")
+        .item(&undo)
+        .item(&redo)
+        .separator()
+        .item(&cut)
+        .item(&copy)
+        .item(&paste)
+        .item(&select_all)
+        .build()?;
+
+    let search = MenuItemBuilder::with_id("m-search", "搜索与命令")
+        .accelerator("CmdOrCtrl+K")
+        .build(app)?;
+    let toggle_rail = MenuItemBuilder::with_id("m-toggle-rail", "切换侧栏")
+        .accelerator("CmdOrCtrl+\\")
+        .build(app)?;
+    let toggle_theme = MenuItemBuilder::with_id("m-toggle-theme", "切换明暗")
+        .accelerator("CmdOrCtrl+Shift+L")
+        .build(app)?;
+    let fullscreen = PredefinedMenuItem::fullscreen(app, Some("进入全屏"))?;
+    let view_menu = SubmenuBuilder::new(app, "视图")
+        .item(&search)
+        .item(&toggle_rail)
+        .separator()
+        .item(&toggle_theme)
+        .separator()
+        .item(&fullscreen)
+        .build()?;
+
+    let minimize = PredefinedMenuItem::minimize(app, Some("最小化"))?;
+    let zoom = PredefinedMenuItem::maximize(app, Some("缩放"))?;
+    let front = PredefinedMenuItem::bring_all_to_front(app, Some("前置全部窗口"))?;
+    let window_menu = SubmenuBuilder::new(app, "窗口")
+        .item(&minimize)
+        .item(&zoom)
+        .separator()
+        .item(&front)
+        .build()?;
+
+    let help = MenuItemBuilder::with_id("m-help", "鹿蕊 Litmus 帮助").build(app)?;
+    let notes = MenuItemBuilder::with_id("m-release-notes", "发布说明").build(app)?;
+    let issue = MenuItemBuilder::with_id("m-report-issue", "报告问题").build(app)?;
+    let help_menu = SubmenuBuilder::new(app, "帮助")
+        .item(&help)
+        .item(&notes)
+        .item(&issue)
+        .build()?;
+
+    MenuBuilder::new(app)
+        .item(&app_menu)
+        .item(&file_menu)
+        .item(&edit_menu)
+        .item(&view_menu)
+        .item(&window_menu)
+        .item(&help_menu)
+        .build()
 }
 
 #[cfg(desktop)]
@@ -955,6 +1198,54 @@ pub fn run() {
                 })
                 .build(),
         )
+        /* 主菜单事件：macOS 走原生 NSMenu；自定义项发 CustomEvent 给壳，
+           与网页里的 ⌘N/⌘K/⌘\ 走同一条代码路径。 */
+        .on_menu_event(|app, event| {
+            let id = event.id().0.clone();
+            let action = match id.as_str() {
+                "m-new-doc" => "menu:new-doc",
+                "m-new-folder" => "menu:new-folder",
+                "m-search" => "menu:search",
+                "m-settings" => "menu:settings",
+                "m-toggle-rail" => "menu:toggle-rail",
+                "m-toggle-theme" => "menu:toggle-theme",
+                "m-check-update" => "menu:check-update",
+                _ => "",
+            };
+            if !action.is_empty() {
+                show_main(app);
+                dispatch_main(app, action, "{}");
+                return;
+            }
+            match id.as_str() {
+                "m-sticky" => open_sticky(app),
+                other if other.starts_with("m-vault:") => {
+                    let idx: usize = other["m-vault:".len()..].parse().unwrap_or(usize::MAX);
+                    let reg = load_registry(app);
+                    if let Some(v) = reg.vaults.get(idx) {
+                        let path = PathBuf::from(&v.path);
+                        if path.is_dir() {
+                            let name = v.name.clone();
+                            let app2 = app.clone();
+                            std::thread::spawn(move || {
+                                let _ = switch_and_navigate(&app2, path, name);
+                            });
+                        }
+                    }
+                }
+                "m-reveal-vault" => {
+                    if let Some(ctx) = app.try_state::<TrayCtx>() {
+                        let _ = std::process::Command::new("open")
+                            .arg(ctx.vault.display().to_string())
+                            .spawn();
+                    }
+                }
+                "m-help" => open_url("https://nownexts.com/thirdc/"),
+                "m-release-notes" => open_url("https://github.com/sevenaaaaaaaaa/litmus/releases"),
+                "m-report-issue" => open_url("https://github.com/sevenaaaaaaaaa/litmus/issues"),
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             desktop_vaults,
             desktop_create_vault,
@@ -974,7 +1265,8 @@ pub fn run() {
             native_notify,
             native_share,
             desktop_save_download,
-            desktop_print_url
+            desktop_print_url,
+            desktop_set_title
         ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -1039,7 +1331,7 @@ pub fn run() {
             #[allow(unused_mut)]
             let mut builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
-                    .title("ThirdC Studio")
+                    .title("鹿蕊 Litmus")
                     .resizable(true)
                     /* 同 sticky：关掉系统拖放拦截，还网页原生 HTML5 拖拽 */
                     .disable_drag_drop_handler();
@@ -1064,10 +1356,16 @@ pub fn run() {
             /* 桌面专属的窗口几何/装饰：移动端 API 不存在 */
             #[cfg(desktop)]
             {
+                /* 像原生 App 一样恢复上次的窗口大小与位置；首次启动 1440×900。 */
+                let saved = load_window_state(app.handle());
+                let (ww, wh) = saved.map(|s| (s.0, s.1)).unwrap_or((1440.0, 900.0));
                 builder = builder
-                    .inner_size(1440.0, 900.0)
+                    .inner_size(ww, wh)
                     .min_inner_size(960.0, 640.0)
                     .decorations(true);
+                if let Some((_, _, x, y)) = saved {
+                    builder = builder.position(x, y);
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -1082,6 +1380,22 @@ pub fn run() {
             }
 
             builder.build()?;
+
+            /* macOS 原生主菜单（App/文件/编辑/视图/窗口/帮助）。
+               构建失败只记日志，绝不因此挡住启动。 */
+            #[cfg(target_os = "macos")]
+            {
+                match build_app_menu(app.handle()) {
+                    Ok(menu) => {
+                        let n = menu.items().map(|v| v.len()).unwrap_or(0);
+                        match app.set_menu(menu) {
+                            Ok(_) => eprintln!("[menu] 已安装主菜单（{n} 个顶级菜单）"),
+                            Err(e) => eprintln!("[menu] 安装主菜单失败：{e}"),
+                        }
+                    }
+                    Err(e) => eprintln!("[menu] 构建主菜单失败：{e}"),
+                }
+            }
 
             /* 菜单栏图标：内核起成功才有 origin/token——兜底错误页时不建 tray。 */
             #[cfg(desktop)]
@@ -1111,17 +1425,24 @@ pub fn run() {
                 tauri::WindowEvent::Destroyed if window.label() == "main" => {
                     window.app_handle().exit(0);
                 }
-                // 全屏时系统收起红绿灯：通知壳收回顶栏左侧留白（html.fullscreen）
-                #[cfg(target_os = "macos")]
+                // 记住窗口几何（Resized / Moved，内部节流到 700ms）
                 tauri::WindowEvent::Resized(_) if window.label() == "main" => {
-                    use std::sync::atomic::{AtomicBool, Ordering};
-                    static FS: AtomicBool = AtomicBool::new(false);
-                    let fs = window.is_fullscreen().unwrap_or(false);
-                    if FS.swap(fs, Ordering::Relaxed) != fs {
-                        if let Some(w) = window.app_handle().get_webview_window("main") {
-                            let _ = w.eval(&format!("document.documentElement.classList.toggle('fullscreen',{fs})"));
+                    maybe_save_window_state(window);
+                    // 全屏时系统收起红绿灯：通知壳收回顶栏左侧留白（html.fullscreen）
+                    #[cfg(target_os = "macos")]
+                    {
+                        use std::sync::atomic::{AtomicBool, Ordering};
+                        static FS: AtomicBool = AtomicBool::new(false);
+                        let fs = window.is_fullscreen().unwrap_or(false);
+                        if FS.swap(fs, Ordering::Relaxed) != fs {
+                            if let Some(w) = window.app_handle().get_webview_window("main") {
+                                let _ = w.eval(&format!("document.documentElement.classList.toggle('fullscreen',{fs})"));
+                            }
                         }
                     }
+                }
+                tauri::WindowEvent::Moved(_) if window.label() == "main" => {
+                    maybe_save_window_state(window);
                 }
                 _ => {}
             }
