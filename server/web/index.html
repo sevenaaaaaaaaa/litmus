@@ -5226,6 +5226,15 @@ $('secret-add')&&($('secret-add').onclick=async()=>{
 addEventListener('tray-open-doc',e=>{const p=e.detail&&e.detail.path;if(p)openDoc(p)});
 addEventListener('tray-new-doc',()=>newDoc());
 addEventListener('tray-secrets',()=>openSecrets());
+
+/* ───────── macOS 原生主菜单（Rust 侧 NSMenu → CustomEvent）───────── */
+addEventListener('menu:new-doc',()=>newDoc());
+addEventListener('menu:new-folder',()=>createFolderIn('Notes'));
+addEventListener('menu:search',()=>openPalette());
+addEventListener('menu:settings',()=>{openSettings()});
+addEventListener('menu:toggle-rail',()=>{const b=$('dock-rail');if(b)b.click()});
+addEventListener('menu:toggle-theme',()=>{const b=$('theme');if(b)b.click()});
+addEventListener('menu:check-update',()=>{openSettings();setTimeout(()=>{try{checkAppUpdate()}catch(e){}},150)});
 function renderPalette(q){
   const box=$('palette-list');box.innerHTML='';
   const ql=q.trim().toLowerCase();
@@ -10027,6 +10036,11 @@ function applyStatus(s){
   const bn=$('brand-name'); if(bn&&s.vault)bn.textContent=s.vault;
   const n=$('v-name'); if(n&&s.vault)n.textContent=s.vault;
   if(s.vault)vaultName=s.vault;
+  /* 桌面端：窗口标题跟随知识库（Mission Control / 窗口菜单可见），每个库只设一次 */
+  if(s.vault&&window.__TAURI_INTERNALS__&&window.__titleVault!==s.vault){
+    window.__titleVault=s.vault;
+    try{window.__TAURI_INTERNALS__.invoke('desktop_set_title',{title:s.vault+' — 鹿蕊 Litmus'}).catch(()=>{})}catch(e){}
+  }
   const d=$('v-docs'); if(d)d.textContent=s.docs;
   const i=$('v-idx'); if(i)i.textContent=s.indexed;
   const a=$('v-assets'); if(a)a.textContent=s.assets;
