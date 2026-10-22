@@ -1331,11 +1331,15 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
   background:linear-gradient(var(--surface-2),var(--surface-2)) padding-box,var(--accent-grad) border-box;
   box-shadow:0 0 0 4px var(--accent-soft),0 8px 30px -10px color-mix(in oklab,var(--accent-2) 45%,transparent)}
 .say-wrap:focus-within .say-kbd{display:none}
-/* Magic：与品牌同源的蓝色渐变宝珠 */
-#dock-magic.mf-anchor{width:36px;height:36px;border-radius:50%;background:var(--logo-grad);color:var(--logo-ink);
-  box-shadow:0 6px 18px -6px color-mix(in oklab,var(--accent) 60%,transparent),inset 0 1px 0 oklch(100% 0 0/.35)}
-#dock-magic.mf-anchor .mf-star{fill:currentColor}
-#dock-magic.mf-anchor:hover{transform:scale(1.06);color:var(--logo-ink)}
+/* Magic：纸上的石蕊星——不再是一颗深蓝实心球，压暗底栏 */
+#dock-magic.mf-anchor{width:36px;height:36px;border-radius:50%;background:color-mix(in oklab,var(--surface-2) 90%,transparent);
+  border:1px solid var(--border-1);color:var(--accent);display:grid;place-items:center;
+  box-shadow:inset 0 1px 0 oklch(100% 0 0/.5);
+  transition:transform var(--dur-2) var(--ease-spring),border-color var(--dur-2) var(--ease-out),background var(--dur-2) var(--ease-out)}
+#dock-magic.mf-anchor .mf-star{fill:url(#litmus-grad);stroke:none}
+#dock-magic.mf-anchor:hover{transform:scale(1.06);border-color:var(--accent);background:var(--surface-3)}
+#dock-magic.mf-anchor.open{border-color:transparent;
+  background:linear-gradient(var(--surface-3),var(--surface-3)) padding-box,var(--accent-grad) border-box}
 /* ── 画布氛围：顶部石蕊微光 + 四周暗角，让卡片像放在被光照着的桌面中央 ── */
 #grid{background-image:radial-gradient(var(--grid-dot) 1px,transparent 1px),radial-gradient(60% 40% at 50% -6%,color-mix(in oklab,var(--accent) 9%,transparent),transparent 70%);
   background-size:22px 22px,100% 100%}
@@ -1749,6 +1753,7 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
         <span id="dock-sync-ind" class="sync-ind" title=""></span>
         <b class="dk-peers-n" id="dock-peers-n" hidden></b>
       </span>
+      <button class="dk-icon mf-anchor" id="dock-magic" title="Magic：新建 · 整理 · 模式 · 分享（点击 / ⌥ + 右键画布）" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" class="mf-star"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4Z"/></svg></button>
       <!-- 旧状态位：既有 JS 仍写入，视觉由右侧新组件承载 -->
       <span id="sb-conn" class="dock-legacy">connecting</span>
       <span id="sb-stats" class="dock-legacy">—</span>
@@ -1760,6 +1765,16 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
     </div>
   </div>
 </section>
+<!-- Magic 扇面：右下角圆钮 + 画布任意处 ⌥ + 右键 -->
+<div id="magic-shade" aria-hidden="true"></div>
+<div id="magic-fan" role="menu" aria-label="Magic 菜单" aria-hidden="true">
+  <button class="mf-item" data-mf="new" role="menuitem"><i data-ic="plus" data-ics="18"></i><span>新建</span></button>
+  <button class="mf-item" data-mf="ingest" role="menuitem"><i data-ic="bolt" data-ics="18"></i><span>采集</span></button>
+  <button class="mf-item" data-mf="organize" role="menuitem"><i data-ic="wand" data-ics="18"></i><span>自动整理</span></button>
+  <button class="mf-item" data-mf="learn" role="menuitem"><i data-ic="cap" data-ics="18"></i><span>学习</span></button>
+  <button class="mf-item" data-mf="present" role="menuitem"><i data-ic="image" data-ics="18"></i><span>展示</span></button>
+  <button class="mf-item" data-mf="export" role="menuitem"><i data-ic="download" data-ics="18"></i><span>分享导出</span></button>
+</div>
 <!-- 左簇弹层：最近使用（纵向清单）· 手动固定板（Apple dock 式横向放大） -->
 <div class="dock-pop" id="recent-pop" role="menu" aria-label="最近使用" aria-hidden="true"></div>
 <div class="dock-pop dp-dock" id="pin-pop" role="menu" aria-label="固定入口" aria-hidden="true"></div>
@@ -3254,7 +3269,7 @@ function showHint(){
   if(localStorage.getItem('thirdc_hint_off')==='1'){bar.innerHTML='';return}
   if(bar.dataset.on==='1')return;
   bar.dataset.on='1';
-  bar.innerHTML=`<b>双击</b>文件夹进入 · <b>拖空白</b>平移 · <b>⌘滚轮</b>缩放 · <b>⌘K</b>检索 <span class="x" title="不再显示">${iconSvg('x',13)}</span>`;
+  bar.innerHTML=`<b>双击</b>文件夹进入 · <b>拖空白</b>平移 · <b>⌘滚轮</b>缩放 · <b>⌘K</b>检索 · <b>⌥右键</b>魔法 <span class="x" title="不再显示">${iconSvg('x',13)}</span>`;
   bar.querySelector('.x').onclick=()=>{localStorage.setItem('thirdc_hint_off','1');bar.innerHTML='';};
   clearTimeout(hintTimer);
   hintTimer=setTimeout(hideHint,14000);
@@ -6574,6 +6589,20 @@ function toggleDockPop(id,anchor,fill){
   p.style.top='auto';p.style.visibility='';
   return true;
 }
+/* 以屏幕坐标（而不是某个按钮）为锚：魔法扇面在画布任意处打开时用 */
+function toggleDockPopAt(id,x,y,fill){
+  const p=document.getElementById(id);if(!p)return false;
+  const was=p.classList.contains('open');
+  closeAllDockPops();
+  if(was)return true;
+  fill(p);
+  p.classList.add('open');p.setAttribute('aria-hidden','false');p.style.visibility='hidden';
+  const pw=p.offsetWidth;
+  p.style.left=Math.max(10,Math.min(innerWidth-pw-10,x))+'px';
+  p.style.bottom=(innerHeight-y+10)+'px';
+  p.style.top='auto';p.style.visibility='';
+  return true;
+}
 document.addEventListener('pointerdown',e=>{
   if(e.target.closest&&e.target.closest('#recent-pop,#pin-pop,#ingest-pop,#status-pop,#dock-recent,#dock-pinhub,#dock-magic,#magic-fan,#dock-user'))return;
   closeAllDockPops();
@@ -6631,8 +6660,61 @@ function renderPinMenu(anchor){
   menu.classList.add('open');
 }
 renderDockPins();
-/* Magic 扇面已退役（2026-10-22）：新建/采集/整理/模式/导出并入画布右键菜单，
-   右下角不再有常驻圆钮。 */
+/* ── Magic 扇面：右下角圆钮 + 画布任意处 ⌥ + 右键 ──
+   两种入口共用同一套几何与动作；画布入口让"魔法"跟着手走，不用回右下角。 */
+const MF_ITEMS=[...document.querySelectorAll('#magic-fan .mf-item')];
+let mfOpen=false, mfOrigin={x:0,y:0};
+function mfLayout(){
+  const n=MF_ITEMS.length; if(!n)return;
+  const R=200, start=205, span=155;
+  MF_ITEMS.forEach((el,i)=>{
+    const ang=(start - span*(i/Math.max(1,n-1)))*Math.PI/180;
+    const x=Math.min(innerWidth-64,Math.max(8, mfOrigin.x + R*Math.cos(ang) - 28));
+    const y=Math.min(innerHeight-64,Math.max(8, mfOrigin.y - R*Math.sin(ang) - 28));
+    el.style.setProperty('--mx',Math.round(x)+'px');
+    el.style.setProperty('--my',Math.round(y)+'px');
+    el.style.setProperty('--d',(i*32)+'ms');
+  });
+}
+function mfSyncOn(){
+  MF_ITEMS.forEach(el=>el.classList.toggle('on',
+    ['studio','learn','present'].includes(el.dataset.mf)&&mode===el.dataset.mf));
+}
+function mfSet(open, origin){
+  if(open&&origin)mfOrigin=origin;
+  mfOpen=open;
+  $('magic-fan').classList.toggle('open',open);
+  $('magic-fan').setAttribute('aria-hidden',open?'false':'true');
+  $('magic-shade').classList.toggle('open',open);
+  const orb=$('dock-magic');
+  if(orb){orb.classList.toggle('open',open);orb.setAttribute('aria-expanded',open?'true':'false')}
+  if(!open)return;
+  closeAllDockPops();
+  const sh=$('magic-shade');
+  sh.style.setProperty('--ax',mfOrigin.x+'px');
+  sh.style.setProperty('--ay',mfOrigin.y+'px');
+  mfLayout();mfSyncOn();
+}
+function mfOrbOrigin(){
+  const r=$('dock-magic').getBoundingClientRect();
+  return {x:r.left+r.width/2, y:r.top-70};
+}
+$('dock-magic')&&(()=>{
+  const a=$('dock-magic');
+  a.addEventListener('click',()=>mfSet(!mfOpen, mfOrbOrigin()));
+  a.addEventListener('contextmenu',e=>{e.preventDefault();mfSet(!mfOpen, mfOrbOrigin())});
+  $('magic-shade').addEventListener('click',()=>mfSet(false));
+  MF_ITEMS.forEach(el=>el.addEventListener('click',()=>{
+    const k=el.dataset.mf, at={...mfOrigin};mfSet(false);
+    if(k==='new')newDoc();
+    else if(k==='ingest')setTimeout(()=>toggleDockPopAt('ingest-pop',at.x,at.y,renderIngestPop),180);
+    else if(k==='organize')runAutoOrganize();
+    else if(k==='export')$('d-export')&&$('d-export').click();
+    else setMode(k);
+  }));
+  addEventListener('keydown',e=>{if(mfOpen&&e.key==='Escape')mfSet(false)});
+  addEventListener('resize',()=>{if(mfOpen){mfOrigin=mfOrbOrigin();mfLayout()}});
+})();
 /* ── 左簇：Studio 创作台入口 + 最近使用弹层 ── */
 $('dock-studio')&&($('dock-studio').onclick=()=>{mode!=='studio'?setMode('studio'):fit()});
 $('dock-memohub')&&($('dock-memohub').onclick=()=>openMemoHub());
@@ -8720,6 +8802,8 @@ function showPropsPanel(rows){
 }
 // 画布：节点右键 → 检查器同款动作；空白右键 → 画布级动作
 document.getElementById('canvas').addEventListener('contextmenu',e=>{
+  /* ⌥ + 右键：魔法扇面在指针处展开（不弹检查器菜单） */
+  if(e.altKey){e.preventDefault();e.stopPropagation();mfSet(true,{x:e.clientX,y:e.clientY});return;}
   e.preventDefault();
   const nodeEl=e.target.closest('.node');
   if(nodeEl){
