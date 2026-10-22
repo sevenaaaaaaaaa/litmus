@@ -1642,10 +1642,6 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
     <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
   </button>
   <nav id="crumb" aria-label="当前位置"></nav>
-    <button class="search-pill" id="search-btn" title="检索与命令（⌘K）">
-    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-    <span class="sp-txt">搜索文档、命令…</span><kbd>⌘K</kbd>
-  </button>
   <nav class="doc-tabs" id="doc-tabs"></nav>
   <!-- 画布身份（多画布切换）：顶栏最右 -->
   <button id="board-pill" title="切换画布（双击切知识库）"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg><span class="bname" id="board-name">main</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -1753,7 +1749,6 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
         <span id="dock-sync-ind" class="sync-ind" title=""></span>
         <b class="dk-peers-n" id="dock-peers-n" hidden></b>
       </span>
-      <button class="dk-icon mf-anchor" id="dock-magic" title="Magic：新建 · 整理 · 模式 · 分享（右键 / 点击）" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" class="mf-star"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4Z"/></svg></button>
       <!-- 旧状态位：既有 JS 仍写入，视觉由右侧新组件承载 -->
       <span id="sb-conn" class="dock-legacy">connecting</span>
       <span id="sb-stats" class="dock-legacy">—</span>
@@ -1765,16 +1760,6 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
     </div>
   </div>
 </section>
-<!-- Magic 弧形菜单（S Pen Air command 式扇出）：新建 · 自动整理 · 三模式 · 分享导出 -->
-<div id="magic-shade" aria-hidden="true"></div>
-<div id="magic-fan" role="menu" aria-label="Magic 菜单" aria-hidden="true">
-  <button class="mf-item" data-mf="new" role="menuitem"><i data-ic="plus" data-ics="18"></i><span>新建</span></button>
-  <button class="mf-item" data-mf="ingest" role="menuitem"><i data-ic="bolt" data-ics="18"></i><span>采集</span></button>
-  <button class="mf-item" data-mf="organize" role="menuitem"><i data-ic="wand" data-ics="18"></i><span>自动整理</span></button>
-  <button class="mf-item" data-mf="learn" role="menuitem"><i data-ic="cap" data-ics="18"></i><span>学习</span></button>
-  <button class="mf-item" data-mf="present" role="menuitem"><i data-ic="image" data-ics="18"></i><span>展示</span></button>
-  <button class="mf-item" data-mf="export" role="menuitem"><i data-ic="download" data-ics="18"></i><span>分享导出</span></button>
-</div>
 <!-- 左簇弹层：最近使用（纵向清单）· 手动固定板（Apple dock 式横向放大） -->
 <div class="dock-pop" id="recent-pop" role="menu" aria-label="最近使用" aria-hidden="true"></div>
 <div class="dock-pop dp-dock" id="pin-pop" role="menu" aria-label="固定入口" aria-hidden="true"></div>
@@ -4467,7 +4452,7 @@ $('editor').addEventListener('paste',async e=>{
     const t=$('editor'),s=t.selectionStart;t.value=t.value.slice(0,s)+r.markdown+'\n'+t.value.slice(s);dirty=true;toast('图片入库 '+r.hash.slice(0,8)+'…','ok');
   }catch(err){toast('图片入库失败：'+err.message,'err');}
 });
-/* 新建入口已并入 Magic 菜单（dock-magic）；⌘K 面板与 N 键不变 */
+/* 新建入口在画布右键菜单 + ⌘N；⌘K 面板不变 */
 
 /* ───────── 检查器动作 ───────── */
 $b('ins-open').onclick=()=>{const n=graph.nodes.find(x=>x.id===selected);if(n&&n.kind!=='asset')openDoc(n.path);};
@@ -6646,58 +6631,8 @@ function renderPinMenu(anchor){
   menu.classList.add('open');
 }
 renderDockPins();
-/* ── Magic 弧形菜单（S Pen Air command 式扇出）：新建 · 自动整理 · 三模式 · 分享导出 ── */
-const MF_ITEMS=[...document.querySelectorAll('#magic-fan .mf-item')];
-let mfOpen=false;
-function mfLayout(){
-  const a=$('dock-magic');if(!a)return;
-  const r=a.getBoundingClientRect();
-  /* 几何约束：56px 圆钮不互叠（相邻弦长 ≥62px）且整体不压底栏。
-     枢轴抬到按钮上方 122px，弧从左下 208° 扫到正上 90°（118° 跨度），
-     R=152 → 弦长 152×23.6°rad≈62.6px。 */
-  const R=Math.max(152,Math.ceil(62/((118/(MF_ITEMS.length-1))*Math.PI/180)));
-  const cy=r.top-122;
-  const vx=Math.min(r.left+r.width/2,innerWidth-40);
-  MF_ITEMS.forEach((el,i)=>{
-    const ang=(208-118*(i/(MF_ITEMS.length-1)))*Math.PI/180;
-    const x=Math.min(innerWidth-64,Math.max(8,vx+R*Math.cos(ang)-28));
-    const y=Math.max(8,cy-R*Math.sin(ang)-28);
-    el.style.setProperty('--mx',Math.round(x)+'px');
-    el.style.setProperty('--my',Math.round(y)+'px');
-    el.style.setProperty('--d',(i*36)+'ms');
-  });
-}
-function mfSyncOn(){
-  MF_ITEMS.forEach(el=>el.classList.toggle('on',
-    ['studio','learn','present'].includes(el.dataset.mf)&&mode===el.dataset.mf));
-}
-function mfSet(open){
-  mfOpen=open;
-  $('magic-fan').classList.toggle('open',open);
-  $('magic-fan').setAttribute('aria-hidden',open?'false':'true');
-  $('magic-shade').classList.toggle('open',open);
-  $('dock-magic').classList.toggle('open',open);
-  $('dock-magic').setAttribute('aria-expanded',open?'true':'false');
-  if(open){closeAllDockPops();mfLayout();mfSyncOn();
-    const r=$('dock-magic').getBoundingClientRect(),sh=$('magic-shade');
-    sh.style.setProperty('--ax',(r.left+r.width/2)+'px');sh.style.setProperty('--ay',(r.top+r.height/2)+'px');}
-}
-$('dock-magic')&&(()=>{
-  const a=$('dock-magic');
-  a.addEventListener('click',()=>mfSet(!mfOpen));
-  a.addEventListener('contextmenu',e=>{e.preventDefault();mfSet(!mfOpen)});
-  $('magic-shade').addEventListener('click',()=>mfSet(false));
-  MF_ITEMS.forEach(el=>el.addEventListener('click',()=>{
-    const k=el.dataset.mf;mfSet(false);
-    if(k==='new')newDoc();
-    else if(k==='ingest')setTimeout(()=>toggleDockPop('ingest-pop',$('dock-magic'),renderIngestPop),220); /* 等扇面收拢再弹，免得两层叠在一起 */
-    else if(k==='organize')runAutoOrganize();
-    else if(k==='export')$('d-export')&&$('d-export').click();
-    else setMode(k);
-  }));
-  addEventListener('keydown',e=>{if(mfOpen&&e.key==='Escape')mfSet(false)});
-  addEventListener('resize',()=>{if(mfOpen)mfLayout()});
-})();
+/* Magic 扇面已退役（2026-10-22）：新建/采集/整理/模式/导出并入画布右键菜单，
+   右下角不再有常驻圆钮。 */
 /* ── 左簇：Studio 创作台入口 + 最近使用弹层 ── */
 $('dock-studio')&&($('dock-studio').onclick=()=>{mode!=='studio'?setMode('studio'):fit()});
 $('dock-memohub')&&($('dock-memohub').onclick=()=>openMemoHub());
@@ -8822,9 +8757,14 @@ document.getElementById('canvas').addEventListener('contextmenu',e=>{
       {icon:'clip',label:'粘贴文档',fn:()=>pasteDocInto(browsePath==='Notes'?'Notes':browsePath)},
       'sep',
       {icon:'bolt',label:'采集主题',fn:()=>openPalette()},
+      {icon:'bolt',label:'采集与工具…',fn:()=>toggleDockPop('ingest-pop',$('dock-more'),renderIngestPop)},
       'sep',
+      {icon:'wand',label:'自动整理',fn:()=>runAutoOrganize()},
       {icon:'spark',label:'整理布局',fn:tidy},
       {icon:'expand',label:'适配视图',fn:fit},
+      'sep',
+      {icon:'cap',label:'学习模式',fn:()=>setMode('learn')},
+      {icon:'image',label:'展示',fn:()=>setMode('present')},
       'sep',
       {icon:'sync',label:'同步外部改动',fn:()=>$b('sync').click()},
       {icon:'sync',label:'强制刷新',fn:()=>$b('force-refresh').click()},
