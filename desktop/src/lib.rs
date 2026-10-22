@@ -418,6 +418,46 @@ fn dispatch_main(app: &AppHandle, name: &str, detail: &str) {
     }
 }
 
+/// 网页序列化过来的右键菜单项：分隔线 / 文案 / 是否可用。
+#[cfg(desktop)]
+#[derive(serde::Deserialize)]
+struct CtxEntry {
+    #[serde(default)]
+    sep: bool,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
+/// 原生右键菜单：菜单项 id = ctx:<index>，选择后由全局菜单事件把 index 发回网页，
+/// 网页执行原来那一项的函数——动作仍只有一份实现。
+#[cfg(desktop)]
+#[tauri::command]
+fn desktop_context_menu(app: AppHandle, items: Vec<CtxEntry>) -> Result<(), String> {
+    use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
+    let mut b = MenuBuilder::new(&app);
+    for (i, it) in items.iter().enumerate() {
+        if it.sep {
+            b = b.separator();
+            continue;
+        }
+        let item = MenuItemBuilder::with_id(
+            format!("ctx:{i}"),
+            it.label.clone().unwrap_or_default(),
+        )
+        .enabled(it.enabled.unwrap_or(true))
+        .build(&app)
+        .map_err(|e| e.to_string())?;
+        b = b.item(&item);
+    }
+    let menu = b.build().map_err(|e| e.to_string())?;
+    let w = app
+        .get_webview_window("main")
+        .ok_or_else(|| "主窗口不存在".to_string())?;
+    w.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
 /// 让窗口标题跟随当前知识库（Mission Control / 窗口菜单里可见）。
 #[cfg(desktop)]
 #[tauri::command]
@@ -1202,6 +1242,11 @@ pub fn run() {
            与网页里的 ⌘N/⌘K/⌘\ 走同一条代码路径。 */
         .on_menu_event(|app, event| {
             let id = event.id().0.clone();
+            /* 原生右键菜单的选择：把 index 发回网页 */
+            if let Some(idx) = id.strip_prefix("ctx:") {
+                dispatch_main(app, "ctx-pick", &format!("{{\"index\":{idx}}}"));
+                return;
+            }
             let action = match id.as_str() {
                 "m-new-doc" => "menu:new-doc",
                 "m-new-folder" => "menu:new-folder",
@@ -1266,7 +1311,8 @@ pub fn run() {
             native_share,
             desktop_save_download,
             desktop_print_url,
-            desktop_set_title
+            desktop_set_title,
+            desktop_context_menu
         ]);
     #[cfg(mobile)]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -1335,6 +1381,14 @@ pub fn run() {
                     .resizable(true)
                     /* 同 sticky：关掉系统拖放拦截，还网页原生 HTML5 拖拽 */
                     .disable_drag_drop_handler();
+                /* 透明窗口：NSVisualEffectView（侧栏材质）在 webview 之下透出来。
+                   网页侧只让画布/面板上色，顶栏、侧栏、底栏留半透明。 */
+                #[cfg(target_os = "macos")]
+                {
+                    builder = builder
+                        .transparent(true)
+                        .background_color(tauri::window::Color(0, 0, 0, 0));
+                }
 
             /* 偏好初始化脚本：每次页面加载（含换库导航）把 prefs.json 灌进 localStorage，
                主题/昵称/树状态等跨库保留。token 除外——每个 origin 的内核 token 不同，
@@ -1380,6 +1434,26 @@ pub fn run() {
             }
 
             builder.build()?;
+
+            /* macOS 侧栏材质：NSVisualEffectView（sidebar）垫在 webview 之下。
+               失败时给 <html> 加 no-vibrancy，网页回落到不透明纸面（不留透明洞）。 */
+            #[cfg(target_os = "macos")]
+            if let Some(w) = app.get_webview_window("main") {
+                use tauri::window::{Effect, EffectState, EffectsBuilder};
+                let effects = EffectsBuilder::new()
+                    .effect(Effect::Sidebar)
+                    .state(EffectState::FollowsWindowActiveState)
+                    .build();
+                match w.set_effects(effects) {
+                    Ok(_) => eprintln!("[vibrancy] 已应用 sidebar 材质"),
+                    Err(e) => {
+                        eprintln!("[vibrancy] 应用材质失败：{e}");
+                        let _ = w.eval(
+                            "document.documentElement.classList.add('no-vibrancy')",
+                        );
+                    }
+                }
+            }
 
             /* macOS 原生主菜单（App/文件/编辑/视图/窗口/帮助）。
                构建失败只记日志，绝不因此挡住启动。 */

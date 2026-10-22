@@ -211,3 +211,21 @@ DocModel {
 红绿灯自定义内嵌与 56px 顶栏同一中线 · 菜单栏图标（tray）· 全局快捷键 Alt+Space 剪贴板落库 ·
 原生文件夹选择（NSOpenPanel）· 原生通知 · 原生分享 · 触觉反馈 · 系统打印 · 在线更新（GitHub latest.json）。
 
+
+### 侧栏材质（2026-10-22）
+
+- 主窗口改为透明窗口（`transparent(true)` + `macOSPrivateApi`），webview 之下垫一层
+  `NSVisualEffectView`（`Effect::Sidebar`，跟随窗口激活态）。
+- 网页只给「内容区」上色：`#canvas` 与 `#grid` 用 `clip-path` 裁到
+  `chrome-h / dock-h / rail-x` 之内，顶栏、侧栏、底栏留半透明（72% / 64% / 72% 纸色）。
+- 节点与连线因此不会滑到侧栏下面；滚动/平移坐标系不变（`clip-path` 只影响绘制与命中区）。
+- 材质设置失败时 Rust 给 `<html>` 加 `no-vibrancy`，整窗回落到不透明纸面，不留透明洞。
+
+### 原生右键菜单（2026-10-22）
+
+- 右键动作列表由网页序列化成 `{sep | label, enabled}`，经 `desktop_context_menu` 命令交给 Rust；
+  Rust 用 `MenuBuilder` 生成 NSMenu 并在光标处 `popup_menu`。
+- 菜单项 id = `ctx:<index>`；选择后全局菜单事件把 index 发回网页（`ctx-pick`），
+  网页执行原来那一项的函数——动作仍只有一份实现。
+- 浏览器版/命令失败时自动回落到原来的 HTML 菜单（`openCtxHtml`）。
+

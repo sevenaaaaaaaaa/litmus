@@ -1557,6 +1557,24 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 @media (max-width:767px){#cover{display:none}}
 /* 窄屏隐藏面包屑（1397 行的 display:flex 晚于断点，需要在这里再压一次） */
 @media (max-width:767px),(min-width:768px) and (max-width:1024px) and (orientation:portrait){#crumb{display:none}}
+
+/* ═══════════ 桌面端 · 原生材质（macOS NSVisualEffectView）═══════════
+   窗口透明；画布/点阵只画在内容区，顶栏、侧栏、底栏是半透明的系统材质。
+   材质设置失败时 Rust 会加 .no-vibrancy，整窗回落到不透明纸面。 */
+html.desktop,html.desktop body{background:transparent}
+html.desktop body::before{display:none}
+html.desktop #canvas,html.desktop #grid{
+  clip-path:inset(var(--chrome-h) 0 calc(var(--dock-h) + var(--bottom-nav-h,0px)) var(--rail-x,0px));
+}
+html.desktop #chrome{background:color-mix(in oklab,var(--surface-1) 72%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none}
+html.desktop #rail{background:color-mix(in oklab,var(--surface-1) 64%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none}
+html.desktop #inspector{background:color-mix(in oklab,var(--surface-1) 78%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none}
+html.desktop .dockbar{background:color-mix(in oklab,var(--surface-1) 72%,transparent)}
+html.desktop.no-vibrancy{background:var(--bg-1)}
+html.desktop.no-vibrancy #canvas,html.desktop.no-vibrancy #grid{clip-path:none}
+html.desktop.no-vibrancy #chrome,html.desktop.no-vibrancy #rail{background:var(--surface-1)}
+html.desktop.no-vibrancy #inspector{background:var(--surface-1)}
+html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
 </style>
 </head>
 <body>
@@ -8325,6 +8343,23 @@ $('p-style').onchange=e=>{localStorage.setItem('thirdc_style_p-style',e.target.v
 /* ───────── 右键菜单：画布节点 / 空白画布 / 侧栏，鼠标党的一等公民 ───────── */
 const ctxEl=document.createElement('div');ctxEl.id='ctx';document.body.appendChild(ctxEl);
 function openCtx(x,y,items){
+  /* 桌面端：交给原生 NSMenu（菜单项 id = ctx:<index>），选择后由 Rust 发 ctx-pick 回来。
+     动作函数仍留在网页这一份，不复制到 Rust。 */
+  if(window.__TAURI_INTERNALS__){
+    closeCtx();
+    window.__ctxPending=items;
+    const spec=items.map(it=>it==='sep'?{sep:true}:{label:String(it.label||''),enabled:it.enabled!==false});
+    try{
+      window.__TAURI_INTERNALS__.invoke('desktop_context_menu',{items:spec}).catch(()=>{
+        window.__ctxPending=null;
+        openCtxHtml(x,y,items);
+      });
+      return;
+    }catch(e){window.__ctxPending=null}
+  }
+  openCtxHtml(x,y,items);
+}
+function openCtxHtml(x,y,items){
   ctxEl.innerHTML='';
   items.forEach(it=>{
     if(it==='sep'){const s=document.createElement('div');s.className='ctx-sep';ctxEl.appendChild(s);return;}
@@ -8338,6 +8373,13 @@ function openCtx(x,y,items){
   ctxEl.style.left=Math.min(x,innerWidth-r.width-8)+'px';
   ctxEl.style.top=Math.min(y,innerHeight-r.height-8)+'px';
 }
+addEventListener('ctx-pick',e=>{
+  const i=e.detail&&e.detail.index;
+  const items=window.__ctxPending||[];
+  const it=items[i];
+  window.__ctxPending=null;
+  if(it&&it.fn){try{const r=it.fn();if(r&&r.catch)r.catch(err=>toast(err.message||String(err),'err'))}catch(err){toast(err.message||String(err),'err')}}
+});
 function closeCtx(){ctxEl.classList.remove('open');ctxEl.style.display='none';}
 document.addEventListener('pointerdown',e=>{if(!ctxEl.contains(e.target))closeCtx();},true);
 window.addEventListener('blur',closeCtx);
