@@ -628,19 +628,15 @@ body[data-mode="organize"] #canvas{cursor:crosshair}
 #pin-menu button{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:none;border-radius:var(--r-md);background:transparent;color:var(--fg);font:500 var(--fs-2)/var(--lh-2) var(--font-body);cursor:pointer;text-align:left}
 #pin-menu button:hover{background:var(--glass)}
 #pin-menu button .chk{width:14px;flex:0 0 auto;color:var(--accent);font-weight:700}
-/* 画布视图切换：画布右下角悬浮（原顶栏右侧移入） */
-#view-pill{position:fixed;bottom:calc(var(--dock-h) + 14px);right:12px;z-index:var(--z-canvas);display:flex;align-items:center;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-pill);padding:3px;gap:2px;
-  box-shadow:var(--shadow-sm);-webkit-backdrop-filter:blur(var(--blur-2)) saturate(180%);backdrop-filter:blur(var(--blur-2)) saturate(180%)}
-#view-pill button{height:26px;padding:0 12px;border-radius:var(--r-pill);border:none;background:transparent;color:var(--muted);
-  font:500 var(--fs-2)/var(--lh-2) var(--font-body);cursor:pointer;transition:all var(--dur-2) var(--ease-spring)}
-#view-pill button:hover{color:var(--fg);background:var(--glass)}
-#view-pill button.on{background:var(--accent-soft);color:var(--accent)}
+/* 视图切换：顶栏里的三段，和位置（面包屑）在同一行 */
+#view-pill{display:flex;align-items:center;flex:0 0 auto;margin-left:4px;
+  background:var(--hover);border-radius:var(--r-md);padding:2px}
+#view-pill button{height:26px;padding:0 10px;border-radius:var(--r-sm);border:none;background:transparent;color:var(--muted);
+  font:500 var(--fs-2)/var(--lh-2) var(--font-body);cursor:pointer;
+  transition:background var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out)}
+#view-pill button:hover{color:var(--text-1)}
+#view-pill button.on{background:var(--surface-3);color:var(--text-1);box-shadow:var(--shadow-sm)}
 body[data-mode="learn"] #view-pill,body[data-mode="present"] #view-pill{display:none}
-/* 检查器滑出时胶囊让位（不支持 :has 的老内核保持原位，仅临时遮挡） */
-@supports selector(body:has(*)){
-  body:has(#inspector:not(.closed)) #view-pill{right:296px}
-}
 /* Tab 收起/唤回底栏（§4.1：Studio 对话可整体让位） */
 #dock{transition:transform var(--dur-3) var(--ease-spring)}
 body.dock-hidden #dock{transform:translateY(calc(100% + 12px))}
@@ -1503,11 +1499,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 
 /* 顶栏：纸面 + 品牌下一道石蕊 */
 #chrome{background:color-mix(in oklab,var(--surface-1) 94%,transparent);border-bottom:1px solid var(--border-1)}
-.brand{position:relative}
 .brand .bname{font-family:var(--font-serif);font-weight:600;font-size:var(--fs-4);letter-spacing:-.01em}
-.brand::after{content:'';position:absolute;left:12px;right:12px;bottom:2px;height:2px;border-radius:var(--r-pill);
-  background:var(--accent-grad);opacity:.50;transition:opacity var(--dur-2) var(--ease-out)}
-.brand:hover::after{opacity:.9}
 
 /* 画布：桌面，不是虚空——顶部一层受光，其余是纸的本色 */
 #canvas{background:
@@ -1550,17 +1542,10 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 /* 选中/激活：石蕊显色只出现在"正在发生"的地方 */
 .tab-pill.on{background:var(--accent-soft);color:var(--accent-strong)}
 
-/* 库根封面：桌面上的大标题，卡片会从它上面滑过（在 #viewport 之下，所以不抢内容） */
-#cover{position:absolute;left:calc(var(--rail-x,0px) + 34px);top:calc(var(--chrome-h) + 22px);max-width:min(560px,54vw);pointer-events:none;
-  opacity:0;transform:translateY(6px);transition:opacity var(--dur-3) var(--ease-out),transform var(--dur-3) var(--ease-spring)}
-#cover.on{opacity:1;transform:none}
-#cover .cv-k{font:600 var(--fs-1)/1 var(--font-mono);letter-spacing:.22em;text-transform:uppercase;color:var(--text-3)}
-#cover .cv-t{margin-top:12px;font-family:var(--font-serif);font-weight:600;font-size:calc(var(--fs-5) * 2.4);line-height:1.06;letter-spacing:-.02em;color:var(--text-1)}
-#cover .cv-s{margin-top:10px;font:var(--fs-2)/1.5 var(--font-mono);color:var(--text-3);font-variant-numeric:tabular-nums}
-#cover::after{content:'';display:block;width:88px;height:3px;margin-top:14px;border-radius:var(--r-pill);background:var(--accent-grad);opacity:.7}
-@media (max-width:767px){#cover{display:none}}
 /* 窄屏隐藏面包屑（1397 行的 display:flex 晚于断点，需要在这里再压一次） */
 @media (max-width:767px),(min-width:768px) and (max-width:1024px) and (orientation:portrait){#crumb{display:none}}
+/* 窄屏文档标签让位给视图切换（标签在手机上本来就横向溢出） */
+@media (max-width:900px){#doc-tabs{display:none}}
 
 /* ═══════════ 桌面端 · 原生材质（macOS NSVisualEffectView）═══════════
    窗口透明；画布/点阵只画在内容区，顶栏、侧栏、底栏是半透明的系统材质。
@@ -1579,6 +1564,9 @@ html.desktop.no-vibrancy #canvas,html.desktop.no-vibrancy #grid{clip-path:none}
 html.desktop.no-vibrancy #chrome,html.desktop.no-vibrancy #rail{background:var(--surface-1)}
 html.desktop.no-vibrancy #inspector{background:var(--surface-1)}
 html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
+
+/* Memos 全功能是整窗工作台：桌面端让它从顶栏下方开始，别钻到 macOS 红绿灯底下 */
+html.desktop #memo-hub{top:var(--chrome-h);bottom:calc(var(--dock-h) + var(--bottom-nav-h,0px));height:auto}
 </style>
 </head>
 <body>
@@ -1618,16 +1606,8 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
     <div id="ob-upd"></div>
   </details>
 </div></div>
-<div id="canvas"><div id="cover" aria-hidden="true"><div class="cv-k">Understory · 林下</div><div class="cv-t" id="cv-title">鹿蕊 Litmus</div><div class="cv-s" id="cv-sub"></div></div><div id="viewport"><svg id="edges"></svg><div id="cols"></div><div id="axis"></div><div id="nodes"></div><div id="peers"></div></div></div>
+<div id="canvas"><div id="viewport"><svg id="edges"></svg><div id="cols"></div><div id="axis"></div><div id="nodes"></div><div id="peers"></div></div></div>
 <div id="lasso"></div>
-<!-- Studio 视图胶囊（§3.1）：画布/时间线/看板只是 Studio 的排布方式，出了 Studio 无意义 -->
-<div id="view-pill">
-  <nav id="view-seg" title="视图（快捷键 1/2/3）">
-    <button data-view="canvas" class="on" aria-pressed="true">画布</button>
-    <button data-view="timeline" aria-pressed="false">时间线</button>
-    <button data-view="kanban" aria-pressed="false">看板</button>
-  </nav>
-</div>
 <div id="batchbar">
   <b id="batch-n">0</b>
   <button class="act" id="b-move">移动到…</button>
@@ -1647,6 +1627,14 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
   </button>
   <nav id="crumb" aria-label="当前位置"></nav>
   <nav class="doc-tabs" id="doc-tabs"></nav>
+  <!-- 视图切换：Studio 内的排布方式，放回顶栏，和位置（面包屑）在一起 -->
+  <div id="view-pill">
+    <nav id="view-seg" title="视图（快捷键 1/2/3）">
+      <button data-view="canvas" class="on" aria-pressed="true">画布</button>
+      <button data-view="timeline" aria-pressed="false">时间线</button>
+      <button data-view="kanban" aria-pressed="false">看板</button>
+    </nav>
+  </div>
   <!-- 画布身份（多画布切换）：顶栏最右 -->
   <button id="board-pill" title="切换画布（双击切知识库）"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg><span class="bname" id="board-name">main</span><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
   <div class="chrome-actions">
@@ -2677,22 +2665,6 @@ function layoutMeta(){
 }
 
 /* ───────── 画布渲染 ───────── */
-/* 库根封面：只在一级根、画布视图、非展示时出现（卡片从它上面滑过） */
-function updateCover(){
-  const cover=$('cover'); if(!cover)return;
-  const root=(browsePath||'').replace(/^Notes\/?/,'')==='';
-  const on=root&&view==='canvas'&&!document.body.classList.contains('present');
-  cover.classList.toggle('on',on);
-  if(!on)return;
-  const name=((typeof vaultName!=='undefined'&&vaultName)||($('brand-name')&&$('brand-name').textContent)||'鹿蕊 Litmus').trim();
-  const t=$('cv-title'); if(t&&t.textContent!==name)t.textContent=name;
-  const vis=graph.nodes||[];
-  const folders=vis.filter(n=>n.kind==='folder').length;
-  const docs=vis.filter(n=>n.kind!=='folder').length;
-  const latest=Math.max(0,...vis.map(n=>n.mtime||0));
-  const s=[folders?folders+' 个文件夹':'',docs?docs+' 篇文档':'',latest?'最近改动 '+relTime(latest):''].filter(Boolean).join(' · ');
-  const el=$('cv-sub'); if(el&&el.textContent!==s)el.textContent=s;
-}
 function renderGraph(){
   const wrap=$('nodes'),svg=$('edges');
   const placed=layout();
@@ -2751,7 +2723,6 @@ function renderGraph(){
   $('cols').innerHTML=meta.cols.map(c=>`<div class="col" data-col="${c.title}" style="left:${c.x}px;top:40px;height:${maxY}px"></div>`).join('');
   updateEdges(ids);
   known=new Set(graph.nodes.map(n=>n.id));
-  updateCover();
 }
 function updateEdges(ids){
   const svg=$('edges');if(!ids)ids=new Set(graph.nodes.filter(n=>lens==='all'||n.kind===lens).map(n=>n.id));
@@ -6083,7 +6054,6 @@ function setMode(m){
   const ds=$('dock-studio');if(ds)ds.classList.toggle('on',m==='studio');
   const def=MODES[m];
   if(def&&def.enter)def.enter();
-  updateCover();
   broadcastState();renderRemoteCarets();
 }
 document.querySelectorAll('#mode-seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
