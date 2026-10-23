@@ -323,9 +323,10 @@ async fn tokens_css() -> impl IntoResponse {
     )
 }
 
-/// 内嵌字体（Space Grotesk / JetBrains Mono，与 OpenFlow 同一套声部）。
+/// 内嵌字体（Albert Sans / Space Grotesk / JetBrains Mono，与 OpenFlow 同一套声部）。
 async fn font(AxumPath(name): AxumPath<String>) -> impl IntoResponse {
     let bytes: &'static [u8] = match name.as_str() {
+        "albert-sans.woff2" => include_bytes!("../web/fonts/albert-sans.woff2"),
         "space-grotesk-400.woff2" => include_bytes!("../web/fonts/space-grotesk-400.woff2"),
         "space-grotesk-600.woff2" => include_bytes!("../web/fonts/space-grotesk-600.woff2"),
         "jetbrains-mono-400.woff2" => include_bytes!("../web/fonts/jetbrains-mono-400.woff2"),

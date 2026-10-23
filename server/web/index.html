@@ -1522,8 +1522,8 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 /* 左栏与检查器：纸面（不透视，窄屏覆盖态也读得清） */
 #rail,#inspector{background:var(--surface-1)}
 
-/* 选中/激活：石蕊显色只出现在"正在发生"的地方 */
-.tab-pill.on{background:var(--accent-soft);color:var(--accent-strong)}
+/* 选中/激活：OpenDesign 式墨色胶囊（暗色自动反转为纸色胶囊） */
+.tab-pill.on{background:var(--text-1);color:var(--bg-0)}
 
 /* 窄屏隐藏面包屑（1397 行的 display:flex 晚于断点，需要在这里再压一次） */
 @media (max-width:767px),(min-width:768px) and (max-width:1024px) and (orientation:portrait){#crumb{display:none}}
@@ -1550,6 +1550,10 @@ html.desktop.no-vibrancy .dockbar{background:var(--surface-1)}
 
 /* Memos 全功能是整窗工作台：桌面端让它从顶栏下方开始，别钻到 macOS 红绿灯底下 */
 html.desktop #memo-hub{top:var(--chrome-h);bottom:calc(var(--dock-h) + var(--bottom-nav-h,0px));height:auto}
+/* 阅读视图同样是整窗接管（z 在顶栏之上）：桌面端从顶栏下方开始，标题不进红绿灯区 */
+html.desktop #viewfile{top:var(--chrome-h)}
+/* 展示模式的大纲面板固定在左上 (12,12)：桌面端让出红绿灯 */
+html.desktop #p-thumbs{top:calc(var(--chrome-h) + 8px)}
 </style>
 </head>
 <body>

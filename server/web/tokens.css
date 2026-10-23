@@ -2,18 +2,17 @@
  * 鹿蕊 Litmus · tokens.css
  * 契约来源：OpenFlow 前台设计系统（oklch / 零 hex / 弹簧缓动 / 圆角四档 / 玻璃）
  *
- * 配色体系 v6 · 中性苹果灰（2026-10-23，见 docs/spec/design-system.md「v6 仿苹果」）
+ * 配色体系 v7 · 绿纸（OpenDesign，2026-10-23，见 docs/spec/design-system.md「v7」）
  *
- *   反馈「拼接感」后的材质转向：仿 macOS/iOS 的中性灰阶——
- *     亮色  中性灰  L = 93.2 / 96.2 / 97.8 / 99.2 / 100，色相 255、色度 ≤.004（去暖去黄）
- *           文字  text-1…4 = 23 / 33 / 44 / 58% L（近 Apple #1d1d1f 一族）
- *     暗色  石墨灰  L = 19 / 22.8 / 26.6 / 30.4 / 34.2，步距保证相邻 ≥1.08:1
- *   层级只靠明度与留白：卡片不带影不带框（白纸放灰底自己会浮），影子只给真正
- *   悬空的浮层（菜单 / 弹窗 / 拖拽）。--inset-hi / --sheen / --node-shadow 退役为
- *   no-op 值（仍是合法 box-shadow / gradient，逗号列表不炸），旧皮肤照常覆盖。
- *
- *   文字四级 text-1…4，边框两级 border-1/2，强调主副 accent / accent-2，
- *   语义四色 ok / warn / danger / info，各配 -soft 底。
+ *   参考 open-design.ai 的设计语言，反馈来自「配色仿它、别拼接」：
+ *     亮色  暖绿纸  L = 94.2 / 96.4 / 98.4 / 99.3 / 100，色相 118–130（#f2f4eb ↔ #fdfff7 一族）
+ *           墨    text-1…4 = 24 / 37 / 46 / 61% L（#262626 一族，不使用纯黑）
+ *     暗色  绿石墨  L = 19 / 22.8 / 26.6 / 30.4 / 34.2，色相 150，步距保持相邻 ≥1.08:1
+ *     强调  单一绿：accent = 深叶绿（文字/链接/选中可用，AA 达标），
+ *           --accent-grad 注入 #63fe12 同族荧光绿（只做 2px 边线/顶沿的"显色"瞬间，不做正文色）
+ *     阴影  色染（green-tinted）——低浓度绿墨投影 + 半像素描边，只给真正悬空的浮层；
+ *           卡片仍然无框无影，层级靠明度与留白。--inset-hi / --sheen / --node-shadow 维持 no-op。
+ *   文字四级 text-1…4，边框两级 border-1/2，语义四色 ok/warn/danger/info 各配 -soft 底。
  *
  *   对比度纪律（server/tests/palette.rs 在 cargo test 里强制）：
  *     text-1/2/3、accent、accent-2、语义色 对五级表面全部 ≥ 4.5:1（WCAG AA 正文）；
@@ -21,117 +20,118 @@
  *     text-4 只用于禁用态/占位/装饰（WCAG 1.4.3 豁免），仍保证 ≥ 3:1。
  *
  *   强调色两版（html[data-accent]，⌘K「切换强调色」）：
- *     默认 = 石蕊双色：accent 蓝（碱，Apple 系蓝加深保 AA）+ accent-2 石蕊红（酸）
- *     blue = 经典蓝：accent 蓝 + accent-2 堇紫，同色系克制演进
+ *     默认 = 绿纸双色：accent 深叶绿 + accent-2 嫩叶绿（AI 显色）
+ *     blue = 经典蓝：accent 蓝 + accent-2 堇紫（保留旧选项）
  *
+ *   字体：Albert Sans（OpenDesign 同款，拉丁）+ Space Grotesk（展示备选）+ 系统中文回退。
  *   旧 token 名（--bg/--surface/--fg/--muted/--faint/--border…）保留为别名，
  *   第 62 款阅读风格预设与插件照常覆盖它们，零破坏。
  * ─────────────────────────────────────────────────────────────────────── */
 
+@font-face{font-family:"Albert Sans";src:url("fonts/albert-sans.woff2") format("woff2");font-weight:100 900;font-display:swap}
 @font-face{font-family:"Space Grotesk";src:url("fonts/space-grotesk-400.woff2") format("woff2");font-weight:100 900;font-display:swap}
 
-/* ── 亮色 · 中性苹果灰（原语）── */
+/* ── 亮色 · 暖绿纸（原语）── */
 :root,[data-theme="light"]{
-  /* 表面：中性灰阶。框比画布深一档，卡片近白——层级靠明度与留白，不靠线与影 */
-  --bg-0: oklch(93.2% .004 255);
-  --bg-1: oklch(96.2% .003 255);
-  --surface-1: oklch(97.8% .002 255);
-  --surface-2: oklch(99.2% .001 255);
+  /* 表面：绿纸阶梯。框是 #f2f4eb 一族，面板/卡片近 #fdfff7，浮层纯白 */
+  --bg-0: oklch(94.2% .010 118);
+  --bg-1: oklch(96.4% .010 118);
+  --surface-1: oklch(98.4% .006 125);
+  --surface-2: oklch(99.3% .004 130);
   --surface-3: oklch(100% 0 0);
-  /* 文字：近 Apple #1d1d1f 一族的中性墨 */
-  --text-1: oklch(23% .012 255);
-  --text-2: oklch(33% .010 255);
-  --text-3: oklch(44% .008 255);
-  --text-4: oklch(58% .006 255);
-  --border-1: oklch(0% 0 0/.06);
-  --border-2: oklch(0% 0 0/.15);
-  --hover: oklch(0% 0 0/.045);
-  --hover-strong: oklch(0% 0 0/.085);
-  /* 强调：Apple 系蓝（压深两档保五表面 AA）+ 石蕊红（酸） */
-  --accent: oklch(46% .18 257);
-  --accent-strong: oklch(40% .17 257);
-  --accent-soft: oklch(46% .18 257/.12);
+  /* 文字：#262626 一族暖墨，不用纯黑 */
+  --text-1: oklch(24% .006 130);
+  --text-2: oklch(37% .006 130);
+  --text-3: oklch(46% .005 130);
+  --text-4: oklch(61% .005 130);
+  --border-1: oklch(24% .02 130/.07);
+  --border-2: oklch(24% .02 130/.16);
+  --hover: oklch(24% .02 130/.05);
+  --hover-strong: oklch(24% .02 130/.09);
+  /* 强调：深叶绿（正文级 AA）+ 嫩叶绿（AI 显色） */
+  --accent: oklch(48% .16 145);
+  --accent-strong: oklch(42% .15 145);
+  --accent-soft: oklch(48% .16 145/.12);
   --on-accent: oklch(100% 0 0);
-  --accent-2: oklch(52% .19 12);
-  --accent-2-soft: oklch(52% .19 12/.12);
+  --accent-2: oklch(49% .16 152);
+  --accent-2-soft: oklch(49% .16 152/.12);
   --on-accent-2: oklch(100% 0 0);
   /* 语义四色 */
-  --ok: oklch(47% .13 152);      --ok-soft: oklch(47% .13 152/.12);
+  --ok: oklch(47% .13 160);      --ok-soft: oklch(47% .13 160/.12);
   --warn: oklch(50% .12 62);     --warn-soft: oklch(50% .12 62/.12);
   --danger: oklch(49% .19 29);   --danger-soft: oklch(49% .19 29/.12);   --on-danger: oklch(100% 0 0);
   --info: oklch(48% .11 220);    --info-soft: oklch(48% .11 220/.12);
-  /* 玻璃只留给浮层的背后；表面不再透视 */
-  --glass: oklch(100% 0 0/.60);
-  --glass-bright: oklch(100% 0 0/.78);
-  --glass-border: oklch(100% 0 0/.55);
-  --blob-a: oklch(70% .03 255/.07);
-  --blob-b: oklch(70% .05 300/.04);
-  --blob-c: oklch(80% .02 230/.03);
-  /* 投影：只给真正悬空的浮层——大而软、低浓度 + 半像素描边（macOS 弹层配方）；
-     卡片不带影（白纸放灰底自己会浮），--node-shadow 退役为透明影子占位 */
-  --shadow: 0 24px 60px -24px oklch(0% 0 0/.28), 0 0 0 .5px oklch(0% 0 0/.10);
-  --shadow-sm: 0 8px 24px -12px oklch(0% 0 0/.16), 0 0 0 .5px oklch(0% 0 0/.07);
+  /* 玻璃只留给浮层背后 */
+  --glass: oklch(100% 0 0/.62);
+  --glass-bright: oklch(100% 0 0/.80);
+  --glass-border: oklch(100% 0 0/.60);
+  --blob-a: oklch(75% .12 140/.06);
+  --blob-b: oklch(80% .08 120/.04);
+  --blob-c: oklch(85% .05 160/.03);
+  /* 投影：绿墨色染，只给悬空浮层 */
+  --shadow: 0 24px 60px -24px oklch(40% .08 150/.20), 0 0 0 .5px oklch(24% .02 130/.08);
+  --shadow-sm: 0 8px 24px -12px oklch(40% .08 150/.12), 0 0 0 .5px oklch(24% .02 130/.06);
   --node-shadow: 0 0 0 transparent;
-  --shadow-lift: 0 32px 64px -24px oklch(0% 0 0/.35), 0 8px 20px -8px oklch(0% 0 0/.18);
+  --shadow-lift: 0 32px 64px -24px oklch(35% .09 150/.30), 0 8px 20px -8px oklch(35% .09 150/.16);
   /* 镜面高光退役：保留 token 名，值已是 no-op（逗号列表安全） */
   --inset-hi: inset 0 0 0 transparent;
   --sheen: linear-gradient(180deg, transparent, transparent);
-  --grid-dot: oklch(0% 0 0/.08);
-  --edge: oklch(46% .18 257/.40);
-  --edge-soft: oklch(0% 0 0/.12);
-  --axis: oklch(0% 0 0/.22);
+  --grid-dot: oklch(24% .02 130/.09);
+  --edge: oklch(48% .16 145/.40);
+  --edge-soft: oklch(24% .02 130/.12);
+  --axis: oklch(24% .02 130/.20);
   --type-query: oklch(50% .15 305);
   color-scheme: light;
 }
 
-/* ── 暗色 · 石墨灰（原语；不是纯黑，层级靠等差明度）── */
+/* ── 暗色 · 绿石墨（原语；层级靠等差明度）── */
 [data-theme="dark"]{
-  /* 表面五级：L = 19 / 22.8 / 26.6 / 30.4 / 34.2，步距满足相邻 ≥1.08:1 */
-  --bg-0: oklch(19% .005 260);
-  --bg-1: oklch(22.8% .005 260);
-  --surface-1: oklch(26.6% .006 260);
-  --surface-2: oklch(30.4% .006 260);
-  --surface-3: oklch(34.2% .007 260);
-  --text-1: oklch(94% .004 260);
-  --text-2: oklch(79% .005 260);
-  --text-3: oklch(72% .005 260);
-  --text-4: oklch(61.5% .005 260);
+  /* 表面五级：L = 19 / 22.8 / 26.6 / 30.4 / 34.2，色相 150（绿暖），步距满足相邻 ≥1.08:1 */
+  --bg-0: oklch(19% .008 150);
+  --bg-1: oklch(22.8% .008 150);
+  --surface-1: oklch(26.6% .009 150);
+  --surface-2: oklch(30.4% .009 150);
+  --surface-3: oklch(34.2% .010 150);
+  --text-1: oklch(94% .006 130);
+  --text-2: oklch(79% .006 130);
+  --text-3: oklch(72% .006 130);
+  --text-4: oklch(61.5% .006 130);
   --border-1: oklch(100% 0 0/.08);
   --border-2: oklch(100% 0 0/.18);
   --hover: oklch(100% 0 0/.06);
   --hover-strong: oklch(100% 0 0/.11);
-  --accent: oklch(77% .13 255);
-  --accent-strong: oklch(84% .11 255);
-  --accent-soft: oklch(77% .13 255/.16);
-  --on-accent: oklch(19% .03 255);
-  --accent-2: oklch(77% .14 10);
-  --accent-2-soft: oklch(77% .14 10/.16);
-  --on-accent-2: oklch(19% .03 12);
-  --ok: oklch(78% .14 152);      --ok-soft: oklch(78% .14 152/.16);
+  --accent: oklch(76% .17 145);
+  --accent-strong: oklch(83% .14 145);
+  --accent-soft: oklch(76% .17 145/.16);
+  --on-accent: oklch(18% .04 145);
+  --accent-2: oklch(78% .15 152);
+  --accent-2-soft: oklch(78% .15 152/.16);
+  --on-accent-2: oklch(18% .04 152);
+  --ok: oklch(78% .14 160);      --ok-soft: oklch(78% .14 160/.16);
   --warn: oklch(80% .12 75);     --warn-soft: oklch(80% .12 75/.16);
-  --danger: oklch(76% .15 29);   --danger-soft: oklch(76% .15 29/.16);   --on-danger: oklch(19% .03 29);
+  --danger: oklch(76% .15 29);   --danger-soft: oklch(76% .15 29/.16);   --on-danger: oklch(18% .03 29);
   --info: oklch(78% .11 220);    --info-soft: oklch(78% .11 220/.16);
-  --glass: oklch(36% .006 260/.62);
-  --glass-bright: oklch(40% .006 260/.72);
+  --glass: oklch(36% .008 150/.62);
+  --glass-bright: oklch(40% .008 150/.72);
   --glass-border: oklch(100% 0 0/.14);
-  --blob-a: oklch(60% .10 255/.09);
-  --blob-b: oklch(60% .10 300/.05);
-  --blob-c: oklch(62% .08 230/.04);
-  --shadow: 0 24px 60px -24px oklch(0% 0 0/.55), 0 0 0 .5px oklch(100% 0 0/.09);
-  --shadow-sm: 0 10px 26px -14px oklch(0% 0 0/.45), 0 0 0 .5px oklch(100% 0 0/.06);
+  --blob-a: oklch(60% .10 145/.09);
+  --blob-b: oklch(60% .08 120/.05);
+  --blob-c: oklch(62% .06 160/.04);
+  --shadow: 0 24px 60px -24px oklch(15% .03 150/.55), 0 0 0 .5px oklch(100% 0 0/.09);
+  --shadow-sm: 0 10px 26px -14px oklch(15% .03 150/.45), 0 0 0 .5px oklch(100% 0 0/.06);
   --node-shadow: 0 0 0 transparent;
-  --shadow-lift: 0 36px 70px -24px oklch(0% 0 0/.62), 0 12px 24px -12px oklch(0% 0 0/.40);
+  --shadow-lift: 0 36px 70px -24px oklch(12% .03 150/.62), 0 12px 24px -12px oklch(12% .03 150/.40);
   --inset-hi: inset 0 0 0 transparent;
   --sheen: linear-gradient(180deg, transparent, transparent);
   --grid-dot: oklch(100% 0 0/.08);
-  --edge: oklch(77% .13 255/.45);
+  --edge: oklch(76% .17 145/.45);
   --edge-soft: oklch(100% 0 0/.15);
   --axis: oklch(100% 0 0/.25);
   --type-query: oklch(76% .13 305);
   color-scheme: dark;
 }
 
-/* ── 强调色 B 版 · 经典蓝：副色换堇紫（同色系演进，对照用）── */
+/* ── 强调色 B 版 · 经典蓝：副色换堇紫（保留旧选项，对照用）── */
 [data-accent="blue"]{
   --accent-2: oklch(51% .17 300);
   --accent-2-soft: oklch(51% .17 300/.12);
@@ -145,22 +145,19 @@
   --blob-b: oklch(62% .14 305/.06);
 }
 
-/* ── 表面层级 B 版 · 分层纸（可选，⌘K「切换表面层级」）──
- * 默认安静纸的表面只差 0.6–1.8%，在普通屏幕上几乎只看得到发丝线；
- * 这一版把底压深、浮层提亮，浅色下也能一眼分出「框 / 底 / 面 / 物」四层。
- * 只覆盖表面与边框，不动强调色、语义色与排版。 */
+/* ── 表面层级 B 版 · 分层纸（可选，⌘K「切换表面层级」）── */
 [data-theme="light"][data-surface="lifted"]{
-  /* 深灰：底更深、卡片更亮，桌面感更强；文字同步压深一档保住 AA */
-  --bg-0: oklch(90.8% .005 255);
-  --bg-1: oklch(94% .004 255);
-  --surface-1: oklch(97.5% .002 255);
-  --surface-2: oklch(99.2% .001 255);
+  /* 深纸：底更深、卡片更亮，桌面感更强；文字同步压深一档保住 AA */
+  --bg-0: oklch(91.8% .012 118);
+  --bg-1: oklch(94.2% .010 118);
+  --surface-1: oklch(98% .006 125);
+  --surface-2: oklch(99.3% .004 130);
   --surface-3: oklch(100% 0 0);
-  --text-2: oklch(31% .01 255);
-  --text-3: oklch(42% .008 255);
-  --border-1: oklch(0% 0 0/.07);
-  --border-2: oklch(0% 0 0/.16);
-  --grid-dot: oklch(0% 0 0/.10);
+  --text-2: oklch(35% .006 130);
+  --text-3: oklch(44% .005 130);
+  --border-1: oklch(24% .02 130/.08);
+  --border-2: oklch(24% .02 130/.17);
+  --grid-dot: oklch(24% .02 130/.11);
 }
 [data-theme="dark"][data-surface="lifted"]{
   /* 暗色文字是浅色：抬高明度会吃掉对比度，所以只加强分隔线与点阵 */
@@ -171,9 +168,9 @@
 
 /* ── 派生与别名（两主题共用；只引用原语，不写新色值）── */
 :root{
-  /* 石蕊渐变：红（酸）→ 紫（中性）→ 蓝（碱）；oklch 插值走紫色短弧，不发灰 */
-  --accent-grad: linear-gradient(in oklch 125deg, var(--accent-2), var(--accent));
-  /* 品牌标：石蕊蓝（单色同色系演进），与 accent 同族；与 docs/brand/litmus-icon.svg 同源 */
+  /* 显色渐变：荧光绿（#63fe12 同族）→ 深叶绿——只给 2px 边线/顶沿/启动环的"正在发生"瞬间 */
+  --accent-grad: linear-gradient(in oklch 125deg, oklch(87% .25 140), var(--accent));
+  /* 品牌标：石蕊蓝渐变底 + 鹿蕊枝（产品身份，不随界面强调色变） */
   --logo-grad: linear-gradient(135deg, oklch(56% .18 252), oklch(47% .17 258) 52%, oklch(42% .16 264));
   --logo-ink: oklch(98% .006 250);
   --accent-grad-soft: linear-gradient(in oklch 125deg,
@@ -213,10 +210,11 @@
   --z-canvas:0; --z-rail:20; --z-chrome:30; --z-drawer:50;
   --z-dock:40; --z-overlay:200; --z-present:300; --z-toast:400; --z-ctx:500;
   --titlebar: 46px; --sb-w: 248px; --container: 1120px;
-  --font-display: "Space Grotesk","PingFang SC","HarmonyOS Sans SC","MiSans","Segoe UI",system-ui,sans-serif;
-  /* 展示/标题：拉丁用 Space Grotesk，中文落宋体——纸与墨的排印感，只给 >=15px 的标题用 */
-  --font-serif: "Space Grotesk","Songti SC","Noto Serif SC","Source Han Serif SC","SimSun",serif;
-  --font-body: "Space Grotesk",-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","MiSans","Segoe UI",system-ui,sans-serif;
+  /* 字体：Albert Sans（OpenDesign 同款）打头，Space Grotesk 兜底，中文落系统 */
+  --font-display: "Albert Sans","Space Grotesk","PingFang SC","HarmonyOS Sans SC","MiSans","Segoe UI",system-ui,sans-serif;
+  /* 展示/标题：拉丁 Albert Sans，中文落宋体——只给 >=15px 的标题用 */
+  --font-serif: "Albert Sans","Space Grotesk","Songti SC","Noto Serif SC","Source Han Serif SC","SimSun",serif;
+  --font-body: "Albert Sans","Space Grotesk",-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","MiSans","Segoe UI",system-ui,sans-serif;
   --font-mono: "JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
   /* 动效家族（PR③）：五档时长 × 五种曲线，壳里的 transition 只许引用它们（craft.rs 强制）
      dur-1 按压回弹 · dur-2 悬停/颜色 · dur-3 浮层进出 · dur-4 面板/抽屉滑动 · dur-5 画布镜头 */
@@ -228,8 +226,7 @@
   --ease-bounce: cubic-bezier(.34,1.56,.64,1);/* 落点回弹、磁吸 */
 
   --node-w: 300px;
-  /* 字号五级 × 行高配对（PR②）：微注 / 次要 / 界面正文 / 强调与面板标题 / 展示标题。
-     规则：<style> 里不许出现裸 px 字号（server/tests/craft.rs 强制）；长文阅读可显式加大行高。 */
+  /* 字号五级 × 行高配对（PR②）：<style> 里不许出现裸 px 字号（server/tests/craft.rs 强制） */
   --fs-1: 11px;   --lh-1: 1.45;
   --fs-2: 12.5px; --lh-2: 1.5;
   --fs-3: 13.5px; --lh-3: 1.6;
