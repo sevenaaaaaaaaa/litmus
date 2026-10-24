@@ -467,6 +467,21 @@ fn desktop_set_title(app: AppHandle, title: String) {
     }
 }
 
+/// 原生材质跟随应用明暗：壳切 data-theme 时同步 NSWindow appearance，
+/// NSVisualEffectView（sidebar 磨砂）随之换色——是应用带着系统走，不是反过来（LinKTo 学习批）。
+#[tauri::command]
+async fn desktop_set_native_theme(
+    window: tauri::WebviewWindow,
+    theme: String,
+) -> Result<(), String> {
+    let theme = match theme.as_str() {
+        "dark" => tauri::Theme::Dark,
+        "light" => tauri::Theme::Light,
+        other => return Err(format!("未知主题：{other}")),
+    };
+    window.set_theme(Some(theme)).map_err(|e| e.to_string())
+}
+
 /// 窗口几何：像原生 App 一样记住上次的大小与位置（独立于 localStorage）。
 #[cfg(desktop)]
 fn window_state_path(app: &AppHandle) -> Option<PathBuf> {
@@ -1312,6 +1327,7 @@ pub fn run() {
             desktop_save_download,
             desktop_print_url,
             desktop_set_title,
+            desktop_set_native_theme,
             desktop_context_menu
         ]);
     #[cfg(mobile)]

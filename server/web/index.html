@@ -2530,6 +2530,15 @@ function applyTheme(){
   const b=$('theme'); if(b) b.title=`主题：${themePref==='auto'?'跟随系统':(themePref==='dark'?'深色':'浅色')}`;
 }
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(themePref==='auto')applyTheme()})}catch{}
+/* 原生材质跟随应用明暗（LinKTo 学习批）：data-theme 一变就通知桌面壳设 NSWindow appearance，
+   NSVisualEffectView（sidebar 磨砂）随之换色。MutationObserver 一处覆盖所有切换路径。 */
+if(window.__TAURI_INTERNALS__){
+  try{
+    new MutationObserver(()=>{const t=document.documentElement.dataset.theme;if(t)window.__TAURI_INTERNALS__.invoke('desktop_set_native_theme',{theme:t}).catch(()=>{})})
+      .observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+    const t0=document.documentElement.dataset.theme;if(t0)window.__TAURI_INTERNALS__.invoke('desktop_set_native_theme',{theme:t0}).catch(()=>{});
+  }catch(e){}
+}
 
 function applyVP(){$('viewport').style.transform=`translate(${vp.x}px,${vp.y}px) scale(${vp.k})`;}
 function tagColor(t){

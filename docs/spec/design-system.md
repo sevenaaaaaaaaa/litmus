@@ -305,6 +305,17 @@ server/web/index.html   <style> 只放本页独有部件
   **今后每轮视觉迭代先改风格板、owner 确认、再动实现**；本地预览：
   `python3 -m http.server 7820 --directory <repo根>` → `/docs/design/style-board.html`。
 
+### 桌面端 · 原生材质跟随应用明暗
+
+- 已有基础（v0.8.0 起）：窗口透明 + `NSVisualEffectView`（Sidebar 材质）垫在 webview 之下，
+  顶栏/侧栏/底栏的 CSS 半透明色直接透出原生磨砂；材质应用失败时加 `html.no-vibrancy` 回落实底。
+- 本次补齐**跟随方向**：壳的 `data-theme` 一变（含 boot、设置切换、菜单「切换明暗」、auto 跟随系统）
+  → MutationObserver → `desktop_set_native_theme` → `WebviewWindow::set_theme` 设 NSWindow appearance →
+  磨砂与红绿灯随之换色。**是应用带着系统走**，与 LinKTo 的 `setNativeAppearance` 同构。
+- 红绿灯方案对比结论：保留现有 Overlay + `--tl-inset` 缩进（Litmus 顶栏本就是全宽共享带，
+  灯与品牌标同一条中线），不采用 NSToolbar 混合壳——壳内自绘顶栏的可控性更高，且避让规则已审计。
+- 实测：prefs 注入 dark/light 各启动一次，磨砂、红绿灯、整窗材质双向跟随正确。
+
 ### 守护
 
 - palette.rs 5 项 + craft.rs 6 项 + 服务端 24 项全绿；ink/selected 的对比度由测试强制，不再靠肉眼。
