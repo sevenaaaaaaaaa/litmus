@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>鹿蕊 Litmus · 风格板 v7.1</title>
+<link rel="stylesheet" href="../../server/web/tokens.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;display:grid;grid-template-columns:1fr 1fr;font-family:var(--font-body);background:var(--bg-0);color:var(--fg)}
+  .pane{min-height:100vh;padding:32px 36px 48px}
+  h1{font:600 var(--fs-5)/var(--lh-5) var(--font-display);letter-spacing:-.01em;margin:0 0 4px}
+  .sub{font-size:var(--fs-2);color:var(--muted);margin:0 0 24px}
+  h2{font:500 var(--fs-1)/var(--lh-1) var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:28px 0 10px}
+  .row{display:flex;flex-wrap:wrap;gap:8px}
+  .sw{width:88px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--border-1);background:var(--surface-2)}
+  .sw i{display:block;height:40px}
+  .sw b{display:block;font:500 11px/14px var(--font-mono);padding:6px 8px 0}
+  .chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:var(--r-pill);font-size:var(--fs-1);font-weight:500}
+  .type div{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--border-1);padding:6px 0}
+  .type code{font:400 11px var(--font-mono);color:var(--faint);width:120px;flex:none}
+  .rad{display:flex;gap:10px;align-items:center}
+  .rad span{width:60px;height:44px;border:1px solid var(--border-2);background:var(--surface-2);display:grid;place-items:center;font:400 10px var(--font-mono);color:var(--faint)}
+  /* 迷你壳：顶栏 / 侧栏 / 画布 / 底栏 的目标 IA 示意 */
+  .app{margin-top:10px;height:320px;border-radius:var(--r-lg);overflow:hidden;display:grid;grid-template-columns:140px 1fr;grid-template-rows:44px 1fr 44px;position:relative;
+       background:radial-gradient(60% 50% at 88% -6%,var(--blob-a),transparent 70%),var(--bg-1);box-shadow:var(--shadow)}
+  .bar{grid-column:1/3;background:var(--surface-1);border-bottom:1px solid var(--border-1);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:var(--fs-2)}
+  .bar .tl{display:flex;gap:6px;margin-right:6px}
+  .bar .tl i{width:10px;height:10px;border-radius:50%;background:var(--border-2)}
+  .bar .pill{margin-left:auto;display:flex;gap:2px;background:var(--hover);border-radius:var(--r-pill);padding:2px}
+  .bar .pill b{font-weight:500;font-size:var(--fs-1);padding:2px 8px;border-radius:var(--r-pill);color:var(--muted)}
+  .bar .pill b.on{background:var(--text-1);color:var(--bg-0)}
+  .side{background:var(--surface-1);border-right:1px solid var(--border-1);padding:10px 6px;font-size:var(--fs-2)}
+  .si{height:26px;display:flex;align-items:center;gap:7px;padding:0 8px;border-radius:var(--r-sm);color:var(--fg)}
+  .si em{margin-left:auto;font:400 10px var(--font-mono);font-style:normal;color:var(--faint)}
+  .si.on{background:var(--selected);color:var(--accent-ink);font-weight:500}
+  .si.on em{color:var(--accent-ink)}
+  .cv{position:relative;padding:14px}
+  .card{position:absolute;background:var(--surface-2);border-radius:var(--r-md);padding:10px 12px;width:170px;font-size:var(--fs-2)}
+  .card b{display:block;font-weight:600;margin-bottom:2px}
+  .card.sel{box-shadow:0 0 0 3px var(--accent-soft)}
+  .card.sel::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--accent-grad);border-radius:var(--r-md) var(--r-md) 0 0}
+  .card s{text-decoration:none;color:var(--faint);font-size:var(--fs-1)}
+  .dock{grid-column:1/3;background:var(--surface-1);border-top:1px solid var(--border-1);display:flex;align-items:center;justify-content:center}
+  .say{width:min(420px,80%);height:30px;border-radius:var(--r-pill);background:var(--surface-2);border:1px solid var(--border-1);display:flex;align-items:center;padding:0 6px 0 12px;color:var(--faint);font-size:var(--fs-2)}
+  .say:focus-within{border-color:transparent;background:linear-gradient(var(--surface-2),var(--surface-2)) padding-box,var(--accent-grad) border-box;box-shadow:0 0 0 4px var(--accent-soft)}
+  .say kbd{margin-left:auto;font:500 10px var(--font-mono);border:1px solid var(--border-1);border-radius:var(--r-xs);padding:1px 5px}
+  kbd{font:500 10px var(--font-mono);border:1px solid var(--border-1);border-radius:var(--r-xs);padding:1px 4px;color:var(--faint)}
+  .btn-f{height:26px;padding:0 12px;border-radius:var(--r-pill);background:var(--text-1);color:var(--bg-0);display:inline-flex;align-items:center;font-size:var(--fs-2);font-weight:500}
+  .rules{font-size:var(--fs-2);line-height:1.6;color:var(--muted);padding-left:18px}
+  .rules b{color:var(--fg);font-weight:500}
+  .curves{display:flex;gap:10px}
+  .curves svg{background:var(--surface-2);border:1px solid var(--border-1);border-radius:var(--r-md)}
+  .curves text{font:400 9px var(--font-mono);fill:var(--faint)}
+</style>
+</head>
+<body>
+<script>
+const tpl = (theme, name) => `
+<section class="pane" data-theme="${theme}">
+  <h1>鹿蕊 Litmus · 风格板</h1>
+  <p class="sub">${name} — 绿纸 · 单一叶绿 · 显色即信息 · 克制 / 精确 / 一致</p>
+
+  <h2>01 · 表面五级与文字四级</h2>
+  <div class="row">
+    ${[['bg-0','--bg-0'],['bg-1','--bg-1'],['surface-1','--surface-1'],['surface-2','--surface-2'],['surface-3','--surface-3'],
+       ['text-1','--text-1'],['text-2','--text-2'],['text-3','--text-3'],['text-4','--text-4'],['selected','--selected']]
+      .map(([n,v])=>`<div class="sw"><i style="background:var(${v})"></i><b>${n}</b></div>`).join('')}
+  </div>
+
+  <h2>02 · 强调与语义（fill · ink · soft 三档）</h2>
+  <div class="row">
+    ${[['accent','--accent'],['accent-ink','--accent-ink'],['accent-2','--accent-2'],['accent-2-ink','--accent-2-ink'],
+       ['ok','--ok'],['ok-ink','--ok-ink'],['warn','--warn'],['warn-ink','--warn-ink'],['danger','--danger'],['danger-ink','--danger-ink'],['info','--info'],['info-ink','--info-ink']]
+      .map(([n,v])=>`<div class="sw"><i style="background:var(${v})"></i><b>${n}</b></div>`).join('')}
+  </div>
+  <div class="row" style="margin-top:10px">
+    <span class="chip" style="background:var(--accent-soft);color:var(--accent-ink)">叶绿徽章</span>
+    <span class="chip" style="background:var(--warn-soft);color:var(--warn-ink)">同步中</span>
+    <span class="chip" style="background:var(--danger-soft);color:var(--danger-ink)">同步失败</span>
+    <span class="chip" style="background:var(--ok-soft);color:var(--ok-ink)">已连接</span>
+    <span class="chip" style="background:var(--info-soft);color:var(--info-ink)">验证码 482913</span>
+    <span class="chip" style="background:var(--selected);color:var(--fg)">行选中</span>
+  </div>
+
+  <h2>03 · 字号五级 × 行高</h2>
+  <div class="type">
+    <div><code>fs-5 19/1.3 · 600</code><span style="font:600 var(--fs-5)/var(--lh-5) var(--font-display);letter-spacing:-.01em">画布上的知识工作台</span></div>
+    <div><code>fs-4 15/1.5 · 600</code><span style="font-size:var(--fs-4);font-weight:600">面板标题</span></div>
+    <div><code>fs-3 13.5/1.6</code><span style="font-size:var(--fs-3)">界面正文：文件即真相，画布即界面。</span></div>
+    <div><code>fs-2 12.5/1.5</code><span style="font-size:var(--fs-2);color:var(--muted)">侧栏条目 · 按钮 · 菜单</span></div>
+    <div><code>fs-1 11/1.45</code><span style="font:500 var(--fs-1)/var(--lh-1) var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)">Path · 2026-10-23 · 12 Items</span></div>
+  </div>
+
+  <h2>04 · 圆角五档 · 焦点环 · 主按钮</h2>
+  <div class="rad">
+    ${[['xs 3','var(--r-xs)'],['sm 8','var(--r-sm)'],['md 12','var(--r-md)'],['lg 16','var(--r-lg)'],['pill 999','999px']].map(([n,r])=>`<span style="border-radius:${r}">${n}</span>`).join('')}
+    <span style="border:none;border-radius:var(--r-sm);box-shadow:var(--focus-ring)">focus</span>
+    <span class="btn-f">墨色胶囊</span>
+  </div>
+
+  <h2>05 · 目标壳层 IA（顶栏 / 侧栏 / 画布 / 底栏）</h2>
+  <div class="app">
+    <div class="bar"><span class="tl"><i></i><i></i><i></i></span>ThirdC-KB / 库根 · 2 篇
+      <span class="pill"><b class="on">画布</b><b>时间线</b><b>看板</b></span></div>
+    <div class="side">
+      <div class="si on">Agent<em>5</em></div>
+      <div class="si">Conflow<em>1</em></div>
+      <div class="si">Memos<em>1</em></div>
+      <div class="si" style="color:var(--faint)">MindRe<em>12652</em></div>
+    </div>
+    <div class="cv">
+      <div class="card" style="left:14px;top:10px"><b>Conflow</b><s>文件夹 · 1 篇</s></div>
+      <div class="card sel" style="left:14px;top:110px"><b>Memos</b><s>文件夹 · 1 篇</s></div>
+    </div>
+    <div class="dock"><div class="say">问库里的任何事，或让 Agent 动手…<kbd>⌘J</kbd></div></div>
+  </div>
+
+  <h2>06 · 动效四档（退出 = 进入 × 0.7 · 位移 ≤ 8px · hover 不上浮）</h2>
+  <div class="curves">
+    ${[['ease-out','.22,1,.36,1','dur-1/2 · 颜色/hover'],['ease-spring','.32,.72,0,1','dur-3/4 · 进场/morph'],['ease-in','.4,0,1,1','×0.7 · 退场']].map(([n,c,d])=>{
+      const [a,b,e,f]=c.split(',').map(Number);
+      return `<svg width="150" height="100" viewBox="0 0 150 100"><path d="M15 80 C ${15+a*120} ${80-b*60}, ${15+e*120} ${80-f*60}, 135 16" fill="none" stroke="var(--accent)" stroke-width="2"/><line x1="15" y1="80" x2="135" y2="80" stroke="var(--border-1)"/><text x="15" y="94">${n}</text><text x="15" y="12">${d}</text></svg>`}).join('')}
+  </div>
+
+  <ul class="rules" style="margin-top:14px">
+    <li><b>层级只靠明度与留白</b>：卡片无框无影；影子只给真正悬空的浮层（色染绿墨 + 0.5px 描边）。</li>
+    <li><b>显色即信息</b>：石蕊渐变只出现在"正在发生"的地方（AI 输入聚焦、选中卡顶沿、热力图）；其余界面无彩。</li>
+    <li><b>选中 ≠ 悬停</b>：--selected 是行选中专用底；双环焦点环只在键盘 Tab 时出现。</li>
+    <li><b>纪律由测试强制</b>：palette.rs（AA 矩阵/阶梯/派生色）+ craft.rs（字号/圆角/动效/模糊 token 化）。</li>
+  </ul>
+</section>`
+document.write(tpl('light', '浅色 · 暖绿纸') + tpl('dark', '深色 · 绿石墨'))
+</script>
+</body>
+</html>

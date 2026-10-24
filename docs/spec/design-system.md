@@ -275,6 +275,40 @@ server/web/index.html   <style> 只放本页独有部件
   新增全窗 fixed 层时必须同查；顶栏外的固定定位元素不得出现在左上 88×56 区域。
 
 
+## v7.1 · LinKTo 学习批（2026-10-23）
+
+研究对象：LinTo 仓库的设计演进（docs/design/tokens-v2 + style-board.html + global.css v3「荧光签」）。
+它的方法论与工程做法被吸收进 ThirdC，以下按条落了地：
+
+### 派生色（relative color）
+
+- `-soft` / `--selected` / `-ink` 全部改为 **`oklch(from var(--基色) …)` 相对派生**——
+  预设/插件只需覆盖基色（accent/ok/warn…），三档自动跟随，不再手调死值。
+- 语义色从两档升为 **fill / ink / soft 三档**（LinKTo 的结构性做法）：soft 底上的文字一律用 `-ink`
+  （亮色压深、暗色提亮，派生方向随主题翻转）。
+- `palette.rs` 同步升级：支持解析 `oklch(from var(…) …)` 与 `calc(l ± n) / calc(c * n)`；
+  ink 六枚纳入五表面 AA 矩阵，`ink on soft`、`text on --selected` 成为新契约。
+
+### 交互细节
+
+- **双环焦点环**：`--focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring)`——底色内圈在任何
+  表面上都留出间隙，box-shadow 跟随元素自身圆角；`ringInBox` 保留"外圈收拢"动画；输入类保持 outline。
+- **`--selected` 与 `--hover` 分离**：行选中专用底（叶绿 7%/9%，比 soft 更安静），用于侧栏树选中行
+  与弹层选中项；画布节点选中仍走 accent ring + 石蕊顶沿。
+- **滚动条平时隐身**，悬停所在容器才显影（border-strong）。
+- **环境光收敛**：三团彩斑 → 一团叶绿 + 一团纸色（blob-b 退役为 transparent）。
+
+### 风格板工作流
+
+- 新增 `docs/design/style-board.html`（LinKTo 的 style-board 同款流程）：引用真实 tokens.css，
+  亮暗两栏并排展示色板 / 三档语义 / 字号 / 圆角与焦点环 / 迷你壳 IA / 动效曲线。
+  **今后每轮视觉迭代先改风格板、owner 确认、再动实现**；本地预览：
+  `python3 -m http.server 7820 --directory <repo根>` → `/docs/design/style-board.html`。
+
+### 守护
+
+- palette.rs 5 项 + craft.rs 6 项 + 服务端 24 项全绿；ink/selected 的对比度由测试强制，不再靠肉眼。
+
 ## v7 绿纸 · OpenDesign（2026-10-23）
 
 参考 open-design.ai 的设计语言再做一轮：暖绿纸、单一绿强调、色染阴影、胶囊导航、Albert Sans。

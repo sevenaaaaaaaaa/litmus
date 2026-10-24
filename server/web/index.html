@@ -32,7 +32,9 @@ body::before{content:"";position:fixed;inset:-20% -10%;z-index:0;pointer-events:
              radial-gradient(34% 30% at 82% 8%,var(--blob-b),transparent 70%),
              radial-gradient(40% 34% at 60% 92%,var(--blob-c),transparent 72%)}
 ::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:var(--r-pill);border:2px solid transparent;background-clip:content-box}
+/* 滚动条平时隐身，悬停所在容器时才显影（LinKTo 学习批） */
+::-webkit-scrollbar-thumb{background:transparent;border:2px solid transparent;border-radius:var(--r-pill);background-clip:content-box}
+:hover::-webkit-scrollbar-thumb,::-webkit-scrollbar-thumb:hover{background-color:var(--border-strong)}
 
 /* ── 外壳：单层顶栏，通栏贴顶（ui-redesign.md §3.3）── */
 #chrome{position:fixed;top:0;left:0;right:0;height:var(--chrome-h);z-index:var(--z-chrome);display:flex;align-items:center;gap:10px;padding:0 14px;
@@ -411,7 +413,8 @@ body[data-mode="present"] #rail,body[data-mode="present"] #rail-open,body[data-m
 .panel-head h3{margin:0;font-family:var(--font-display);font-size:var(--fs-4);flex:1}
 .panel-body{padding:16px 20px;max-height:56vh;overflow:auto}
 .prow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-md);cursor:pointer}
-.prow:hover,.prow.on{background:var(--hover)}
+.prow:hover{background:var(--hover)}
+.prow.on{background:var(--selected)}
 .prow .t{flex:1;font-size:var(--fs-3)}
 .prow .h{font-family:var(--font-mono);font-size:var(--fs-1);color:var(--faint)}
 .palette-in{width:100%;height:48px;padding:0 16px;border:none;border-bottom:1px solid var(--border);background:transparent;color:var(--fg);font:var(--fs-4)/var(--lh-4) var(--font-body);outline:none}
@@ -936,10 +939,12 @@ body[data-view="timeline"] .node:hover,body[data-view="kanban"] .node:hover{tran
 ::placeholder{color:var(--text-4);opacity:1}
 /* ── 键盘焦点：可 tab 元素必须有可见焦点环 ── */
 :focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+/* 双环焦点（LinKTo 学习批）：底色内圈在任何表面上留出间隙，外圈 accent；box-shadow 跟随元素圆角 */
 button:focus-visible,[role="button"]:focus-visible,.tab-pill:focus-visible,.icon-btn:focus-visible,.act:focus-visible,
 .rail-item:focus-visible,.tree-leaf:focus-visible,.tree-row:focus-visible,.doc-tab:focus-visible,.prow:focus-visible,.mm-item:focus-visible,
 .rail-act:focus-visible,.ws-chip:focus-visible,.ab-verb:focus-visible,.quick button:focus-visible,.toc-item:focus-visible,nav a:focus-visible{
-  outline:2px solid var(--ring);outline-offset:2px}
+  outline:none;box-shadow:var(--focus-ring);animation:ringInBox var(--dur-3) var(--ease-spring)}
+@keyframes ringInBox{from{box-shadow:0 0 0 6px var(--bg),0 0 0 8px transparent}}
 
 /* ── 粗指针（触屏）：高频控件抬到 ≥40px，桌面 fine 指针不回归 ── */
 @media (pointer:coarse){
@@ -1282,7 +1287,7 @@ html[data-motion="reduced"] *,html[data-motion="reduced"] *::before,html[data-mo
 .tree-row .t-ic{color:color-mix(in oklab,var(--accent-2) 70%,var(--faint))}
 .t-ic.k-capture{color:var(--ok)}.t-ic.k-view{color:var(--type-query)}.t-ic.k-html{color:var(--info)}
 .tree-leaf{gap:8px;position:relative}
-.tree-leaf.on{background:var(--accent-soft);color:var(--fg);box-shadow:none}
+.tree-leaf.on{background:var(--selected);color:var(--fg);box-shadow:none}
 .tree-leaf.on::before{content:'';position:absolute;left:-9px;top:6px;bottom:6px;width:2px;border-radius:var(--r-pill);background:var(--accent-grad)}
 .tree-leaf.on .t-ic{color:var(--accent)}
 .tree-row .ct{padding:1px 6px;border-radius:var(--r-pill);background:var(--hover)}

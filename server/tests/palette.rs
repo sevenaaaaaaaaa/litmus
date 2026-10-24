@@ -117,9 +117,17 @@ struct Rgba {
     a: f64,
 }
 
-fn parse_oklch(v: &str) -> Option<Rgba> {
-    let v = v.trim();
-    let inner = v.strip_prefix("oklch(")?.strip_suffix(')')?;
+/// oklch 三分量 + 透明度（派生色在分量层做，再一次性转 sRGB）
+#[derive(Clone, Copy, Debug)]
+struct OkParts {
+    l: f64,
+    c: f64,
+    h: f64,
+    a: f64,
+}
+
+fn parse_parts(v: &str) -> Option<OkParts> {
+    let inner = v.trim().strip_prefix("oklch(")?.strip_suffix(')')?;
     let (main, alpha) = match inner.split_once('/') {
         Some((m, a)) => (m, a.trim().parse::<f64>().ok()?),
         None => (inner, 1.0),
@@ -131,6 +139,11 @@ fn parse_oklch(v: &str) -> Option<Rgba> {
     let l = parts[0].trim_end_matches('%').parse::<f64>().ok()? / 100.0;
     let c: f64 = parts[1].parse().ok()?;
     let h: f64 = parts[2].parse().ok()?;
+    Some(OkParts { l, c, h, a: alpha })
+}
+
+fn oklch_to_rgba(p: OkParts) -> Rgba {
+    let (l, c, h) = (p.l, p.c, p.h);
     let (a_, b_) = (c * h.to_radians().cos(), c * h.to_radians().sin());
     let l_ = l + 0.396_337_777_4 * a_ + 0.215_803_757_3 * b_;
     let m_ = l - 0.105_561_345_8 * a_ - 0.063_854_172_8 * b_;
@@ -139,7 +152,90 @@ fn parse_oklch(v: &str) -> Option<Rgba> {
     let r = 4.076_741_662_1 * l3 - 3.307_711_591_3 * m3 + 0.230_969_929_2 * s3;
     let g = -1.268_438_004_6 * l3 + 2.609_757_401_1 * m3 - 0.341_319_396_5 * s3;
     let b = -0.004_196_086_3 * l3 - 0.703_418_614_7 * m3 + 1.707_614_701_0 * s3;
-    Some(Rgba { lin: [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)], a: alpha })
+    Rgba { lin: [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)], a: p.a }
+}
+
+/// 解析 palette 里某 token 的最终 oklch 分量；支持相对派生
+/// `oklch(from var(--base) L C H / A)`：分量可为字面通道 l/c/h 或 calc(l ± n) / calc(c * n)。
+/// 派生色随基色走——主题只需覆盖基色，ink/soft/selected 自动跟随（LinKTo tokens-v3 的做法）。
+fn resolve_parts(p: &HashMap<String, String>, v: &str, depth: usize) -> OkParts {
+    assert!(depth < 8, "派生链过深或成环：{v}");
+    let v = v.trim();
+    if !v.contains("from var(") {
+        return parse_parts(v).unwrap_or_else(|| panic!("必须是字面 oklch() 或 oklch(from …)：{v}"));
+    }
+    let inner = v
+        .strip_prefix("oklch(")
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("相对派生须为 oklch(from …)：{v}"));
+    let (main, alpha) = match inner.split_once('/') {
+        Some((m, a)) => (m, a.trim().parse::<f64>().unwrap_or_else(|_| panic!("alpha 须为字面量：{v}"))),
+        None => (inner, 1.0),
+    };
+    let rest = main.trim_start_matches("from").trim_start();
+    let close = rest.find(')').unwrap_or_else(|| panic!("var(…) 未闭合：{v}"));
+    let base_name = rest[..close].trim_start_matches("var(").trim();
+    let base_v = p.get(base_name).unwrap_or_else(|| panic!("派生基色 {base_name} 缺失：{v}"));
+    let b = resolve_parts(p, base_v, depth + 1);
+    // 分量切分：calc(...) 按括号整体成段（calc 内部允许空格），其余按空白
+    let mut comps: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut depth_par = 0usize;
+    for ch_char in rest[close + 1..].chars() {
+        match ch_char {
+            '(' => {
+                depth_par += 1;
+                cur.push(ch_char);
+            }
+            ')' => {
+                depth_par -= 1;
+                cur.push(ch_char);
+                if depth_par == 0 && cur.starts_with("calc(") {
+                    comps.push(std::mem::take(&mut cur));
+                }
+            }
+            c if c.is_whitespace() && depth_par == 0 => {
+                if !cur.is_empty() {
+                    comps.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        comps.push(cur);
+    }
+    assert!(comps.len() == 3, "分量须三段 L C H：{v}");
+    let ch = |spec: &str| -> f64 {
+        let spec = spec.trim();
+        match spec {
+            "l" => b.l,
+            "c" => b.c,
+            "h" => b.h,
+            _ => {
+                let inner2 = spec
+                    .strip_prefix("calc(")
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or_else(|| panic!("未知分量 {spec}：{v}"));
+                let t: Vec<&str> = inner2.split_whitespace().collect();
+                assert!(t.len() == 3, "calc 须形如 (l - .06)：{v}");
+                let x: f64 = t[2].parse().unwrap_or_else(|_| panic!("calc 数字须字面量：{v}"));
+                let base_of = match t[0] {
+                    "l" => b.l,
+                    "c" => b.c,
+                    "h" => b.h,
+                    _ => panic!("calc 通道仅 l/c/h：{v}"),
+                };
+                match t[1] {
+                    "-" => base_of - x,
+                    "+" => base_of + x,
+                    "*" => base_of * x,
+                    _ => panic!("calc 运算符仅 - + *：{v}"),
+                }
+            }
+        }
+    };
+    OkParts { l: ch(&comps[0]), c: ch(&comps[1]), h: ch(&comps[2]), a: alpha }
 }
 
 fn enc(x: f64) -> f64 {
@@ -166,7 +262,7 @@ fn contrast(a: Rgba, b: Rgba) -> f64 {
 
 fn color(p: &HashMap<String, String>, name: &str, ctx: &str) -> Rgba {
     let v = p.get(name).unwrap_or_else(|| panic!("[{ctx}] 缺少原语 {name}"));
-    parse_oklch(v).unwrap_or_else(|| panic!("[{ctx}] {name} 必须是字面 oklch()，实际：{v}"))
+    oklch_to_rgba(resolve_parts(p, v, 0))
 }
 
 const SURFACES: [&str; 5] = ["--bg-0", "--bg-1", "--surface-1", "--surface-2", "--surface-3"];
@@ -206,6 +302,7 @@ fn text_and_accents_pass_wcag_aa_on_every_surface() {
         let p = palette(theme, accent);
         let body = [
             "--text-1", "--text-2", "--text-3", "--accent", "--accent-strong", "--accent-2",
+            "--accent-ink", "--accent-2-ink", "--ok-ink", "--warn-ink", "--danger-ink", "--info-ink",
             "--ok", "--warn", "--danger", "--info",
         ];
         for s in SURFACES {
@@ -224,17 +321,26 @@ fn text_and_accents_pass_wcag_aa_on_every_surface() {
         // 彩色文字压在自己的 -soft 底上（徽章/标签/选中态）：以最常见的承载面合成
         let host = color(&p, if theme == Theme::Dark { "--surface-1" } else { "--surface-3" }, &ctx);
         for (fg, soft) in [
+            ("--accent-ink", "--accent-soft"),
+            ("--accent-2-ink", "--accent-2-soft"),
+            ("--ok-ink", "--ok-soft"),
+            ("--warn-ink", "--warn-soft"),
+            ("--danger-ink", "--danger-soft"),
+            ("--info-ink", "--info-soft"),
             ("--accent", "--accent-soft"),
-            ("--accent-2", "--accent-2-soft"),
-            ("--ok", "--ok-soft"),
-            ("--warn", "--warn-soft"),
-            ("--danger", "--danger-soft"),
-            ("--info", "--info-soft"),
         ] {
             let bg = over(color(&p, soft, &ctx), host);
             let r = contrast(color(&p, fg, &ctx), bg);
             if r < 4.5 {
                 report.push(format!("[{ctx}] {fg} on {soft} = {r:.2} < 4.5"));
+            }
+        }
+        // 行选中底 --selected 上的正文（合成在承载面上，同 -soft 的用法）
+        let sel_bg = over(color(&p, "--selected", &ctx), host);
+        for f in ["--text-1", "--text-2", "--text-3"] {
+            let r = contrast(color(&p, f, &ctx), sel_bg);
+            if r < 4.5 {
+                report.push(format!("[{ctx}] {f} on --selected = {r:.2} < 4.5"));
             }
         }
         for (fg, bg) in [("--on-accent", "--accent"), ("--on-accent-2", "--accent-2"), ("--on-accent", "--accent-strong"), ("--on-danger", "--danger")] {
@@ -320,6 +426,8 @@ fn every_legacy_token_still_resolves() {
         "--blob-c", "--shadow", "--shadow-sm", "--node-bg", "--node-bg-active", "--node-shadow", "--chat-bg",
         "--grid-dot", "--edge", "--edge-soft", "--col-bg", "--col-head", "--type-doc", "--type-capture",
         "--type-asset", "--type-query", "--axis",
+        // v7.1 新增语义档（LinKTo 学习批）：ink 三档与选中底
+        "--selected", "--accent-ink", "--accent-2-ink", "--ok-ink", "--warn-ink", "--danger-ink", "--info-ink",
     ] {
         assert!(all.contains_key(k), "旧 token {k} 丢失——预设与插件会静默失效");
     }
