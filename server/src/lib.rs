@@ -1263,8 +1263,12 @@ fn ab_summarize_node(st: &Arc<AppState>, path: &str) -> Result<Value, String> {
 /// 连到：把 `[[target]]` 追加到来源文档。
 fn ab_connect(st: &Arc<AppState>, from: &str, target: &str) -> Result<Value, String> {
     let md = read_md(st, from)?;
-    let link = if target.starts_with("Notes/") && target.ends_with(".md") {
-        format!("[[{}]]", stem_of(target))
+    let link = if target.starts_with("Notes/") {
+        if !kernel_core::is_safe_doc_path(target) {
+            return Err("invalid target path".into());
+        }
+        // 画布点选传精确路径，保留目录，避免同名卡片连接到错误的文档。
+        format!("[[{target}]]")
     } else {
         format!("[[{}]]", target.trim().trim_start_matches("[[").trim_end_matches("]]"))
     };
@@ -2832,6 +2836,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn browse_pagination_reaches_documents_beyond_first_page() {
+        let (app, token, dir) = test_router();
+        std::fs::create_dir_all(dir.path().join("Notes/Paged/Child")).unwrap();
+        for i in 0..35 {
+            std::fs::write(dir.path().join(format!("Notes/Paged/{i:02}.md")), "# Entry\n").unwrap();
+        }
+        let mut paths = std::collections::HashSet::new();
+        for (offset, expected) in [(0, 30), (30, 5), (35, 0)] {
+            let resp = app.clone().oneshot(Request::builder()
+                .uri(format!("/browse?path=Notes/Paged&offset={offset}"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let v = body_json(resp).await;
+            assert_eq!(v["total_docs"], 35);
+            let docs = v["docs"].as_array().unwrap();
+            assert_eq!(docs.len(), expected);
+            for d in docs { assert!(paths.insert(d["path"].as_str().unwrap().to_owned())); }
+        }
+        assert_eq!(paths.len(), 35);
+    }
+
+    #[tokio::test]
+    async fn canvas_connect_preserves_exact_target_and_is_idempotent() {
+        let (app, token, dir) = test_router();
+        std::fs::create_dir_all(dir.path().join("Notes/Topic")).unwrap();
+        std::fs::write(dir.path().join("Notes/source.md"), "# Source\n\nAn idea.\n").unwrap();
+        std::fs::write(dir.path().join("Notes/Topic/same.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("Notes/same.md"), "# Different target\n").unwrap();
+        for already in [false, true] {
+            let resp = app.clone().oneshot(Request::builder().method("POST").uri("/agent/apply")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"op":"connect","path":"Notes/source.md","target":"Notes/Topic/same.md"}"#)).unwrap()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let v = body_json(resp).await;
+            assert_eq!(v["link"], "[[Notes/Topic/same.md]]");
+            assert_eq!(v["already"].as_bool().unwrap_or(false), already);
+        }
+        let md = std::fs::read_to_string(dir.path().join("Notes/source.md")).unwrap();
+        assert_eq!(md.matches("[[Notes/Topic/same.md]]").count(), 1);
+        assert!(!md.contains("[[same]]"));
+        let resp = app.oneshot(Request::builder().uri("/graph")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let graph = body_json(resp).await;
+        assert!(graph["edges"].as_array().unwrap().iter().any(|e|
+            e["from"] == "doc:Notes/source.md" && e["to"] == "doc:Notes/Topic/same.md"));
+    }
+
+    #[tokio::test]
     async fn dir_create_move_remove_roundtrip() {
         let (app, token, dir) = test_router();
         let auth = format!("Bearer {token}");
@@ -3549,6 +3605,8 @@ fn build_graph(k: &mut Kernel) -> anyhow::Result<Value> {
 
     for p in &docs {
         let path = p.to_string_lossy().into_owned();
+        by_key.insert(path.to_lowercase(), path.clone());
+        by_key.insert(p.with_extension("").to_string_lossy().to_lowercase(), path.clone());
         // 轻量：直接读文件（不加载 CRDT），大库也能秒开
         let text = std::fs::read_to_string(k.vault.root.join(&path)).unwrap_or_default();
         let (title_opt, tags_fast) = kernel_core::refs::extract_title_and_tags(&text);
@@ -5953,8 +6011,10 @@ async fn browse(
 
     let has_sub = !folders.is_empty();
     let cap = if has_sub { 30 } else { 200 };
+    let offset = q.get("offset").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
     let arr: Vec<Value> = docs
         .iter()
+        .skip(offset)
         .take(cap)
         .map(|(p, pk, mt, sz, sc)| {
             // 只加字段（ABI 只增不破）：excerpt / tags / links 供画布卡片预览与双链连线
