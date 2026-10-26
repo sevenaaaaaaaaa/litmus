@@ -1,5 +1,6 @@
 //! kernel-core: 内核门面。组装 store + md + sync + index，对 CLI/桌面端/server 暴露统一操作。
 
+pub mod field;
 pub mod ingest;
 pub mod watch;
 

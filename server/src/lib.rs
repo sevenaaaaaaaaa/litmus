@@ -26,6 +26,8 @@ use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
+mod field;
+
 pub struct AppState {
     pub kernel: Arc<Mutex<Kernel>>,
     pub mcp: Arc<thirdc_mcp::McpServer>,
@@ -149,10 +151,11 @@ self.addEventListener('fetch', e => {
       const cache = await caches.open(SHELL);
       try {
         const r = await fetch(req);
-        if (r.ok) cache.put('/', r.clone());
+        // 每个壳页面各存一份（/ 与 /field），断网时回落到自己，不串壳
+        if (r.ok) cache.put(url.pathname, r.clone());
         return r;
       } catch (_) {
-        return (await cache.match('/')) || new Response('offline', { status: 503 });
+        return (await cache.match(url.pathname)) || (await cache.match('/')) || new Response('offline', { status: 503 });
       }
     })());
     return;
@@ -175,7 +178,7 @@ fn shell_version() -> &'static String {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
         // 壳 = index.html + tokens.css：只改配色也必须换缓存键
-        let html = [include_str!("../web/index.html"), include_str!("../web/tokens.css")].concat();
+        let html = [include_str!("../web/index.html"), include_str!("../web/field.html"), include_str!("../web/tokens.css")].concat();
         format!("thirdc-shell-{}", &kernel_core::Cas::hash_hex(html.as_bytes())[..12])
     })
 }
@@ -184,6 +187,12 @@ fn shell_version() -> &'static String {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(app))
+        .route("/field", get(field::page))
+        .route("/field/data", get(field::data))
+        .route("/field/react", get(field::react))
+        .route("/field/place", post(field::place))
+        .route("/field/crystal", post(field::crystal))
+        .route("/field/note", post(field::note))
         .route("/sticky.html", get(|| async {
             ([("content-type","text/html; charset=utf-8"),("cache-control","no-cache")], include_str!("../web/sticky.html"))
         }))

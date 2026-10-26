@@ -53,6 +53,10 @@ check "warm /doc"       0.10  -H "$A" "$B/doc?path=$ENC"
 check "/search"         0.30  -H "$A" "$B/search?q=the"
 check "/memo/docs 首建" 3.0   -H "$A" "$B/memo/docs"
 check "/memo/docs 缓存" 0.05  -H "$A" "$B/memo/docs"
+check "知识场 /field"   0.05  "$B/field"
+check "/field/data 首建" 20.0 -H "$A" "$B/field/data"
+check "/field/data 缓存" 0.30 -H "$A" "$B/field/data"
+check "/field/react"    0.15  -H "$A" "$B/field/react?q=sync"
 
 echo
 if [ "$fail" = "0" ]; then echo "✓ 全部在预算内"; else echo "✗ 有端点超预算（见上）"; exit 1; fi

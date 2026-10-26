@@ -15,6 +15,11 @@
 | `GET /memo/docs`（首建） | 3s | 1.7s | 只扫 `Notes/Memos/` 头部 4KB（Thino 式笔记本，不再全 Notes），构建一次（启动预热已暖） |
 | `GET /memo/docs`（缓存） | 50ms | 1ms | 缓存序列化好的 Bytes |
 | chat 首事件（recall） | 1s | 0.76s | 语料预热后；recal/resolve_view 已节流，禁止裸 sync_all |
+| `GET /field` | 50ms | 1ms | 知识场壳页面 |
+| `GET /field/data`（首建） | 20s | 4.5s / 3 千篇 | 向量 + 近邻 + 力导向整体布局，只在库第一次打开或 `?rebuild=1` 时发生（3 千篇：向量 0.2s、近邻 0.3s、布局 1.8s） |
+| `GET /field/data`（增量） | 2s | 0.6s / 3 千篇 | 库变了：旧坐标原样保留，只给新文档落位 |
+| `GET /field/data`（缓存） | 300ms | 2ms | `data_epoch` 未变直接回序列化好的 Bytes |
+| `GET /field/react` | 150ms | 6ms / 3 千篇 | 场向量余弦 + FTS 排名 |
 
 **冷启动 /doc 11s 不在预算内**：daemon 起来后第一次同步全库是预期行为。
 前端在首屏已并发预热，用户感知不到。
@@ -39,6 +44,7 @@
 |---|---|---|
 | TF-IDF 语料 | kernel（内存） | (文档数, 最大 mtime) 变化 |
 | memo 索引（序列化 Bytes） | server AppState | `data_epoch`（内容变更 +1） |
+| 知识场（向量 / 坐标 / 序列化 Bytes） | server `field.rs` 进程内，按库根分 | `data_epoch`；坐标另存 `.thirdc/field.json`（派生层，可删可重建） |
 | /browse 文件夹 | 前端 Map（30 个槽） | refreshAll 强制绕过 |
 | /docs 全量列表 | 前端内存 | 2 分钟 TTL + refreshAll 绕过 |
 | /tree | 前端 localStorage | refreshAll 覆盖 |
