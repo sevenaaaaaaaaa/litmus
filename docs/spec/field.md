@@ -100,8 +100,10 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | F4-2 学习与日历 | 学这一篇：按 `##`（或 `###`，没有就按段落凑 500 字）切节，原文模糊，复述 → `POST /field/learn {task:question|check}` → 自评；`POST /field/learn/grade` 简化 SM-2 排下次；`GET /field/learn/state`；/复习、打开时每日提醒一次；/日历 按文档日期的月历 + 到期复习 | 已完成 |
 | F4-3 同步与 AI 整理 | 视角、区域名、复习进度存库根 `.litmus/{views,regions,learn}.json`（git 同步只排除 `.thirdc/`，又不在 `Notes/` 下，不会变成文档）；读不到时回落 0.12 的 `.thirdc/` 旧文件。`POST /field/organize {ai:true}` 追加 `tags`（优先已有标签，丢掉带空白的）与 `titles`，执行改 frontmatter / 一级标题 + autoname，可撤销 | 已完成 |
 | F4-4 插件索引与网页本地化 | /插件 内嵌 `/plugin-index` 一键装；`POST /field/localize {url, html?}`：取 `<article>`/`<main>`/`<body>`，去导航页眉页脚侧栏表单，kernel-convert 转 Markdown，图片 `kc-img://` 占位后下载入 Assets（单张 10MB、合计 60MB、最多 40 张），失败的留原地址；桌面先 `desktop_render_page` | 已完成 |
+| G1 大库提速 | 见 `PERF.md`「知识场大库纪律」 | 已完成 |
+| G2 全库整理 | `server/src/organize.rs`。场构建时算信号（正文字数、TODO、计划日期）；`POST /field/organize {scope}` 增加 `fragments`（< 280 字的文档按近邻 ≥ 0.3 连通，3–12 篇一组，按跨越时间排序）、`stale`（superseded / expired / todo / aging）、`options`（区域与日期范围）；`POST /field/merge`（plain / ai，原文 keep / archive，返回撤销说明）；`POST /field/refresh`（参照更新版起草，不写盘）；`/field/patrol`（估算 / 开始 / 进度 / 停下，每批 30 篇补标签起标题、每批 6 篇核实过时，结果存 `.thirdc/patrol.json`） | 已完成 |
 
-其他未做：整理的 AI 建议只覆盖没标签或标题过短的前 40 篇；学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密。
+其他未做：学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。
 
 ## 6. 风险
 

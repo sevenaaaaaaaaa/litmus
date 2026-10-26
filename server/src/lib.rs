@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex};
 
 mod field;
 mod field_tools;
+mod organize;
 mod share;
 
 pub struct AppState {
@@ -204,6 +205,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/learn/state", get(field_tools::learn_state_get))
         .route("/field/learn/grade", post(field_tools::learn_grade))
         .route("/field/localize", post(field_tools::localize))
+        .route("/field/merge", post(organize::merge))
+        .route("/field/refresh", post(organize::refresh))
+        .route("/field/patrol", get(organize::patrol_status).post(organize::patrol_start).delete(organize::patrol_stop))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {

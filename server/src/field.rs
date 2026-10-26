@@ -33,6 +33,11 @@ pub struct DocMeta {
     pub mtime: i64,
     /// 标签（frontmatter tags 与正文 #标签，与经典壳同一规则）
     pub tags: Vec<String>,
+    /// 正文字数（不含 frontmatter 与标题）：判断碎片
+    pub chars: usize,
+    /// 过时信号：未完成的 TODO / 提到的计划日期（整理时与今天比较）
+    pub todo: bool,
+    pub plans: Vec<String>,
 }
 
 pub struct Cached {
@@ -40,6 +45,14 @@ pub struct Cached {
     pub field: Field,
     pub meta: Vec<DocMeta>,
     pub body: Bytes,
+    /// 每篇前 6 个近邻：整理（碎片、取代关系）时才算，算一次缓存到库变
+    pub knn: std::sync::OnceLock<Vec<Vec<(usize, f32)>>>,
+}
+
+impl Cached {
+    pub fn knn(&self) -> &Vec<Vec<(usize, f32)>> {
+        self.knn.get_or_init(|| self.field.vectors.knn(6))
+    }
 }
 
 /// 按库根缓存（同一进程里的测试会开多个库）。
@@ -89,7 +102,7 @@ fn kind_of(path: &str) -> &'static str {
 }
 
 /// 标题：一级标题 > frontmatter title > 随手记取首句 > 文件名。
-fn title_of(path: &str, text: &str) -> String {
+pub fn title_of(path: &str, text: &str) -> String {
     if path.starts_with("Notes/Memos/") && !text.lines().any(|l| l.trim_start().starts_with("# ")) {
         let first = excerpt_of(text);
         // 随手记正文以「HH:MM 」开头（经典壳与知识场同一格式），标题里去掉时间
@@ -265,7 +278,8 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .map(|p| {
                 let (title, text) = &texts[p];
                 let mtime = stats.get(p).map(|s| s.0).unwrap_or(0);
-                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()) }
+                let (chars, todo, plans) = super::organize::signals(text);
+                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()), chars, todo, plans }
             })
             .collect();
         // 派生层落盘：只存坐标（可删可重建）
@@ -298,7 +312,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
         });
         let body = Bytes::from(serde_json::to_vec(&body).unwrap_or_default());
         mark("json");
-        Cached { epoch, field: f, meta, body }
+        Cached { epoch, field: f, meta, body, knn: std::sync::OnceLock::new() }
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -328,7 +342,7 @@ pub fn write_synced(root: &std::path::Path, name: &str, bytes: &[u8]) -> std::io
     std::fs::rename(&tmp, &p)
 }
 
-fn load_region_names(root: &std::path::Path) -> HashMap<String, String> {
+pub fn load_region_names(root: &std::path::Path) -> HashMap<String, String> {
     read_synced(root, "regions.json", "field-names.json")
         .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
         .unwrap_or_default()
@@ -431,6 +445,9 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     };
     let root = st.kernel.lock().unwrap().vault.root.clone();
     let names = load_region_names(&root);
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let scope = super::organize::Scope::from_json(&req);
+    let keep = scope.keep(&c);
     let f = &c.field;
     let n = c.meta.len();
     let region_name = |r: usize| {
@@ -464,8 +481,8 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
         t.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '#' | '\n' | '\r' | '\t')).collect::<String>().trim().chars().take(60).collect()
     };
     let mut retitle: HashMap<String, String> = HashMap::new();
-    for m in &c.meta {
-        if !m.path.ends_with(".md") || !super::is_placeholder_name(&super::stem_of(&m.path)) {
+    for (i, m) in c.meta.iter().enumerate() {
+        if !keep[i] || !m.path.ends_with(".md") || !super::is_placeholder_name(&super::stem_of(&m.path)) {
             continue;
         }
         let md = std::fs::read_to_string(root.join(&m.path)).unwrap_or_default();
@@ -478,7 +495,7 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     }
     let mut moves = Vec::new();
     for (i, m) in c.meta.iter().enumerate() {
-        if folder_of(&m.path) != "Notes" || m.kind != "doc" {
+        if !keep[i] || folder_of(&m.path) != "Notes" || m.kind != "doc" {
             continue;
         }
         let r = f.region[i];
@@ -508,13 +525,13 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     renames.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     let mut dups = Vec::new();
     for &(a, b, w) in &f.edges {
-        if w >= 0.86 && a < n && b < n {
+        if w >= 0.86 && a < n && b < n && (keep[a] || keep[b]) {
             dups.push(json!({ "a": c.meta[a].path, "b": c.meta[b].path, "ta": c.meta[a].title, "tb": c.meta[b].title, "sim": (w * 100.0).round() / 100.0 }));
         }
     }
     dups.sort_by(|x, y| y["sim"].as_f64().partial_cmp(&x["sim"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
     dups.truncate(30);
-    let want_ai = serde_json::from_slice::<Value>(&body).ok().and_then(|v| v.get("ai").and_then(|a| a.as_bool())).unwrap_or(false);
+    let want_ai = req.get("ai").and_then(|a| a.as_bool()).unwrap_or(false);
     let (tags, titles, ai_note) = if want_ai {
         let mut vocab: HashMap<String, usize> = HashMap::new();
         for m in &c.meta {
@@ -529,7 +546,12 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     } else {
         (Vec::new(), Vec::new(), None)
     };
-    Json(json!({ "moves": moves, "renames": renames, "dups": dups, "tags": tags, "titles": titles, "ai": want_ai, "ai_note": ai_note, "considered": n })).into_response()
+    let mut out = json!({ "moves": moves, "renames": renames, "dups": dups, "tags": tags, "titles": titles, "ai": want_ai, "ai_note": ai_note, "considered": n });
+    if let (Some(o), Value::Object(x)) = (out.as_object_mut(), super::organize::plan_extras(&c, &scope)) {
+        o.extend(x);
+    }
+    out["options"] = super::organize::scope_options(&c, &root);
+    Json(out).into_response()
 }
 
 /// 文档之间真实写下的链接：`[[目标]]`（可带 |别名 #标题 ^块）与 `](Notes/...)`。
@@ -1510,6 +1532,122 @@ mod api_tests {
         assert!(md.contains(&format!("](http://{addr}/post/missing.png)")), "下不来的图保留原地址：{md}");
         let (st, _) = call(&app, &token, "POST", "/field/localize", r#"{"url":"ftp://x"}"#).await;
         assert_eq!(st, 400);
+    }
+
+    fn write_aged(root: &std::path::Path, rel: &str, text: &str, days_ago: u64) {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, text).unwrap();
+        let t = std::time::SystemTime::now() - std::time::Duration::from_secs(days_ago * 86_400);
+        std::fs::File::options().write(true).open(&p).unwrap().set_modified(t).unwrap();
+    }
+
+    #[tokio::test]
+    async fn whole_vault_organize_finds_old_and_new_fragments_and_stale_docs() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        // 跨两年的同主题碎片：长期的和近期的一起
+        let frags = [
+            ("Notes/Memos/2024-01/a.md", "备份 3-2-1 本地 云端 异地 三份", 700),
+            ("Notes/Memos/2024-09/b.md", "备份 云端 异地 rclone 加密 三份", 400),
+            ("Notes/Memos/2026-10/c.md", "备份 本地 异地 恢复演练 三份 加密", 3),
+            ("Notes/Memos/2026-10/d.md", "备份 rclone 云端 恢复 本地 三份", 1),
+        ];
+        for (p, t, d) in frags {
+            write_aged(root, p, t, d);
+        }
+        // 过时：旧方案被新方案取代；计划日期已过；TODO 放太久
+        write_aged(root, "Notes/方案/发布流程.md", &format!("# 发布流程\n\n{}", "发布 构建 签名 公证 上传 DMG 手工 流程 步骤。".repeat(12)), 400);
+        write_aged(root, "Notes/方案/发布流程新版.md", &format!("# 发布流程（新版）\n\n{}", "发布 构建 签名 公证 上传 DMG 自动 流程 步骤 脚本。".repeat(14)), 2);
+        write_aged(root, "Notes/方案/路线.md", "# 路线\n\n移动端 预计 2025-03 上线，之后做协作。", 300);
+        write_aged(root, "Notes/方案/待办.md", "# 待办\n\n- [ ] 写测试\n- [ ] 补文档 TODO", 120);
+        let (st, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        assert_eq!(st, 200);
+        let (st, plan) = call(&app, &token, "POST", "/field/organize", "{}").await;
+        assert_eq!(st, 200, "{plan}");
+        let fr = plan["fragments"].as_array().unwrap();
+        let g = fr.iter().find(|g| g["paths"].as_array().unwrap().len() >= 3).unwrap_or_else(|| panic!("要有一组碎片：{plan}"));
+        assert!(g["span_days"].as_i64().unwrap() > 600, "长期和近期的碎片在同一组：{g}");
+        let stale = plan["stale"].as_array().unwrap();
+        let kind = |p: &str| stale.iter().find(|x| x["path"] == p).map(|x| x["kind"].as_str().unwrap().to_string());
+        assert_eq!(kind("Notes/方案/发布流程.md").as_deref(), Some("superseded"), "{plan}");
+        assert_eq!(kind("Notes/方案/路线.md").as_deref(), Some("expired"), "{plan}");
+        assert_eq!(kind("Notes/方案/待办.md").as_deref(), Some("todo"), "{plan}");
+        assert!(kind("Notes/方案/发布流程新版.md").is_none(), "新版本身不算过时");
+        // 范围：只看最近 30 天，旧文档不进来
+        let recent = super::ymd(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64 - 30 * 86_400);
+        let (_, plan2) = call(&app, &token, "POST", "/field/organize", &serde_json::json!({"scope": {"from": recent}}).to_string()).await;
+        assert!(plan2["in_scope"].as_u64().unwrap() < plan["in_scope"].as_u64().unwrap());
+        assert!(plan2["stale"].as_array().unwrap().iter().all(|x| x["path"] != "Notes/方案/路线.md"));
+        assert!(plan2["options"]["regions"].as_array().is_some());
+        // 合成：原文留着并注明「已并入」；撤销说明齐全
+        let paths: Vec<Value> = g["paths"].as_array().unwrap().clone();
+        let (st, m) = call(&app, &token, "POST", "/field/merge", &serde_json::json!({"paths": paths, "title": "备份要点", "folder": "Notes/方案", "mode": "plain", "originals": "keep"}).to_string()).await;
+        assert_eq!(st, 200, "{m}");
+        let merged = std::fs::read_to_string(root.join(m["path"].as_str().unwrap())).unwrap();
+        assert!(merged.starts_with("# 备份要点") && merged.contains("## 来源") && merged.contains("恢复演练"), "{merged}");
+        let first = paths[0].as_str().unwrap();
+        assert!(std::fs::read_to_string(root.join(first)).unwrap().contains("已并入 [[备份要点]]"));
+        assert_eq!(m["undo"]["restore"].as_array().unwrap().len(), paths.len());
+        assert_eq!(m["undo"]["delete"][0], m["path"]);
+        // 归档方式：原文挪走，撤销给出挪回的路径
+        let (_, m2) = call(&app, &token, "POST", "/field/merge", r#"{"paths":["Notes/方案/路线.md","Notes/方案/待办.md"],"title":"路线与待办","mode":"plain","originals":"archive"}"#).await;
+        assert!(root.join("Notes/归档/碎片/路线.md").is_file());
+        assert_eq!(m2["undo"]["moves"].as_array().unwrap().len(), 2);
+        // 没配模型：更新稿给 409；巡检估算不调模型
+        let (st, _) = call(&app, &token, "POST", "/field/refresh", r#"{"path":"Notes/方案/发布流程.md"}"#).await;
+        assert_eq!(st, 409);
+        let (st, est) = call(&app, &token, "POST", "/field/patrol", r#"{"dry":true}"#).await;
+        assert_eq!(st, 200);
+        assert!(est["docs"].as_u64().unwrap() > 0 && est["calls"].as_u64().unwrap() > 0, "{est}");
+        let (st, _) = call(&app, &token, "POST", "/field/patrol", "{}").await;
+        assert_eq!(st, 409, "没配模型不能巡检");
+    }
+
+    #[tokio::test]
+    async fn patrol_runs_in_batches_and_refresh_drafts_an_update() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        for i in 0..70 {
+            write_aged(root, &format!("Notes/资料/第{i}篇.md"), &format!("# 资料{i}\n\n同步 冲突 合并 设备 第{i}条记录 离线 op-log。"), 5);
+        }
+        write_aged(root, "Notes/资料/旧计划.md", "# 旧计划\n\n预计 2025-02 发布同步。", 200);
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        let base = mock_json_llm(|sys, user| {
+            if sys.contains("整理个人知识库") {
+                let paths: Vec<&str> = user.lines().filter_map(|l| l.trim().split_once("path=").map(|x| x.1)).collect();
+                serde_json::json!({ "items": paths.iter().map(|p| serde_json::json!({"path": p, "tags": ["同步"]})).collect::<Vec<_>>() }).to_string()
+            } else if sys.contains("是否真的过时") {
+                let p = user.lines().find_map(|l| l.trim().split_once("path=").map(|x| x.1.to_string())).unwrap_or_default();
+                serde_json::json!({"items":[{"path": p, "outdated": true, "what": "2025-02 的发布计划已过"}]}).to_string()
+            } else if sys.contains("可能过时的文档") {
+                "---\nreviewed: x\n---\n# 旧计划\n\n同步已在 2025-04 发布。\n===CHANGES===\n- 发布日期改成实际的 2025-04".into()
+            } else {
+                "?".into()
+            }
+        })
+        .await;
+        let (_, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        let (st, r) = call(&app, &token, "POST", "/field/patrol", "{}").await;
+        assert_eq!(st, 200, "{r}");
+        assert!(r["calls"].as_u64().unwrap() >= 3, "71 篇缺标签：至少 3 批（每批 30）：{r}");
+        let mut p = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            p = call(&app, &token, "GET", "/field/patrol", "").await.1;
+            if p["running"] == false {
+                break;
+            }
+        }
+        assert_eq!(p["running"], false, "{p}");
+        assert_eq!(p["done"], p["total"]);
+        assert!(p["tags"].as_array().unwrap().len() >= 70, "全部范围都看到了，不再只看前 40 篇：{}", p["tags"].as_array().unwrap().len());
+        assert!(p["verified"].as_array().unwrap().iter().any(|v| v["path"] == "Notes/资料/旧计划.md" && v["outdated"] == true), "{p}");
+        assert!(root.join(".thirdc/patrol.json").is_file());
+        let (st, rf) = call(&app, &token, "POST", "/field/refresh", r#"{"path":"Notes/资料/旧计划.md"}"#).await;
+        assert_eq!(st, 200, "{rf}");
+        assert!(rf["markdown"].as_str().unwrap().contains("2025-04") && rf["changes"].as_str().unwrap().contains("发布日期"));
+        assert!(rf["before"].as_str().unwrap().contains("预计 2025-02"), "不写盘，原文还在");
     }
 
     #[tokio::test]

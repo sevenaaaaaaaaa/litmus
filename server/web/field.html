@@ -307,6 +307,24 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 .lprog i.cur{background:var(--ink-3)}.lprog i.ok{background:var(--litmus)}.lprog i.mid{background:oklch(var(--litmus-c) / .45)}.lprog i.no{background:var(--acid)}
 body.learning #doc .body{filter:blur(7px);opacity:.55;transition:filter var(--dur-4),opacity var(--dur-4);user-select:none}
 body.learning.peek #doc .body{filter:none;opacity:1;user-select:auto}
+.orgbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.orgbar .sel{width:auto;max-width:280px}.orgbar .hint{margin:0}
+.orgtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--rule);margin:0 -2px 6px;padding-bottom:6px}
+.orgtabs button{border:0;background:none;border-radius:var(--r-pill);padding:5px 11px;font-size:var(--fs-2);color:var(--ink-2);cursor:pointer}
+.orgtabs button b{font:600 var(--fs-1) var(--f-mono);color:var(--ink-3);margin-left:2px}
+.orgtabs button.on{background:var(--ink);color:var(--paper)}.orgtabs button.on b{color:var(--paper)}
+#og-body{max-height:52vh;overflow:auto;padding-right:4px}
+.orow .grow small{display:block}.oacts{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+em.kind{font:500 var(--fs-1)/1 var(--f-ui);font-style:normal;padding:3px 7px;border-radius:var(--r-pill);background:var(--paper);color:var(--ink-2);box-shadow:inset 0 0 0 1px var(--rule);vertical-align:1px}
+em.k-superseded,em.k-expired{color:var(--acid);box-shadow:inset 0 0 0 1px oklch(var(--acid-c) / .35)}
+em.k-ai{background:oklch(var(--acid-c) / .1);color:var(--acid);box-shadow:none}em.k-ok{background:var(--litmus-wash);color:var(--litmus);box-shadow:none}
+.frag{border-bottom:1px dashed var(--rule);padding:10px 0}
+.frag .fh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.frag .fh b{font:600 var(--fs-3) var(--f-display)}.frag .fh small{font:400 var(--fs-1) var(--f-mono);color:var(--ink-2);flex:1}
+.frag ul{margin:6px 0 0;padding-left:18px;columns:2;column-gap:24px;font-size:var(--fs-2)}.frag li{break-inside:avoid;color:var(--ink-2)}.frag li a{color:inherit;text-decoration:none}.frag li a:hover{color:var(--litmus)}
+.patrol{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--rule);font-size:var(--fs-2);color:var(--ink-2)}.patrol span{flex:1;min-width:200px}
+.pbar{flex-basis:100%;height:4px;border-radius:2px;background:var(--rule);overflow:hidden}.pbar i{display:block;height:100%;background:var(--litmus);transition:width var(--dur-4)}
+.changes p{margin:0 0 4px;font-size:var(--fs-2)}.changes p::before{content:"· ";color:var(--litmus)}
+.diff{max-height:46vh;overflow:auto;font:400 var(--fs-2)/1.6 var(--f-mono);background:var(--paper);border-radius:var(--r-md);padding:8px 10px;white-space:pre-wrap;word-break:break-word}
+.diff .dd{color:var(--acid);text-decoration:line-through;background:oklch(var(--acid-c) / .07)}.diff .da{color:var(--litmus);background:var(--litmus-wash)}.diff .ds{color:var(--ink-2)}.diff .dfold{color:var(--ink-3);text-align:center;font-size:var(--fs-1)}
 .calh{display:flex;align-items:center;gap:8px;margin-bottom:10px}.calh .btn{min-width:36px;text-align:center}.calh b{flex:1;text-align:center;font:600 var(--fs-3) var(--f-display)}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .cal em{font:500 var(--fs-1) var(--f-mono);color:var(--ink-2);text-align:center;font-style:normal;padding-bottom:4px}
@@ -501,7 +519,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>git 存档、备份</td><td>/存档、/备份</td></tr>
         <tr><td>看板 / 视图</td><td>/视图 加一句描述</td></tr>
         <tr><td>多画布</td><td>/视角：存下一组文档 + 镜头 + 排布，随时切回；文档不复制、不挪动</td></tr>
-        <tr><td>批量整理</td><td>/整理：放回意思所在的文件夹、占位名换成标题、提示可能重复；执行后可撤销</td></tr>
+        <tr><td>批量整理</td><td>/整理：全库（可按区域、时间缩小）找过时的知识、成组的碎片、放错的位置、重复；合成、更新、归档都可撤销；AI 巡检分批看完整个范围</td></tr>
         <tr><td>加密分享</td><td>「⋯」→ 加密分享（可设密码与有效期）；/分享 查看与撤回</td></tr>
         <tr><td>区域名</td><td>双击场上的区域名，或 /区域</td></tr>
         <tr><td>学习</td><td>「⋯」→ 学这一篇，或 /学习：合上原文一节一节复述，按讲得清不清楚排复习；/复习</td></tr>
@@ -1512,7 +1530,7 @@ const CMDS = [
   ['/做', '让 Agent 去做一件事（/做 把本周随手记整理成周报）', () => { q.value = '帮我'; q.focus(); onInput(); }],
   ['/标签', '所有标签；点一个让带它的文档亮起', openTags],
   ['/视角', '存下此刻的一组文档与镜头，或切到已存的视角（替代多画布）', openViews],
-  ['/整理', '场给出整理建议：放回该在的文件夹、占位名换成标题、可能重复', openOrganize],
+  ['/整理', '全库整理：过时的知识、零散的碎片、放错的位置、重复；可按区域和时间缩小范围', openOrganize],
   ['/区域', '给场上的区域改名（也可以双击区域名）', openRegions],
   ['/分享', '发出过的加密分享，可撤回', openShares],
   ['/学习', '学正在读的这篇：合上原文，一节一节用自己的话讲', () => startLearn(reading)],
@@ -2380,64 +2398,209 @@ async function openViews(){
 
 /* ═══════════ F3 批量整理：场给建议，确认后执行，可撤销 ═══════════ */
 let lastOrganize = null;
-async function openOrganize(ai){
-  const box = openPanel('整理', '<span class="thinking"><i></i><i></i><i></i> ' + (ai ? '正在请 AI 一起看（可能要半分钟）' : '正在看整片场') + '</span>');
-  $('panel').querySelector('.pbox').style.width = 'min(780px,100%)';
-  let r; try { r = await api('/field/organize', {method:'POST', json:{ai:!!ai}}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
-  const short = p => p.replace(/^Notes\//, '');
-  const nm = (r.moves || []).length, nr = (r.renames || []).length, nd = (r.dups || []).length, nt = (r.tags || []).length, nti = (r.titles || []).length;
-  const affected = [...(r.moves || []).map(m => m.from), ...(r.renames || []).map(m => m.path), ...(r.tags || []).map(m => m.path), ...(r.titles || []).map(m => m.path), ...(r.dups || []).flatMap(d => [d.a, d.b])].map(p => byPath.get(p)).filter(Boolean);
-  if (affected.length){ lastRel = affected.map(n => ({n, norm:.8})); paint(lastRel, {soft:true}); }
+
+/* ═══════════ G2 全库整理：归位、改名、碎片、过时、重复、AI 巡检 ═══════════ */
+let orgState = {scope:{}, tab:'stale', plan:null};
+const ORG_TABS = [['stale', '过时'], ['fragments', '碎片'], ['moves', '归位'], ['renames', '改名'], ['dups', '重复'], ['ai', 'AI 建议']];
+function scopeQuery(){ const s = orgState.scope, o = {}; ['region', 'from', 'to'].forEach(k => { if (s[k]) o[k] = s[k]; }); return o; }
+async function openOrganize(){
+  const box = openPanel('整理', '<span class="thinking"><i></i><i></i><i></i> 正在看' + (Object.keys(scopeQuery()).length ? '这个范围' : '整个库') + '</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(880px,100%)';
+  let r; try { r = await api('/field/organize', {method:'POST', json:{scope:scopeQuery()}}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  orgState.plan = r;
+  let patrol = {}; try { patrol = await api('/field/patrol'); } catch(e){}
+  const counts = {stale:r.stale_total || 0, fragments:r.fragments_total || 0, moves:(r.moves || []).length, renames:(r.renames || []).length, dups:(r.dups || []).length, ai:(patrol.tags || []).length + (patrol.titles || []).length};
+  if (!counts[orgState.tab]) orgState.tab = ORG_TABS.map(t => t[0]).find(k => counts[k]) || 'stale';
+  const o = r.options || {regions:[]}, s = orgState.scope;
+  const year = new Date().getFullYear(), td = todayStr();
+  const ago = d => { const t = new Date(Date.now() - d * DAY); return t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate()); };
+  const periods = [['', '', '全部时间'], [ago(30), '', '最近 30 天'], [ago(365), '', '最近一年'], ['', ago(365), '一年以前'], ['', ago(365 * 3), '三年以前']];
+  const pkey = (s.from || '') + '|' + (s.to || '');
+  box.innerHTML = '<div class="orgbar"><select id="og-region" class="sel" aria-label="范围"><option value="">全库 · ' + r.considered + ' 篇</option>' + o.regions.slice().sort((a, b) => b.count - a.count).map(x => '<option value="' + esc(x.auto) + '"' + (s.region === x.auto ? ' selected' : '') + '>区域「' + esc(x.name) + '」· ' + x.count + ' 篇</option>').join('') + '</select>' +
+    '<select id="og-time" class="sel" aria-label="时间">' + periods.map(p => '<option value="' + p[0] + '|' + p[1] + '"' + (pkey === p[0] + '|' + p[1] ? ' selected' : '') + '>' + p[2] + '</option>').join('') + '</select>' +
+    '<span class="hint">范围内 ' + r.in_scope + ' 篇；新的旧的一起看</span></div>' +
+    '<div class="orgtabs">' + ORG_TABS.map(([k, t]) => '<button class="' + (orgState.tab === k ? 'on' : '') + '" data-tab="' + k + '">' + t + ' <b>' + counts[k] + '</b></button>').join('') + '</div>' +
+    '<div id="og-body"></div>' +
+    '<div class="patrol" id="og-patrol"></div>';
+  $('og-region').onchange = () => { orgState.scope.region = $('og-region').value || null; openOrganize(); };
+  $('og-time').onchange = () => { const [a, b] = $('og-time').value.split('|'); orgState.scope.from = a || null; orgState.scope.to = b || null; openOrganize(); };
+  box.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { orgState.tab = b.dataset.tab; box.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); renderOrgTab(patrol); });
+  renderOrgTab(patrol); renderPatrol(patrol);
+  const all = [...(r.stale || []).map(x => x.path), ...(r.fragments || []).flatMap(g => g.paths)].map(p => byPath.get(p)).filter(Boolean);
+  if (all.length){ lastRel = all.slice(0, 600).map(n => ({n, norm:.7})); paint(lastRel, {soft:true}); }
+}
+const short = p => p.replace(/^Notes\//, '');
+const KIND = {superseded:'有更新版', expired:'计划已过期', todo:'事项没做完', aging:'很久没动'};
+function renderOrgTab(patrol){
+  const r = orgState.plan, b = $('og-body'); if (!b) return;
   const see = p => '<button class="btn" type="button" data-see="' + esc(p) + '">看看</button>';
-  box.innerHTML = '<p class="hint" style="margin-top:0">看了 ' + r.considered + ' 篇。下面是建议，勾掉不想要的再执行；移动和改名会把指向它们的链接一起改好，执行后可以一键撤销。</p>' +
-    (r.ai_note ? '<p class="hint">' + esc(r.ai_note) + '</p>' : '') +
-    '<label>放回它意思所在的文件夹 · ' + nm + '</label>' + (nm ? r.moves.map((m, i) => '<label class="row chk"><input type="checkbox" data-mv="' + i + '" checked><div class="grow"><span>' + esc(m.title || short(m.from)) + '</span><small>' + esc(short(m.from)) + ' → ' + esc(short(m.to)) + '</small><small>' + esc(m.reason) + '</small></div>' + see(m.from) + '</label>').join('') : '<p class="empty">根目录里没有放错地方的文档。</p>') +
-    '<label>把占位文件名换成标题 · ' + nr + '</label>' + (nr ? r.renames.map((m, i) => '<label class="row chk"><input type="checkbox" data-rn="' + i + '" checked><div class="grow"><span>' + esc(m.to) + '</span><small>' + esc(short(m.path)) + ' · ' + esc(m.reason) + '</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">没有「未命名」这类文件名。</p>') +
-    (r.ai ? '<label>补标签 · ' + nt + '（AI）</label>' + (nt ? r.tags.map((m, i) => '<label class="row chk"><input type="checkbox" data-tg="' + i + '" checked><div class="grow"><span>' + esc(m.title) + '</span><small>' + m.tags.map(t => '#' + esc(t) + ((m.new || []).includes(t) ? '（新）' : '')).join(' ') + '</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">没有要补标签的。</p>') +
-      '<label>更清楚的标题 · ' + nti + '（AI）</label>' + (nti ? r.titles.map((m, i) => '<label class="row chk"><input type="checkbox" data-ti="' + i + '"><div class="grow"><span>' + esc(m.to) + '</span><small>原来「' + esc(m.from) + '」 · 会改一级标题和文件名</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">标题都还清楚。</p>') : '') +
-    '<label>可能重复 · ' + nd + '</label>' + (nd ? r.dups.map(d => '<div class="row"><div class="grow"><span>' + esc(d.ta) + ' ↔ ' + esc(d.tb) + '</span><small>相似度 ' + d.sim + ' · 只提示，不自动合并</small></div><button class="btn" data-see="' + esc(d.a) + '">打开前一篇</button><button class="btn" data-see="' + esc(d.b) + '">后一篇</button></div>').join('') : '<p class="empty">没有发现很像的两篇。</p>') +
-    '<div class="acts"><button class="btn pri" id="org-go">执行</button>' + (r.ai ? '' : '<button class="btn" id="org-ai">让 AI 也看看：补标签、起标题</button>') + '<span id="org-msg"></span></div>';
-  const count = () => { const k = box.querySelectorAll('input[type=checkbox]:checked').length; $('org-go').textContent = '执行勾选的 ' + k + ' 项'; $('org-go').disabled = !k; };
-  count();
-  box.querySelectorAll('input[type=checkbox]').forEach(c => c.onchange = count);
-  box.querySelectorAll('[data-see]').forEach(b => b.onclick = e => { e.preventDefault(); const n = byPath.get(b.dataset.see); if (n){ closePanel(); openDoc(n); } });
-  if ($('org-ai')) $('org-ai').onclick = () => openOrganize(true);
-  $('org-go').onclick = async () => {
-    const pick = (attr, list) => [...box.querySelectorAll('input[' + attr + ']:checked')].map(c => list[+c.getAttribute(attr)]);
-    const mv = pick('data-mv', r.moves || []), rn = pick('data-rn', r.renames || []), tg = pick('data-tg', r.tags || []), ti = pick('data-ti', r.titles || []);
-    const msg = $('org-msg'); $('org-go').disabled = true; msg.className = ''; msg.textContent = '正在执行…';
-    if (editing) await flushSave();
-    const undo = [], fails = []; let relinked = 0, done = 0;
-    const src = async p => (await api('/doc?path=' + encP(p))).source || '';
-    const put = (p, md) => api('/doc?path=' + encP(p), {method:'PUT', body:md, headers:{'content-type':'text/markdown'}});
-    for (const m of tg){
-      try { const md = await src(m.path), next = addTags(md, m.tags); if (next !== md){ await put(m.path, next); undo.push({write:m.path, md}); done++; } }
-      catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
-    }
-    for (const m of ti){
-      try {
-        const md = await src(m.path); await put(m.path, setH1(md, m.to));
-        const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}});
-        undo.push({write:x.renamed ? x.path : m.path, md}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; }
-        done++;
-      } catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
-    }
-    for (const m of mv){
-      try { const x = await api('/doc/move', {method:'POST', json:{from:m.from, to:m.to}}); undo.push({from:m.to, to:m.from}); relinked += x.relinked || 0; done++; }
-      catch(e){ fails.push(short(m.from) + '：' + (e.message || e)); }
-    }
-    for (const m of rn){
-      try { const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; done++; } }
-      catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
-    }
-    lastOrganize = undo.reverse();
-    await refreshNow();
-    const touched = [...mv.map(m => m.to), ...tg.map(m => m.path)].map(p => byPath.get(p)).filter(Boolean);
-    if (touched.length){ lastRel = touched.map(n => ({n, norm:1})); paint(lastRel, {}); }
-    closePanel();
-    toastAct('整理了 <b>' + done + '</b> 项' + (relinked ? '，改好 ' + relinked + ' 处链接' : '') + (fails.length ? '；' + fails.length + ' 项没做成：' + esc(fails[0]) : ''), '撤销', undoOrganize, !!fails.length);
+  const tab = orgState.tab;
+  if (tab === 'stale'){
+    const ver = new Map((patrol.verified || []).map(v => [v.path, v]));
+    b.innerHTML = (r.stale || []).length ? '<p class="hint">按「可能被更新版取代 → 计划日期已过 → 事项放太久 → 很久没动但仍被引用」排。' + (r.stale_total > r.stale.length ? '共 ' + r.stale_total + ' 篇，先列前 ' + r.stale.length + ' 篇。' : '') + '</p>' + r.stale.map((x, i) => {
+      const v = ver.get(x.path);
+      return '<div class="row orow"><div class="grow"><span>' + esc(x.title) + ' <em class="kind k-' + x.kind + '">' + KIND[x.kind] + '</em>' + (v ? ' <em class="kind ' + (v.outdated ? 'k-ai' : 'k-ok') + '">AI：' + (v.outdated ? '确实过时' : '仍然成立') + '</em>' : '') + '</span><small>' + esc(x.reason) + (v && v.what ? ' · ' + esc(v.what) : '') + '</small><small>' + esc(short(x.path)) + ' · 最后改于 ' + esc(x.updated) + '</small></div>' +
+        '<div class="oacts">' + see(x.path) + (x.newer ? '<button class="btn" data-see="' + esc(x.newer) + '">新版</button>' : '') + '<button class="btn" data-st="' + i + '" data-do="refresh">更新</button><button class="btn" data-st="' + i + '" data-do="more">…</button></div></div>';
+    }).join('') : '<p class="empty">这个范围里没找到过时的迹象。</p>';
+    b.querySelectorAll('[data-do="refresh"]').forEach(x => x.onclick = () => refreshStale(r.stale[+x.dataset.st]));
+    b.querySelectorAll('[data-do="more"]').forEach(x => x.onclick = () => { const it = r.stale[+x.dataset.st]; openPop(x, [
+      {label:'标为待复核', run:() => markStale(it, 'review')},
+      ...(it.newer ? [{label:'注明「已有更新版」并链过去', run:() => markStale(it, 'superseded')}] : []),
+      {label:'移到归档', run:() => archiveDoc(it.path)},
+      {label:'没过时，以后别提醒', run:() => markStale(it, 'ok')}
+    ]); });
+  } else if (tab === 'fragments'){
+    b.innerHTML = (r.fragments || []).length ? '<p class="hint">短于 ' + 280 + ' 字的笔记（随手记、零散段落，不分新旧）按意思连成组；跨的时间越长排得越前——放得越久越容易被忘掉。' + (r.fragments_total > r.fragments.length ? '共 ' + r.fragments_total + ' 组。' : '') + '</p>' + r.fragments.map((g, i) => {
+      const months = Math.round(g.span_days / 30);
+      return '<div class="frag"><div class="fh"><b>' + esc(g.theme) + '</b><small>' + g.paths.length + ' 篇 · ' + esc(g.from) + (g.from !== g.to ? ' 到 ' + esc(g.to) : '') + (months >= 2 ? ' · 跨 ' + months + ' 个月' : '') + '</small><span class="oacts"><button class="btn" data-fg="' + i + '" data-do="look">在场上看</button><button class="btn pri" data-fg="' + i + '" data-do="merge">合成一篇</button></span></div>' +
+        '<ul>' + g.titles.map((t, k) => '<li><a href="#" data-see="' + esc(g.paths[k]) + '">' + esc(t) + '</a></li>').join('') + '</ul></div>';
+    }).join('') : '<p class="empty">没有成组的碎片。</p>';
+    b.querySelectorAll('[data-do="look"]').forEach(x => x.onclick = () => { const g = r.fragments[+x.dataset.fg], ns = g.paths.map(p => byPath.get(p)).filter(Boolean); closePanel(); lastRel = ns.map(n => ({n, norm:1})); paint(lastRel, {}); fit(ns); });
+    b.querySelectorAll('[data-do="merge"]').forEach(x => x.onclick = () => mergeForm(r.fragments[+x.dataset.fg]));
+  } else if (tab === 'moves' || tab === 'renames'){
+    const list = r[tab] || [];
+    b.innerHTML = list.length ? list.map((m, i) => '<label class="row chk"><input type="checkbox" data-i="' + i + '" checked><div class="grow"><span>' + esc(tab === 'moves' ? (m.title || short(m.from)) : m.to) + '</span><small>' + esc(tab === 'moves' ? short(m.from) + ' → ' + short(m.to) : short(m.path)) + '</small><small>' + esc(m.reason) + '</small></div>' + see(tab === 'moves' ? m.from : m.path) + '</label>').join('') + '<div class="acts"><button class="btn pri" id="og-go">执行勾选的</button></div>'
+      : '<p class="empty">' + (tab === 'moves' ? '根目录里没有放错地方的文档。' : '没有「未命名」这类文件名。') + '</p>';
+    if ($('og-go')) $('og-go').onclick = () => { const pick = [...b.querySelectorAll('input[data-i]:checked')].map(c => list[+c.dataset.i]); runOrganizeOps(tab === 'moves' ? {mv:pick} : {rn:pick}); };
+  } else if (tab === 'dups'){
+    b.innerHTML = (r.dups || []).length ? r.dups.map((d, i) => '<div class="row"><div class="grow"><span>' + esc(d.ta) + ' ↔ ' + esc(d.tb) + '</span><small>相似度 ' + d.sim + '</small></div><button class="btn" data-see="' + esc(d.a) + '">前一篇</button><button class="btn" data-see="' + esc(d.b) + '">后一篇</button><button class="btn" data-dm="' + i + '">合成一篇</button></div>').join('') : '<p class="empty">没有发现很像的两篇。</p>';
+    b.querySelectorAll('[data-dm]').forEach(x => x.onclick = () => { const d = r.dups[+x.dataset.dm]; mergeForm({theme:d.ta, paths:[d.a, d.b], titles:[d.ta, d.tb], folder:(d.a.match(/^(.*)\//) || [, 'Notes'])[1]}); });
+  } else if (tab === 'ai'){
+    const tg = patrol.tags || [], ti = patrol.titles || [];
+    b.innerHTML = (tg.length || ti.length) ? '<p class="hint">来自上次 AI 巡检（' + esc(patrol.scope || '') + '）。勾掉不要的再执行；可以撤销。</p>' +
+      (tg.length ? '<label>补标签 · ' + tg.length + '</label>' + tg.map((m, i) => '<label class="row chk"><input type="checkbox" data-tg="' + i + '" checked><div class="grow"><span>' + esc(m.title) + '</span><small>' + m.tags.map(t => '#' + esc(t) + ((m.new || []).includes(t) ? '（新）' : '')).join(' ') + '</small></div>' + see(m.path) + '</label>').join('') : '') +
+      (ti.length ? '<label>更清楚的标题 · ' + ti.length + '</label>' + ti.map((m, i) => '<label class="row chk"><input type="checkbox" data-ti="' + i + '"><div class="grow"><span>' + esc(m.to) + '</span><small>原来「' + esc(m.from) + '」· 会改一级标题和文件名</small></div>' + see(m.path) + '</label>').join('') : '') +
+      '<div class="acts"><button class="btn pri" id="og-go">执行勾选的</button></div>'
+      : '<p class="empty">还没有 AI 建议。用下面的「AI 巡检」把这个范围的文档交给模型看一遍：补标签、起标题、核实过时。</p>';
+    if ($('og-go')) $('og-go').onclick = () => runOrganizeOps({tg:[...b.querySelectorAll('input[data-tg]:checked')].map(c => tg[+c.dataset.tg]), ti:[...b.querySelectorAll('input[data-ti]:checked')].map(c => ti[+c.dataset.ti])});
+  }
+  b.querySelectorAll('[data-see]').forEach(x => x.onclick = e => { e.preventDefault(); const n = byPath.get(x.dataset.see); if (n){ closePanel(); openDoc(n); } });
+}
+/* 批量执行：沿用 F3/F4 的撤销清单 */
+async function runOrganizeOps({mv = [], rn = [], tg = [], ti = []}){
+  if (editing) await flushSave();
+  const undo = [], fails = []; let relinked = 0, done = 0;
+  const src = async p => (await api('/doc?path=' + encP(p))).source || '';
+  const put = (p, md) => api('/doc?path=' + encP(p), {method:'PUT', body:md, headers:{'content-type':'text/markdown'}});
+  toast('正在整理 ' + (mv.length + rn.length + tg.length + ti.length) + ' 项…');
+  for (const m of tg){ try { const md = await src(m.path), next = addTags(md, m.tags); if (next !== md){ await put(m.path, next); undo.push({write:m.path, md}); done++; } } catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); } }
+  for (const m of ti){ try { const md = await src(m.path); await put(m.path, setH1(md, m.to)); const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}}); undo.push({write:x.renamed ? x.path : m.path, md}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; } done++; } catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); } }
+  for (const m of mv){ try { const x = await api('/doc/move', {method:'POST', json:{from:m.from, to:m.to}}); undo.push({from:m.to, to:m.from}); relinked += x.relinked || 0; done++; } catch(e){ fails.push(short(m.from) + '：' + (e.message || e)); } }
+  for (const m of rn){ try { const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; done++; } } catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); } }
+  lastOrganize = undo.reverse();
+  await refreshNow();
+  closePanel();
+  toastAct('整理了 <b>' + done + '</b> 项' + (relinked ? '，改好 ' + relinked + ' 处链接' : '') + (fails.length ? '；' + fails.length + ' 项没做成：' + esc(fails[0]) : ''), '撤销', undoOrganize, !!fails.length);
+}
+/* 合成碎片 */
+function mergeForm(g){
+  const box = openPanel('合成一篇', '<p class="hint" style="margin-top:0">把这 ' + g.paths.length + ' 篇合成一篇：' + g.titles.slice(0, 6).map(esc).join('、') + (g.titles.length > 6 ? '…' : '') + '</p>' +
+    '<label for="mg-t">标题</label><input type="text" id="mg-t" value="' + esc(g.theme || '') + '">' +
+    '<label for="mg-f">放在</label><input type="text" id="mg-f" value="' + esc(g.folder || 'Notes') + '">' +
+    '<label>怎么合</label><select id="mg-m" class="sel"><option value="ai">让 AI 写成一篇有条理的（每句标出处）</option><option value="plain">原文按时间拼在一起</option></select>' +
+    '<label>原来的几篇</label><select id="mg-o" class="sel"><option value="keep">留着，末尾注明「已并入」</option><option value="archive">移到 Notes/归档/碎片/</option></select>' +
+    '<div class="acts"><button class="btn pri" id="mg-go">合成</button><span id="mg-msg"></span></div>');
+  $('panel').querySelector('.pbox').style.width = 'min(560px,100%)';
+  $('mg-go').onclick = async () => {
+    const m = $('mg-msg'); $('mg-go').disabled = true; m.className = ''; m.textContent = $('mg-m').value === 'ai' ? '正在请 AI 合成…' : '正在合成…';
+    try {
+      const r = await api('/field/merge', {method:'POST', json:{paths:g.paths, title:$('mg-t').value.trim(), folder:$('mg-f').value.trim(), mode:$('mg-m').value, originals:$('mg-o').value}});
+      await refreshNow(); closePanel();
+      const n = byPath.get(r.path); if (n){ flash(n); openDoc(n); }
+      toastAct('合成了 <b>' + esc(r.path.split('/').pop().replace(/\.md$/, '')) + '</b>' + (r.note ? '（' + esc(r.note) + '）' : ''), '撤销', () => applyUndo(r.undo));
+    } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); $('mg-go').disabled = false; }
   };
 }
+async function applyUndo(u){
+  let ok = 0, n = 0;
+  for (const m of u.moves || []){ n++; try { await api('/doc/move', {method:'POST', json:m}); ok++; } catch(e){} }
+  for (const x of u.restore || []){ n++; try { await api('/doc?path=' + encP(x.path), {method:'PUT', body:x.md, headers:{'content-type':'text/markdown'}}); ok++; } catch(e){} }
+  for (const p of u.delete || []){ n++; try { await api('/doc?path=' + encP(p), {method:'DELETE'}); ok++; } catch(e){} }
+  if (reading && !byPath.has(reading.p)) closeDoc();
+  await refreshNow(); toast(ok === n ? '已撤销' : '撤销了 ' + ok + ' / ' + n + ' 项', ok !== n);
+}
+/* 过时：标记 / 指向新版 / 归档 / 更新 */
+function setFm(md, key, val){
+  const fm = md.match(/^---\n([\s\S]*?)\n---\n?/), line = key + ': ' + val;
+  if (!fm) return '---\n' + line + '\n---\n' + md;
+  let body = fm[1]; const re = new RegExp('^' + key + ':.*$', 'm');
+  body = re.test(body) ? body.replace(re, line) : body + '\n' + line;
+  return '---\n' + body + '\n---\n' + md.slice(fm[0].length);
+}
+async function markStale(it, how){
+  try {
+    const md = (await api('/doc?path=' + encP(it.path))).source || '';
+    let next = md;
+    if (how === 'review') next = setFm(md, 'status', '待复核（' + todayStr() + '：' + it.reason.replace(/\n/g, ' ').slice(0, 60) + '）');
+    else if (how === 'ok') next = setFm(md, 'reviewed', todayStr());
+    else if (how === 'superseded'){
+      const stem = it.newer.split('/').pop().replace(/\.md$/, '');
+      next = setFm(md, 'superseded_by', '"[[' + stem + ']]"');
+      next = next.replace(/^(---\n[\s\S]*?\n---\n)?(\s*# .*\n)?/, (m0, a, b) => (a || '') + (b || '') + '\n> 这篇已有更新版：[[' + stem + ']]\n');
+    }
+    if (next === md){ toast('没有要改的'); return; }
+    await api('/doc?path=' + encP(it.path), {method:'PUT', body:next, headers:{'content-type':'text/markdown'}});
+    toastAct({review:'已标为待复核', ok:'记下了：这篇没过时', superseded:'已注明有更新版并链过去'}[how], '撤销', async () => { await api('/doc?path=' + encP(it.path), {method:'PUT', body:md, headers:{'content-type':'text/markdown'}}); toast('已撤销'); refreshSoon(); });
+    refreshSoon(); openOrganize();
+  } catch(e){ toast('<b>没改成</b>：' + esc(e.message || e), true); }
+}
+async function archiveDoc(path){
+  const to = 'Notes/归档/' + path.split('/').pop();
+  try { await api('/doc/move', {method:'POST', json:{from:path, to}}); await refreshNow(); toastAct('已移到归档', '撤销', async () => { await api('/doc/move', {method:'POST', json:{from:to, to:path}}); await refreshNow(); toast('已放回原处'); }); openOrganize(); }
+  catch(e){ toast('<b>没移成</b>：' + esc(e.message || e), true); }
+}
+async function refreshStale(it){
+  const box = openPanel('更新《' + it.title + '》', '<span class="thinking"><i></i><i></i><i></i> 正在参照' + (it.newer ? '《' + esc(it.newer_title || short(it.newer)) + '》' : '更新的同主题文档') + '起草更新稿</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(920px,100%)';
+  let r; try { r = await api('/field/refresh', {method:'POST', json:{path:it.path, newer:it.newer ? [it.newer] : []}}); }
+  catch(e){ box.innerHTML = '<p class="' + (e.status === 409 ? 'hint' : 'bad') + '">' + esc(e.message || e) + '</p><div class="acts"><button class="btn" id="rf-back">回到整理</button>' + (e.status === 409 ? '<button class="btn" id="rf-mark">标为待复核</button><button class="btn" id="rf-set">去设置模型</button>' : '') + '</div>'; $('rf-back').onclick = openOrganize; if ($('rf-mark')) $('rf-mark').onclick = () => markStale(it, 'review'); if ($('rf-set')) $('rf-set').onclick = openSettings; return; }
+  box.innerHTML = (r.changes ? '<label>改了什么</label><div class="changes">' + r.changes.split('\n').filter(Boolean).map(l => '<p>' + esc(l.replace(/^[-*\d.、\s]+/, '')) + '</p>').join('') + '</div>' : '') +
+    (r.sources && r.sources.length ? '<p class="hint">参照了：' + r.sources.map(p => esc(short(p))).join('、') + '</p>' : '') +
+    '<label>改动</label><div class="diff">' + lineDiff(r.before, r.markdown) + '</div>' +
+    '<div class="acts"><button class="btn pri" id="rf-ok">用这一版</button><button class="btn" id="rf-back">先不改</button></div>';
+  $('rf-back').onclick = openOrganize;
+  $('rf-ok').onclick = async () => {
+    try { await api('/doc?path=' + encP(it.path), {method:'PUT', body:setFm(r.markdown, 'reviewed', todayStr()), headers:{'content-type':'text/markdown'}}); closePanel(); refreshSoon(); const n = byPath.get(it.path); if (n) flash(n);
+      toastAct('已更新《' + esc(it.title) + '》', '撤销', async () => { await api('/doc?path=' + encP(it.path), {method:'PUT', body:r.before, headers:{'content-type':'text/markdown'}}); toast('已恢复原文'); refreshSoon(); }); }
+    catch(e){ toast('<b>没存上</b>：' + esc(e.message || e), true); }
+  };
+}
+/* 行级差异：最长公共子序列，删的划掉、加的标蓝；不变的长段折叠 */
+function lineDiff(a, b){
+  const A = String(a).split('\n'), B = String(b).split('\n');
+  if (A.length * B.length > 400000) return '<p class="hint">太长了，不逐行对比。</p>';
+  const n = A.length, m = B.length, L = Array.from({length:n + 1}, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0, same = [];
+  const flush = () => { if (same.length > 4){ out.push('<div class="ds">' + esc(same[0]) + '</div><div class="dfold">… ' + (same.length - 2) + ' 行没变 …</div><div class="ds">' + esc(same[same.length - 1]) + '</div>'); } else same.forEach(l => out.push('<div class="ds">' + esc(l) + '</div>')); same = []; };
+  while (i < n && j < m){
+    if (A[i] === B[j]){ same.push(A[i]); i++; j++; }
+    else { flush(); if (L[i + 1][j] >= L[i][j + 1]) out.push('<div class="dd">' + esc(A[i++]) + '</div>'); else out.push('<div class="da">' + esc(B[j++]) + '</div>'); }
+  }
+  flush(); while (i < n) out.push('<div class="dd">' + esc(A[i++]) + '</div>'); while (j < m) out.push('<div class="da">' + esc(B[j++]) + '</div>');
+  return out.join('');
+}
+/* AI 巡检：后台分批，带进度 */
+let patrolT = 0;
+async function renderPatrol(p){
+  const el = $('og-patrol'); if (!el) return;
+  clearTimeout(patrolT);
+  if (p.running){
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+    el.innerHTML = '<div class="pbar"><i style="width:' + pct + '%"></i></div><span>AI 巡检中（' + esc(p.scope) + '）：' + p.done + ' / ' + p.total + ' 批 · 已得到 ' + ((p.tags || []).length + (p.titles || []).length) + ' 条建议、核实 ' + (p.verified || []).length + ' 篇</span><button class="btn" id="pt-stop">停下</button>';
+    $('pt-stop').onclick = async () => { await api('/field/patrol', {method:'DELETE'}).catch(() => {}); toast('做完当前这一批就停'); };
+    patrolT = setTimeout(async () => { if (!$('og-patrol')) return; let q; try { q = await api('/field/patrol'); } catch(e){ return; } if (!q.running){ openOrganize(); return; } renderPatrol(q); }, 2000);
+    return;
+  }
+  let est = null; try { est = await api('/field/patrol', {method:'POST', json:{scope:scopeQuery(), dry:true}}); } catch(e){}
+  el.innerHTML = '<span>' + (p.finished ? '上次巡检：' + esc(p.scope) + '，' + new Date(p.finished * 1000).toLocaleString() + (p.error ? '（' + esc(p.error) + '）' : '') + '。' : '还没做过 AI 巡检。') + (est ? ' 这个范围有 ' + est.docs + ' 篇缺标签或标题太短、' + est.stale + ' 篇疑似过时，约 ' + est.calls + ' 次模型调用。' : '') + '</span>' +
+    (est && est.calls ? '<button class="btn pri" id="pt-go">AI 巡检这个范围</button>' : '');
+  if ($('pt-go')) $('pt-go').onclick = async () => {
+    try { await api('/field/patrol', {method:'POST', json:{scope:scopeQuery()}}); renderPatrol(await api('/field/patrol')); }
+    catch(e){ toast('<b>没开始</b>：' + esc(e.message || e), true); if (e.status === 409 && /设置/.test(e.message || '')) openSettings(); }
+  };
+}
+
 /* 撤销按执行的反序：先把文件挪回去，再写回原文 */
 async function undoOrganize(){
   const u = lastOrganize; if (!u || !u.length) return; lastOrganize = null;
@@ -2904,7 +3067,7 @@ loadField().then(() => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence();
-window.__field = {openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+window.__field = {mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>
