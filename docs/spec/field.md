@@ -1,6 +1,6 @@
 # 知识场（Field）
 
-> 状态：F0（内核）+ F1（独立新壳）已实现；2026-10-26 起知识场是默认界面，经典界面保留可切换
+> 状态：F0（内核）+ F1（独立新壳）+ F2（功能接回）已实现；0.11.0 起知识场是默认界面，经典界面保留可切换
 > 与 `os.md`（宪法）、`interaction.md`（交互契约）并列。经典壳的结构规则见 `content-workspace.md`；知识场是下一代默认壳的候选，F2 起替代它的信息结构部分。
 
 ## 0. 为什么要做
@@ -44,13 +44,15 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | 端点 | 用途 |
 |---|---|
 | `GET /field` | 新壳页面（`server/web/field.html`，tokens.css 内联） |
-| `GET /field/data[?rebuild=1]` | `{epoch, regions[{name,count}], docs[{p,t,k,d,ex,x,y,r}], edges[[i,j,w]]}`；按 `data_epoch` 缓存序列化好的 Bytes；坐标写 `.thirdc/field.json` |
+| `GET /field/data[?rebuild=1]` | `{epoch, regions[{name,count}], docs[{p,t,k,d,ex,x,y,r,m,g}], edges[[i,j,w]]}`；按 `data_epoch` 缓存序列化好的 Bytes；坐标写 `.thirdc/field.json` |
 | `GET /field/react?q=` | 全库相关分：场向量余弦 × 0.65 + FTS 排名 × 0.35 + 标题包含整句 0.3，按最大值归一，最多 400 条 |
 | `GET /field/react?near=路径` | 以一篇文档自己的向量显色（阅读时让近邻亮起） |
 | `POST /field/place {text}` | 一段文字该落在哪：前 3 近邻质心 + 区域 + 近邻 |
 | `POST /field/crystal {q, paths}` | 读来源原文，挑与问题最相关的 ≤3 段（≤900 字），无工具补全写出带 `[n]` 的答案；没配模型 / 模型失败时退化为每篇最相关的一句，并在 `note` 里说明 |
 | `POST /field/note {task, text, title}` | 划选后「解释给我听」「考考我」；没配模型返回 409 与可执行的提示 |
 | `GET/POST /field/ai`、`POST /field/ai/test` | 模型设置：读（不回明文密钥）/ 写 thirdc.toml 的 [ai]（toml_edit 原地改，保留注释；密钥留空表示不改）/ 测连通 |
+| `POST /field/agent {message, context}` | Agent：SSE 推送每一步工具调用（参数只留路径 / 查询等短字段）与最终回复 |
+| `GET /assets/reading-styles.js` | 62 款阅读风格（与经典壳同一份风格表的拷贝） |
 
 `/field/data` 还带 `links`（`[[目标]]` 与 `](Notes/…)` 解析出的真实链接，按 精确路径 → 补 .md → 文件名 → 标题 解析）与每篇的 `m`（修改时间）。
 
@@ -86,12 +88,12 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | 批次 | 内容 | 状态 |
 |---|---|---|
 | F2-1 文档基本功 | /新建；阅读页「⋯」重命名或移动（链接随之改写）、复制路径、导出 Markdown / Word / HTML / 打印 PDF、删除进回收站并可撤销；页头「目录」；底部「链出 / 链入」；场上写下的链接画实线、意思相近画点线；/最近、/回收站、/同步；粘贴网址收录、拖入文件导入、/采集 主题、/导入；/设置 模型（`GET/POST /field/ai` 只改 thirdc.toml 的 [ai]，`POST /field/ai/test` 测连通） | 已完成 2026-10-26 |
-| F2-2 写作与整理 | 魔法排版、自动命名、分栏编辑、阅读风格、附件上传、标签 | 待做 |
-| F2-3 发布与分享 | 发布目标、站点构建与部署、加密分享链接、整库 PPT / 展示 | 待做 |
-| F2-4 Agent | 「让它去做」：带工具的 Agent 对话，产物落成文档并在场上出现 | 待做 |
-| F2-5 系统 | 插件、设计规范、连接器、git 工作区、备份、协作在线、看板 / 视图 | 待做 |
+| F2-2 写作与整理 | 「⋯」魔法排版 / AI 排版（`POST /doc/tidy` → PUT，可撤销）；离开编辑时自动命名（`POST /doc/autoname`，跳转到新路径）；「⋯」分栏（编辑框 + 每次保存后的渲染）；「⋯」阅读风格（`/assets/reading-styles.js`，沙箱 iframe srcdoc，双链经 postMessage 回到壳，选择存 `localStorage.litmus_style`）；编辑时粘贴 / 拖入附件（`POST /asset`，正文里 `Assets/` 图片改走 `/asset-file`）；标签（`/field/data` 每篇带 `g`，`#标签` 意图、阅读页标签条、/标签） | 已完成 2026-10-27 |
+| F2-3 发布与分享 | 「⋯」发布为公开网页（`POST /publish`）；/发布：目标、构建（`/publish/site`）、部署（`/publish/deploy`）、已发布列表；/展示（`/presentation`）。加密分享链接仍在经典界面 | 已完成 2026-10-27 |
+| F2-4 Agent | 意图「办」（帮我 / 请你 / 替我 / ! 开头，或 /做）→ `POST /field/agent`（SSE：start / step{tool,args,ok,summary} / reply / done / error；配了模型走带工具循环，否则离线命令模式；写进会话记录）。步骤卡逐条显示；读写的文档点亮并连成轨迹，当前那篇画呼吸环，镜头跟随；搜索按查询淡显色；写出的文档刷新后以石蕊红出现；结束给出产物与找回按钮 | 已完成 2026-10-27 |
+| F2-5 系统 | /插件（安装、启停、删除；命令与视图进 / 指令；视图沙箱 + 与经典壳同一 postMessage 协议）、/设计、/连接、/存档（git）、/备份、/视图 描述、`/ws` 在线数 | 已完成 2026-10-27 |
 
-其他未做：结晶答案未做流式；区域名不能手动改；桌面原生菜单（打开最近、偏好设置）的命令仍发给经典壳；移动端未做原生手势。
+其他未做：结晶答案与 Agent 回复未做逐字流式（步骤是流式的）；多画布、批量整理、加密分享仍在经典界面；区域名不能手动改；桌面原生菜单（打开最近、偏好设置）的命令仍发给经典壳；移动端未做原生手势。
 
 ## 6. 风险
 

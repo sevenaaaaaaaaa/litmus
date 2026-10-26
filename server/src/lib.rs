@@ -195,6 +195,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/note", post(field::note))
         .route("/field/ai", get(field::ai_get).post(field::ai_put))
         .route("/field/ai/test", post(field::ai_test))
+        .route("/field/agent", post(field::agent))
+        .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {
             ([("content-type","text/html; charset=utf-8"),("cache-control","no-cache")], include_str!("../web/sticky.html"))
         }))

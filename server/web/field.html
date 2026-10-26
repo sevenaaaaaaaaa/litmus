@@ -302,6 +302,36 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 #drop.on{display:grid}
 #drop p{font:600 var(--fs-5)/1.4 var(--f-display);color:var(--litmus);text-align:center}
 #verb[data-v="收"]{background:var(--litmus);color:var(--paper)}
+#verb[data-v="办"]{background:var(--ink);color:var(--paper)}
+#verb[data-v="标"]{background:var(--litmus-wash);color:var(--litmus)}
+.agent{position:fixed;z-index:45;left:20px;top:calc(64px + env(safe-area-inset-top,0px));width:min(360px,calc(100vw - 40px));max-height:calc(100vh - 260px);display:flex;flex-direction:column;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);padding:14px 16px 12px}
+.agent .ah{display:flex;gap:10px;align-items:flex-start}
+.agent .ah b{flex:none;font:600 var(--fs-2)/1 var(--f-display);width:24px;height:24px;border-radius:var(--r-sm);display:grid;place-items:center;background:var(--ink);color:var(--paper)}
+.agent .at{flex:1;font:600 var(--fs-3)/1.5 var(--f-display);color:var(--ink)}
+.agent .x{border:0;background:none;color:var(--ink-2);cursor:pointer;font-size:var(--fs-4);width:24px;height:24px;border-radius:50%}
+.agent .steps{list-style:none;margin:10px 0 0;padding:0;overflow:auto;max-height:34vh;display:flex;flex-direction:column;gap:4px}
+.agent .steps li{display:flex;gap:8px;align-items:baseline;font:400 var(--fs-2)/1.5 var(--f-ui);color:var(--ink-2);animation:stepIn var(--dur-4) var(--ease-spring)}
+.agent .steps li i{flex:none;font:600 var(--fs-1)/1.6 var(--f-display);font-style:normal;color:var(--litmus);width:18px;text-align:center;border-radius:var(--r-sm);background:var(--litmus-wash)}
+.agent .steps li span{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.agent .steps li.bad i{color:var(--acid);background:none}
+.agent .ar{margin-top:10px;border-top:1px solid var(--rule);padding-top:10px;font:400 var(--fs-3)/1.7 var(--f-ui);color:var(--ink);overflow:auto;min-height:0}
+.agent .ar p{margin:0 0 8px}.agent .ar ul{margin:0 0 8px;padding-left:18px}
+.agent .ar a{color:var(--litmus)}
+.agent .ar code{font:400 var(--fs-2) var(--f-mono);background:var(--paper);padding:1px 4px;border-radius:var(--r-sm)}
+.agent .ar .bad,.agent .bad{color:var(--acid)}
+.agent .aa{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+.agent .aa small{font:400 var(--fs-1) var(--f-mono);color:var(--ink-2);margin-left:auto}
+@keyframes stepIn{from{opacity:0;transform:translateY(4px)}}
+.editw{display:grid;gap:20px}
+body.split #sheet{width:min(1180px,78vw)}
+body.split .editw{grid-template-columns:1fr 1fr}
+body.split.reading #intent{opacity:0;pointer-events:none}
+body.split #doc .inner{max-width:none}
+.pv{border-left:1px solid var(--rule);padding-left:20px;font:400 var(--fs-3)/1.8 var(--f-ui);overflow:auto;max-height:calc(100vh - 140px);position:sticky;top:0}
+.pv img,#doc .body img{max-width:100%}
+iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(--sheet)}
+.dtags{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}
+.dtags .chip{background:var(--paper);padding:3px 9px;font-size:var(--fs-1)}
 
 @media (max-width:720px){
   #sheet{width:100%;top:auto;height:86%;border-radius:var(--r-lg) var(--r-lg) 0 0;transform:translateY(104%)}
@@ -309,6 +339,9 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
   #doc{padding:22px 20px 80px}
   #brand span{display:none}
   .crystal{width:min(300px,calc(100vw - 48px))}
+  .agent{left:12px;right:12px;width:auto;top:calc(52px + env(safe-area-inset-top,0px))}
+  body.split .editw{grid-template-columns:1fr}
+  .pv{display:none}
   #sed .lbl{min-width:0}
   #sed .end{display:none}
   #lens .seg button{padding:6px 9px}
@@ -396,7 +429,9 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
       <div><kbd>问</kbd>问句或长句：显色，回车结晶出答案</div>
       <div><kbd>找</kbd>几个词：显色，回车打开最相关的一篇</div>
       <div><kbd>+</kbd>开头：记一笔，回车后它自己找位置</div>
-      <div><kbd>/</kbd>开头：指令，比如 /新建、/最近、/回收站、/设置</div>
+      <div><kbd>帮我</kbd>开头（或 !）：让 Agent 去做，它搜、读、写的每一步都画在场上</div>
+      <div><kbd>#</kbd>开头：带这个标签的文档全部亮起</div>
+      <div><kbd>/</kbd>开头：指令，比如 /新建、/发布、/插件、/存档、/设置</div>
       <div><kbd>网址</kbd>粘贴一个网址：回车收进库里</div>
       <div><kbd>拖入</kbd>把文件拖到窗口上：导入成文档</div>
     </div>
@@ -416,7 +451,11 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
         <tr><td>文件树、文件夹</td><td>场本身；阅读页顶部显示文件路径。需要逐个文件夹整理时用 /经典界面</td></tr>
         <tr><td>画布 / 时间线</td><td>右上角「意义 / 时间」两种排布</td></tr>
         <tr><td>⌘K 搜索、RAG</td><td>底部一行的「找 / 问」，结果直接画在场上</td></tr>
-        <tr><td>Agent 对话、魔法</td><td>「问」结晶答案；划选正文后「解释给我听 / 考考我」</td></tr>
+        <tr><td>Agent 对话</td><td>「帮我…」或 /做：带工具的 Agent，左上角是步骤，场上是它走过的路；写出的文档以石蕊红出现</td></tr>
+        <tr><td>魔法（问答、讲解）</td><td>「问」结晶答案；划选正文后「解释给我听 / 考考我」</td></tr>
+        <tr><td>魔法排版、自动命名</td><td>阅读页「⋯」→ 魔法排版 / AI 排版（可撤销）；编辑完回到阅读时按一级标题自动改名</td></tr>
+        <tr><td>分栏编辑、阅读风格</td><td>「⋯」→ 分栏：边写边看；「⋯」→ 阅读风格（62 款）</td></tr>
+        <tr><td>附件、标签</td><td>编辑时粘贴或拖入图片；#标签 或 /标签</td></tr>
         <tr><td>Memo 随手记</td><td>「+」开头记一笔，存进 Notes/Memos/，自动落位</td></tr>
         <tr><td>学习 / 展示</td><td>点开阅读；⇧ 点选几篇或答案卡「沿来源走一遍」</td></tr>
         <tr><td>新建、重命名、移动、删除</td><td>/新建；阅读页右上角「⋯」里的重命名或移动、删除（可撤销）</td></tr>
@@ -425,7 +464,11 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
         <tr><td>导出</td><td>阅读页「⋯」：Markdown、Word、HTML、打印成 PDF</td></tr>
         <tr><td>双链、目录</td><td>阅读页底部「链出 / 链入」；页头「目录」</td></tr>
         <tr><td>AI 模型</td><td>/设置：接口地址、模型、密钥，可测试连通</td></tr>
-        <tr><td>发布、插件、设计规范、看板</td><td>暂时留在经典界面（/经典界面）</td></tr>
+        <tr><td>发布、站点、部署</td><td>「⋯」→ 发布为公开网页；/发布 管目标、构建与部署；/展示 整库翻页</td></tr>
+        <tr><td>插件、设计规范、连接器</td><td>/插件（命令与视图会进 / 指令）、/设计、/连接</td></tr>
+        <tr><td>git 存档、备份</td><td>/存档、/备份</td></tr>
+        <tr><td>看板 / 视图</td><td>/视图 加一句描述</td></tr>
+        <tr><td>多画布、批量整理、加密分享</td><td>暂时留在经典界面（/经典界面）</td></tr>
       </tbody>
     </table></div>
 
@@ -437,6 +480,7 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
       <span><i style="width:16px;height:1.5px;border-radius:1px;background:var(--ink-2)"></i>写下的链接</span>
       <span><i style="width:16px;height:0;border-radius:0;background:none;border-top:1.5px dotted var(--ink-3)"></i>意思相近</span>
       <span><i style="background:var(--litmus)"></i>与此刻的意图相关</span><span><i style="background:var(--acid)"></i>刚记下，尚未沉淀</span>
+      <span><i style="width:16px;height:0;border-radius:0;background:none;border-top:1.6px dashed var(--litmus)"></i>Agent 走过的路</span>
     </div>
     <p class="lede" style="margin-top:28px"><button class="btn" id="help-classic">回到经典界面</button> <button class="btn" id="help-rebuild">整体重排一次</button></p>
   </div>
@@ -524,7 +568,7 @@ function shortLabel(t){
 }
 function setNode(n, d){
   n.full = d.t || n.p.split('/').pop();
-  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y; n.m = d.m || 0;
+  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y; n.m = d.m || 0; n.g = d.g || [];
   n.ts = Math.round((Date.parse(n.d) - T0) / DAY);
   n.el.dataset.k = n.k;
   n.el.querySelector('.t').textContent = n.title;
@@ -568,7 +612,7 @@ async function loadField(opts){
   nodes.forEach(n => { n.gx = layout === 'sem' ? n.sx : n.tx; n.gy = layout === 'sem' ? n.sy : n.ty; if (n.wx === undefined){ n.wx = n.gx; n.wy = n.gy; } });
   regions.forEach(R => { R.gx = layout === 'sem' ? R.sx : R.tx; R.gy = layout === 'sem' ? R.sy : R.ty; if (R.wx === undefined){ R.wx = R.gx; R.wy = R.gy; } });
   buildTicks();
-  $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇';
+  showVault();
   $('veil').hidden = nodes.length > 0;
   if (!nodes.length){ $('veil-p').innerHTML = '<b>这片纸还是空的</b>在下面写一句话，以 + 开头，回车后它就成为第一篇。'; $('veil').hidden = false; }
   field.classList.toggle('big', nodes.length > 1500);
@@ -577,7 +621,7 @@ async function loadField(opts){
   return fresh;
 }
 let vaultName = '';
-api('/status').then(s => { vaultName = s.vault || ''; $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇'; }).catch(() => {});
+api('/status').then(s => { vaultName = s.vault || ''; showVault(); }).catch(() => {});
 
 /* 区域 */
 const regionEls = [];
@@ -806,6 +850,7 @@ function frame(t){
   });
   if (crystal) placeCrystal();
   draw(dots);
+  if (agentRun && agentRun.live) busy = true;
   raf = busy ? requestAnimationFrame(frame) : 0;
 }
 /* 标签避让：库大了标题必然互相压住。按「此刻相关度 → 关联数」排先后，网格查重，压住别人的只留点。 */
@@ -898,6 +943,7 @@ function draw(dots){
     ctx.strokeStyle = 'oklch(' + C.ink + ' / .55)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
     ctx.beginPath(); tourState.list.forEach((n, i) => { i ? ctx.lineTo(n.scx, n.scy) : ctx.moveTo(n.scx, n.scy); }); ctx.stroke(); ctx.setLineDash([]);
   }
+  drawAgentTrail();
 }
 function curve(a, b, col, w){
   const x1 = a.scx, y1 = a.scy, x2 = b.scx, y2 = b.scy;
@@ -1020,6 +1066,7 @@ async function flushSave(){
       const r = await api('/doc?path=' + encodeURIComponent(path), {method:'PUT', body:text, headers:{'content-type':'text/markdown'}});
       if (docData && docData.path === path){ docData.source = text; if (r.html) docData.html = r.html; }
       setSave('saved');
+      if (split && docData && docData.path === path){ if (!r.html){ try { docData.html = (await api('/doc?path=' + encodeURIComponent(path))).html; } catch(_){} } updatePreview(docData.html); }
     } catch(e){ setSave('failed', e.message); clearTimeout(save.t); save.t = setTimeout(flushSave, 4000); }
     finally { save.inflight = null; if (save.again){ save.again = false; flushSave(); } }
   })();
@@ -1062,7 +1109,11 @@ function renderRead(d){
   const body = inner.querySelector('.body');
   const meta = inner.querySelector('.dmeta');
   meta.textContent = reading.d + ' · ' + ({doc:'文档', memo:'随手记', answer:'收下的答案', source:'采集原文', html:'HTML 文档'}[reading.k] || '文档') + ' · ' + (d.source || '').length.toLocaleString() + ' 字';
-  body.innerHTML = d.html ? bodyOf(d.html) : ('<pre>' + esc(d.source || '') + '</pre>');
+  const tg = reading.g || []; let tagEl = inner.querySelector('.dtags');
+  if (tg.length){ if (!tagEl){ tagEl = document.createElement('div'); tagEl.className = 'dtags chips'; meta.after(tagEl); } tagEl.innerHTML = tg.map(t => '<button class="chip" data-tag="' + esc(t) + '"><span>#' + esc(t) + '</span></button>').join(''); tagEl.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { q.value = '#' + b.dataset.tag; onInput(); const rel = showTag(b.dataset.tag); if (rel.length > 1) toast('#' + esc(b.dataset.tag) + ' · <b>' + rel.length + '</b> 篇亮起'); }); }
+  else if (tagEl) tagEl.remove();
+  if (styleId && d.html && d.format !== 'html'){ const me = reading; renderStyled(body, d).then(ok => { if (!ok && reading === me && !editing) { styleId = ''; renderRead(d); } }); return; }
+  body.innerHTML = d.html ? fixAssets(bodyOf(d.html)) : ('<pre>' + esc(d.source || '') + '</pre>');
   /* 正文第一个标题与页头重复时去掉 */
   const h = body.querySelector('h1'); if (h && h.textContent.trim() === reading.full.trim()) h.remove();
   body.querySelectorAll('a[href]').forEach(a => {
@@ -1099,13 +1150,20 @@ function toggleEdit(){
   if (!editing){
     editing = true; $('s-edit').textContent = '阅读';
     const body = $('doc').querySelector('.body');
-    body.innerHTML = '<textarea id="editor" spellcheck="false"></textarea>';
-    const ed = $('editor'); ed.value = docData.source || ''; ed.focus();
+    body.innerHTML = '<div class="editw"><textarea id="editor" spellcheck="false" placeholder="写点什么。图片可以直接粘贴或拖进来。"></textarea><div id="preview" class="pv"' + (split ? '' : ' hidden') + '></div></div>';
+    const ed = $('editor'); ed.value = docData.source || ''; ed.focus(); wireEditor(ed);
+    if (split) updatePreview(docData.html);
     const grow = () => { ed.style.height = 'auto'; ed.style.height = Math.max(ed.scrollHeight, innerHeight * .6) + 'px'; };
     ed.addEventListener('input', () => { grow(); scheduleSave(); }); grow();
     setSave('saved');
   } else {
-    flushSave().then(() => { if (save.state === 'failed') return; editing = false; $('s-edit').textContent = '编辑'; setSave('saved'); renderRead(docData); refreshSoon(); });
+    flushSave().then(async () => {
+      if (save.state === 'failed') return; editing = false; $('s-edit').textContent = '编辑'; setSave('saved');
+      if (split){ split = false; document.body.classList.remove('split'); }
+      const n0 = reading, n1 = await autoname(n0);
+      if (n1 !== n0 && n1){ openDoc(n1); return; }
+      renderRead(docData); refreshSoon();
+    });
   }
 }
 $('s-edit').onclick = toggleEdit;
@@ -1323,18 +1381,31 @@ const CMDS = [
   ['/同步', '把外部编辑器里的改动合进来', syncNow],
   ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
   ['/导入', '选择文件导入（也可以直接拖进窗口）', pickFiles],
+  ['/做', '让 Agent 去做一件事（/做 把本周随手记整理成周报）', () => { q.value = '帮我'; q.focus(); onInput(); }],
+  ['/标签', '所有标签；点一个让带它的文档亮起', openTags],
+  ['/发布', '发布目标、构建站点、部署，已发布的网页', openPublish],
+  ['/展示', '把整库做成一份可翻页的展示', presentAll],
+  ['/视图', '一句话生成表格或看板（/视图 按状态分组的任务）', () => makeView('')],
+  ['/插件', '安装、启用插件，打开插件视图', openPlugins],
+  ['/设计', '设计规范：发布网页和 Agent 产物的样子', openDesign],
+  ['/连接', '连接器：从外部工具采集数据', openConnections],
+  ['/存档', 'git 存档、同步与历史', openGit],
+  ['/备份', '加密备份的状态与立即备份', openBackup],
   ['/设置', '模型设置：接口地址、模型、密钥', openSettings],
   ['/重排', '整体重新计算一次布局', rebuild],
-  ['/经典界面', '回到原来的界面（发布、同步、设置都在那里）', goClassic],
+  ['/经典界面', '回到原来的界面（多画布、批量整理、加密分享在那里）', goClassic],
   ['/帮助', '用法与旧功能的位置', openHelp]
 ];
 let cmdSel = 0;
+const AGENT_RE = /^(!|！|帮我|请帮我|请你|替我|让它|给我|帮忙)\s*/;
 function intentOf(s){
   const t = s.trim();
   if (!t) return '找';
   if (/^[\/、]/.test(t)) return '令';
   if (/^https?:\/\/\S+$/i.test(t)) return '收';
   if (/^[+＋]/.test(t) || /^记[\s:：]/.test(t)) return '记';
+  if (AGENT_RE.test(t)) return '办';
+  if (/^#[^\s#]/.test(t)) return '标';
   if (/[?？]$/.test(t) || /^(为什么|为何|怎么|怎样|如何|什么|是否|能不能|可不可以|哪|谁|有没有|要不要|该不该|是不是)/.test(t) || /(吗|呢)$/.test(t) || t.length >= 14) return '问';
   return '找';
 }
@@ -1342,9 +1413,11 @@ let inputT = 0, softT = 0;
 function onInput(){
   const s = q.value, v = intentOf(s);
   $('verb').dataset.v = v; $('verb').textContent = v;
-  $('go-t').textContent = !s.trim() ? '显色' : {找:'打开', 问:'结晶答案', 记:'落进场里', 令:'执行', 收:'收进库里'}[v];
+  $('go-t').textContent = !s.trim() ? '显色' : {找:'打开', 问:'结晶答案', 记:'落进场里', 令:'执行', 收:'收进库里', 办:'让它去做', 标:'看这个标签'}[v];
   if (v === '收'){ hideCmds(); $('reading').innerHTML = '<span>回车：抓取这个网页，转成 Markdown 存进 Notes/Web/</span>'; hints(); return; }
   if (v === '令'){ showCmds(s.trim().slice(1)); $('reading').innerHTML = ''; hints(); return; }
+  if (v === '办'){ hideCmds(); $('reading').innerHTML = '<span>回车：Agent 会自己搜、读、写，每一步都画在场上' + (reading ? '（以正在读的这篇为上下文）' : '') + '</span>'; hints(); return; }
+  if (v === '标'){ hideCmds(); clearTimeout(inputT); inputT = setTimeout(() => { if (q.value === s) showTag(s.trim()); }, 110); hints(); return; }
   hideCmds(); clearTimeout(inputT);
   if (v === '记'){ previewMemo(s.replace(/^[+＋]|^记[\s:：]/, '').trim()); hints(); return; }
   inputT = setTimeout(async () => {
@@ -1392,12 +1465,14 @@ async function submit(){
   const s = q.value.trim(), v = intentOf(s);
   if (!s){ q.focus(); return; }
   if (v === '令'){
-    const m = s.match(/^[\/、](新建|采集)\s+(.+)$/);
-    if (m){ q.value = ''; onInput(); hideCmds(); if (m[1] === '新建') newDoc(m[2]); else collectTopic(m[2]); return; }
+    const m = s.match(/^[\/、](新建|采集|做|视图)\s+(.+)$/);
+    if (m){ q.value = ''; onInput(); hideCmds(); ({新建:newDoc, 采集:collectTopic, 做:runAgent, 视图:makeView})[m[1]](m[2]); return; }
     runCmd(($('cmds')._list || [])[cmdSel]); return;
   }
   if (v === '记'){ const body = s.replace(/^[+＋]|^记[\s:：]/, '').trim(); q.value = ''; onInput(); capture(body); return; }
   if (v === '收'){ q.value = ''; onInput(); collectUrl(s); return; }
+  if (v === '办'){ q.value = ''; onInput(); q.blur(); runAgent(s.replace(AGENT_RE, '').trim() || s); return; }
+  if (v === '标'){ const rel = showTag(s); if (rel.length) fit(rel.map(x => x.n)); else toast('没有文档带 ' + esc(s)); return; }
   if (v === '问'){ ask(s); hints(); return; }
   const rel = query === s && lastRel.length ? lastRel : await react(s);
   if (rel.length) openDoc(rel[0].n); else toast('没有找到，换个说法，或者用问句再试');
@@ -1493,6 +1568,11 @@ $('s-more').onclick = () => {
   openPop($('s-more'), [
     {label:'重命名或移动…', run:() => moveDoc(n)},
     {label:'复制文件路径', run:() => copyText(n.p)},
+    '-',
+    ...(isMd ? [{label:'魔法排版（只修格式）', run:() => tidyDoc(n, 'rule')}, {label:'AI 排版（不改文字）', run:() => tidyDoc(n, 'ai')}, {label:split ? '收起分栏' : '分栏：边写边看', run:() => { if (!editing) toggleEdit(); setSplit(!split); }}] : []),
+    {label:'阅读风格…', run:pickStyle},
+    '-',
+    {label:'发布为公开网页', run:() => publishDoc(n)},
     '-',
     ...(isMd ? [{label:'导出为 Markdown', run:() => exportDoc(n, 'md')}, {label:'导出为 Word（.docx）', run:() => exportDoc(n, 'docx')}] : []),
     {label:'导出为 HTML', run:() => exportDoc(n, 'html')},
@@ -1692,6 +1772,394 @@ async function openSettings(){
   };
 }
 
+
+/* ═══════════ F2-4 Agent：让它去做，过程画在场上 ═══════════ */
+const TOOL_VERB = {search_vault:'搜', search_semantic:'搜', read_doc:'读', write_doc:'写', delete_doc:'删', list_docs:'列', recall_memory:'忆', save_memory:'记', put_asset:'存', vault_status:'查', list_designs:'看', set_design:'设', import_design:'导', import_page_design:'导'};
+let agentRun = null; /* {el, ctl, trail:[node], cur:node, wrote:Set, deleted:[]} */
+function agentCard(text){
+  const el = document.createElement('div'); el.className = 'agent';
+  el.innerHTML = '<div class="ah"><b>办</b><span class="at"></span><button class="x" aria-label="收起">×</button></div>' +
+    '<ol class="steps"></ol><div class="ar"><span class="thinking"><i></i><i></i><i></i> 正在想先做什么</span></div><div class="aa"></div>';
+  el.querySelector('.at').textContent = text;
+  document.body.appendChild(el);
+  return el;
+}
+function endAgent(){
+  if (!agentRun) return;
+  if (agentRun.ctl) agentRun.ctl.abort();
+  agentRun.el.remove(); agentRun = null; kick();
+}
+async function runAgent(text){
+  endAgent(); dissolveCrystal(); hideCmds();
+  const el = agentCard(text);
+  const run = agentRun = {el, ctl:new AbortController(), trail:[], cur:null, wrote:new Set(), deleted:[], mode:'', live:true};
+  el.querySelector('.x').onclick = endAgent;
+  const steps = el.querySelector('.steps'), ar = el.querySelector('.ar'), aa = el.querySelector('.aa');
+  const onStep = async s => {
+    const verb = TOOL_VERB[s.tool] || '用';
+    const a = s.args || {}, known = a.path && byPath.get(a.path), target = known ? known.title : (a.path || a.query || a.q || a.title || a.name || '');
+    let sum = String(s.summary || s.tool), hm = sum.match(/^(\d+) hit/);
+    if (hm) sum = '找到 ' + hm[1] + ' 篇'; else if (/^written:/.test(sum)) sum = '已写入'; else if (known && s.tool === 'read_doc') sum = sum.replace(/^#\s*[^\n>]*/, '').replace(/\s+/g, ' ').trim();
+    const li = document.createElement('li'); li.className = s.ok ? '' : 'bad';
+    li.innerHTML = '<i>' + verb + '</i><span></span>'; li.querySelector('span').textContent = (target ? target + ' · ' : '') + sum.slice(0, 120);
+    if (a.path) li.title = a.path;
+    steps.appendChild(li); steps.scrollTop = steps.scrollHeight;
+    ar.innerHTML = '<span class="thinking"><i></i><i></i><i></i> 接着做</span>';
+    /* 画在场上：读/写/删 → 那一篇亮起并成为轨迹的一站；搜 → 搜到的那片淡淡显色 */
+    if (a.path){
+      if (s.tool === 'write_doc'){ run.wrote.add(a.path); await refreshNow(); const n = byPath.get(a.path); if (n){ n.el.classList.add('fresh'); setTimeout(() => n.el.classList.remove('fresh'), 2600); li.querySelector('span').textContent = n.title + ' · ' + sum; } }
+      if (s.tool === 'delete_doc') run.deleted.push(a.path);
+      const n = byPath.get(a.path);
+      if (n){ run.trail.push(n); run.cur = n; n.tgt = 1; n.delay = 0; n.el.classList.add('hot');
+        const inView = m => m.scx > (vw < 720 ? 20 : 400) && m.scx < vw - sheetW() - 60 && m.scy > 70 && m.scy < vh - 190;
+        if (!run.trail.slice(-3).every(inView) && !reading){ const [x0, y0, x1, y1] = bounds(run.trail.slice(-3)); focusOn((x0 + x1) / 2, (y0 + y1) / 2, Math.max(.6, Math.min(cam.ts, 1)), vw < 720 ? vw / 2 : (vw + 380) / 2, vh * .45); } }
+    } else if ((s.tool === 'search_vault' || s.tool === 'search_semantic') && (a.query || a.q)){
+      try { const r = await fetchScores(a.query || a.q); if (agentRun === run){ paint(r.hits.filter(x => x.norm > .3).slice(0, 12), {scale:.6, soft:true, keep:true}); } } catch(e){}
+    }
+    kick();
+  };
+  try {
+    const res = await fetch(BASE + '/field/agent', {method:'POST', signal:run.ctl.signal, cache:'no-store',
+      headers:{authorization:'Bearer ' + token, 'content-type':'application/json'},
+      body:JSON.stringify({message:text, context:reading ? reading.p : ''})});
+    if (!res.ok){ const t = await res.text(); let m = t; try { m = JSON.parse(t).error || t; } catch(e){} throw new Error(m); }
+    const rd = res.body.getReader(), dec = new TextDecoder(); let buf = '';
+    for (;;){
+      const {value, done} = await rd.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0){
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        const evn = (chunk.match(/^event: ?(.*)$/m) || [])[1], dat = chunk.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n');
+        let d = {}; try { d = JSON.parse(dat || '{}'); } catch(e){}
+        if (agentRun !== run) return;
+        if (evn === 'start'){ run.mode = d.mode; if (d.mode !== 'ai') ar.innerHTML = '<span>没配模型，用的是离线命令模式：只听得懂「搜索 X」「列出文档」这类简单指令。</span>'; }
+        else if (evn === 'step') await onStep(d);
+        else if (evn === 'reply'){ ar.innerHTML = '<div class="reply">' + renderReply(d.text || '') + '</div>'; }
+        else if (evn === 'error'){ run.live = false; ar.innerHTML = '<p class="bad">' + esc(d.message || '出错了') + '</p>'; }
+        else if (evn === 'done'){
+          run.live = false; kick();
+          const acts = [];
+          [...run.wrote].forEach(p => { if (byPath.has(p)) acts.push('<button class="chip" data-open="' + esc(p) + '"><b>写</b><span>' + esc(byPath.get(p).title) + '</span></button>'); });
+          run.deleted.forEach(p => acts.push('<button class="chip" data-restore="' + esc(p) + '"><b>删</b><span>找回 ' + esc(p.split('/').pop()) + '</span></button>'));
+          if (run.mode !== 'ai') acts.push('<button class="chip" data-set="1"><b>设</b><span>配上模型</span></button>');
+          aa.innerHTML = acts.join('') + '<small>' + (run.trail.length ? '经过 ' + run.trail.length + ' 篇 · ' : '') + ((d.ms || 0) / 1000).toFixed(1) + ' 秒' + (d.tokens ? ' · ' + d.tokens + ' tokens' : '') + '</small>';
+          aa.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openDoc(byPath.get(b.dataset.open)));
+          aa.querySelectorAll('[data-restore]').forEach(b => b.onclick = async () => { try { await api('/trash/restore', {method:'POST', json:{path:b.dataset.restore}}); await refreshNow(); b.remove(); toast('已找回'); } catch(e){ toast('<b>没找回来</b>：' + esc(e.message || e) + '，可以去 /回收站 看看', true); } });
+          aa.querySelectorAll('[data-set]').forEach(b => b.onclick = openSettings);
+          refreshSoon();
+        }
+      }
+    }
+  } catch(e){
+    run.live = false;
+    if (e.name === 'AbortError') return;
+    if (agentRun === run) ar.innerHTML = '<p class="bad">' + esc(e.message || String(e)) + '</p>';
+  }
+}
+function renderReply(t){
+  /* 去掉经典壳专用的来源卡片（a2ui 代码块），其余按段落与列表排 */
+  t = t.replace(/```a2ui[\s\S]*?```/g, '').trim();
+  return t.split(/\n\s*\n/).map(b => {
+    const lines = b.split('\n');
+    if (lines.every(l => /^\s*([-*•]|\d+[.、)])\s*/.test(l))) return '<ul>' + lines.map(l => '<li>' + linkify(l.replace(/^\s*([-*•]|\d+[.、)])\s*/, '')) + '</li>').join('') + '</ul>';
+    return '<p>' + lines.map(linkify).join('<br>') + '</p>';
+  }).join('');
+}
+function linkify(s){
+  return esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/(Notes\/[^\s，。、；：）)」』]+?\.(?:md|html?))/g, m => byPath.has(m) ? '<a href="#" data-open="' + m + '">' + esc(byPath.get(m).title) + '</a>' : m);
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('.agent a[data-open]'); if (!a) return;
+  e.preventDefault(); openDoc(byPath.get(a.dataset.open));
+});
+
+/* ═══════════ F2-2 写作与整理 ═══════════ */
+/* 魔法排版：只动格式不动字；改完可撤销 */
+async function tidyDoc(n, mode){
+  if (!docData || docData.path !== n.p){ toast('先打开这篇'); return; }
+  if (editing) await flushSave();
+  const before = docData.source || '';
+  toast(mode === 'ai' ? 'AI 正在排版（只动格式，不改文字）…' : '正在排版…');
+  try {
+    const r = await api('/doc/tidy', {method:'POST', json:{markdown:before, mode}});
+    if (!r.changed){ toast('格式已经很清爽，没有要修的地方'); return; }
+    await api('/doc?path=' + encP(n.p), {method:'PUT', body:r.markdown, headers:{'content-type':'text/markdown'}});
+    const d = await api('/doc?path=' + encP(n.p)); if (reading === n){ docData = d; if (editing){ $('editor').value = d.source; } else renderRead(d); }
+    toastAct((mode === 'ai' ? 'AI 排版完成' : r.total ? '修了 <b>' + r.total + '</b> 处格式问题' : '排版好了') + (r.warning ? '：' + esc(r.warning) : ''), '撤销', async () => {
+      await api('/doc?path=' + encP(n.p), {method:'PUT', body:before, headers:{'content-type':'text/markdown'}});
+      const d2 = await api('/doc?path=' + encP(n.p)); if (reading === n){ docData = d2; if (editing) $('editor').value = d2.source; else renderRead(d2); }
+      toast('已恢复排版前的样子');
+    });
+  } catch(e){ toast('<b>排版失败</b>：' + esc(e.message || e), true); }
+}
+/* 自动命名：一级标题就是文件名（离开编辑时做一次） */
+async function autoname(n){
+  if (!/\.md$/i.test(n.p)) return n;
+  try {
+    const r = await api('/doc/autoname', {method:'POST', json:{path:n.p}});
+    if (!r.renamed) return n;
+    await refreshNow();
+    const m = byPath.get(r.path);
+    toast('按' + (r.source === 'h1' ? '一级标题' : r.source === 'ai' ? 'AI 起的名字' : '首句') + '改名为「<b>' + esc(r.path.split('/').pop().replace(/\.md$/i, '')) + '</b>」' + (r.relinked ? '，并更新了 ' + r.relinked + ' 篇里的链接' : ''));
+    return m || n;
+  } catch(e){ return n; }
+}
+/* 分栏：左边写，右边看（预览来自每次保存后内核渲染的结果） */
+let split = false;
+function setSplit(on){
+  split = on; document.body.classList.toggle('split', on);
+  const pv = $('preview'); if (pv) pv.hidden = !on;
+  if (on && docData) updatePreview(docData.html);
+  toast(on ? '分栏：左边写，右边看（每次保存后刷新）' : '收起分栏');
+  kick();
+}
+function updatePreview(html){ const pv = $('preview'); if (pv && split) pv.innerHTML = html ? fixAssets(bodyOf(html)) : ''; }
+/* 附件：编辑时粘贴图片或拖文件进编辑框，存进 Assets/ 并插入引用 */
+async function uploadInto(ed, file){
+  const at = ed.selectionStart ?? ed.value.length;
+  toast('正在存附件 <b>' + esc(file.name || '图片') + '</b>…');
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const name = file.name || ('paste.' + ((file.type || 'image/png').split('/')[1] || 'png'));
+    const r = await api('/asset?name=' + encodeURIComponent(name), {method:'POST', body:buf, headers:{'content-type':'application/octet-stream'}});
+    const md = (r.markdown || ('![](' + r.path + ')')) + '\n';
+    ed.value = ed.value.slice(0, at) + md + ed.value.slice(ed.selectionEnd ?? at);
+    ed.dispatchEvent(new Event('input')); toast('已插入附件 <b>' + esc(r.path) + '</b>');
+  } catch(e){ toast('<b>附件没存上</b>：' + esc(e.message || e), true); }
+}
+function wireEditor(ed){
+  ed.addEventListener('paste', e => { const f = [...(e.clipboardData ? e.clipboardData.files : [])][0]; if (f){ e.preventDefault(); uploadInto(ed, f); } });
+  ed.addEventListener('dragover', e => { e.stopPropagation(); e.preventDefault(); });
+  ed.addEventListener('drop', e => { const fs = [...(e.dataTransfer ? e.dataTransfer.files : [])]; if (!fs.length) return; e.preventDefault(); e.stopPropagation(); dragDepth = 0; $('drop').classList.remove('on'); fs.forEach(f => uploadInto(ed, f)); });
+}
+/* 正文里的库内图片：相对路径改走带令牌的附件接口 */
+function fixAssets(html){ return html.replace(/(<img\b[^>]*?\ssrc=")(Assets\/[^"]+)"/g, (_, a, p) => a + BASE + '/asset-file?path=' + encodeURIComponent(p) + '&token=' + encodeURIComponent(token) + '"'); }
+/* 阅读风格：62 款，选了以后正文在沙箱 iframe 里排版 */
+let styleId = ''; try { styleId = localStorage.getItem('litmus_style') || ''; } catch(e){}
+let stylesLoaded = null;
+function loadStyles(){
+  if (window.LITMUS_STYLES) return Promise.resolve(window.LITMUS_STYLES);
+  if (stylesLoaded) return stylesLoaded;
+  stylesLoaded = new Promise((ok, no) => { const s = document.createElement('script'); s.src = BASE + '/assets/reading-styles.js'; s.onload = () => ok(window.LITMUS_STYLES); s.onerror = () => no(new Error('风格表没加载出来')); document.head.appendChild(s); });
+  return stylesLoaded;
+}
+async function pickStyle(){
+  let S; try { S = await loadStyles(); } catch(e){ toast('<b>' + esc(e.message) + '</b>', true); return; }
+  openPop($('s-more'), [{label:(styleId ? '' : '✓ ') + '默认（跟随知识场）', run:() => setStyle('')}].concat(S.STYLES.map(p => ({label:(p[0] === styleId ? '✓ ' : '') + p[1], run:() => setStyle(p[0])}))));
+}
+function setStyle(id){ styleId = id; try { localStorage.setItem('litmus_style', id); } catch(e){} if (docData && !editing) renderRead(docData); toast(id ? '阅读风格：<b>' + esc((window.LITMUS_STYLES.STYLES.find(p => p[0] === id) || [, ''])[1]) + '</b>（划选动词在默认风格下可用）' : '回到默认阅读风格'); }
+const WIKI_BRIDGE = '<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a.wikilink");if(a){e.preventDefault();parent.postMessage({type:"litmus-wiki",target:a.getAttribute("data-wiki")},"*")}})<\/script>';
+async function renderStyled(body, d){
+  let S; try { S = await loadStyles(); } catch(e){ return false; }
+  const p = S.STYLES.find(x => x[0] === styleId); if (!p) return false;
+  const css = '<style>' + S.styleCss(p) + 'body{max-width:68ch;margin:0 auto;padding:8px 4px 40px}img{max-width:100%}</style>';
+  let html = fixAssets(d.html || '');
+  try { const dd = new DOMParser().parseFromString(html, 'text/html'), h = dd.querySelector('h1'); if (h && reading && h.textContent.trim() === reading.full.trim()){ h.remove(); html = '<!doctype html>' + dd.documentElement.outerHTML; } } catch(e){}
+  html = html.includes('</head>') ? html.replace('</head>', css + '</head>') : css + html;
+  html = html.includes('</body>') ? html.replace('</body>', WIKI_BRIDGE + '</body>') : html + WIKI_BRIDGE;
+  body.innerHTML = '<iframe class="styled" sandbox="allow-scripts allow-popups" title="阅读"></iframe>';
+  const f = body.querySelector('iframe'); f.srcdoc = html;
+  f.onload = () => { try { f.style.height = Math.max(400, f.contentDocument ? f.contentDocument.documentElement.scrollHeight + 20 : 900) + 'px'; } catch(e){ f.style.height = '75vh'; } };
+  return true;
+}
+addEventListener('message', e => { const d = e.data || {}; if (d.type === 'litmus-wiki'){ const t = resolveWiki(d.target); if (t) openDoc(t); else toast('库里还没有「' + esc(d.target) + '」这篇'); } });
+/* 标签：#标签 让带这个标签的文档全部显色 */
+function allTags(){ const m = new Map(); nodes.forEach(n => (n.g || []).forEach(t => m.set(t, (m.get(t) || 0) + 1))); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
+function showTag(tag){
+  tag = tag.replace(/^#/, '').trim(); if (!tag) return [];
+  const hit = nodes.filter(n => n.born && (n.g || []).some(t => t === tag || t.startsWith(tag + '/')));
+  query = '#' + tag; lastRel = hit.map(n => ({n, norm:1}));
+  paint(lastRel, {}); $('reading').innerHTML = hit.length ? '<span>标签 #' + esc(tag) + ' · ' + hit.length + ' 篇</span>' : '<span>没有文档带 #' + esc(tag) + '</span>';
+  return lastRel;
+}
+function openTags(){
+  const ts = allTags();
+  const box = openPanel('标签', ts.length ? '<div class="chips">' + ts.map(([t, c]) => '<button class="chip" data-tag="' + esc(t) + '"><b>' + c + '</b><span>#' + esc(t) + '</span></button>').join('') + '</div><p class="hint">点一个标签，带它的文档会在场上亮起。也可以直接在底部输入 #标签。</p>' : '<p class="empty">还没有标签。在正文里写 #标签，或在开头的 frontmatter 写 tags: [标签]。</p>');
+  box.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { closePanel(); q.value = '#' + b.dataset.tag; onInput(); const rel = showTag(b.dataset.tag); if (rel.length) fit(rel.map(x => x.n)); });
+}
+
+/* ═══════════ F2-3 发布与分享 ═══════════ */
+const isLoopback = () => /^(127\.|localhost$|\[?::1\]?$|0\.0\.0\.0$)/.test(location.hostname);
+async function publishDoc(n){
+  if (editing) await flushSave();
+  const box = openPanel('发布为公开网页', '<span class="thinking"><i></i><i></i><i></i> 正在生成 AI-HTML 网页</span>');
+  try {
+    const r = await api('/publish', {method:'POST', json:{path:n.p}});
+    const url = r.public_url || (location.origin + BASE + r.url);
+    box.innerHTML = '<label>网页地址</label><input type="text" id="pub-url" readonly value="' + esc(url) + '">' +
+      (r.public_url ? '<p class="hint">已经推到公开地址，发给别人就能打开。</p>' : r.hint ? '<p class="hint">' + esc(r.hint) + '</p>' : isLoopback() ? '<p class="hint">这是本机地址，别人打不开。在 /发布 里配一个发布目标（Git Pages、S3、Cloudflare Pages），再「部署」就有公开地址。</p>' : '<p class="hint">鹿蕊跑在你的服务器上，这个地址可以直接发给别人。</p>') +
+      '<div class="acts"><button class="btn pri" id="pub-copy">复制地址</button><a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">打开看看</a></div>';
+    $('pub-copy').onclick = () => copyText(url);
+  } catch(e){ box.innerHTML = '<p class="bad">发布失败：' + esc(e.message || e) + '</p>'; }
+}
+async function openPublish(){
+  const box = openPanel('发布', '<span class="thinking"><i></i><i></i><i></i> 正在读取发布目标</span>');
+  let d, l; try { [d, l] = await Promise.all([api('/publish/targets'), api('/publish').catch(() => ({items:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const kind = {local:'本地', git:'Git Pages', s3:'S3 兼容', 'cf-pages':'Cloudflare Pages'};
+  box.innerHTML = '<label>发布目标</label>' + ((d.targets || []).length ? d.targets.map(t => '<div class="row"><div class="grow"><span>' + esc(t.name) + (t.is_default ? ' · 默认' : '') + '</span><small>' + esc(kind[t.kind] || t.kind) + (t.dir ? ' · ' + esc(t.dir) : '') + '</small></div><button class="btn" data-build="' + esc(t.name) + '">构建站点</button><button class="btn pri" data-deploy="' + esc(t.name) + '">部署</button></div>').join('') : '<p class="empty">还没有发布目标。在 thirdc.toml 里加 [[publish.targets]]，见 docs/spec/publish-targets.md。</p>') +
+    '<p class="hint">站点目录 ' + esc(d.site_dir || '') + (d.base_url ? ' · 公开地址 ' + esc(d.base_url) : '') + '</p><p id="pub-msg"></p>' +
+    '<label>已发布的单篇网页</label>' + ((l.items || []).length ? l.items.slice(0, 30).map(i => '<div class="row"><div class="grow"><span>' + esc(i.url) + '</span><small>' + ((i.bytes || 0) / 1024).toFixed(1) + ' KB</small></div><a class="btn" href="' + esc(i.url.startsWith('http') ? i.url : BASE + i.url) + '" target="_blank" rel="noopener">打开</a></div>').join('') : '<p class="empty">还没有。阅读页「⋯」→「发布为公开网页」。</p>');
+  const msg = $('pub-msg');
+  box.querySelectorAll('[data-build]').forEach(b => b.onclick = async () => { b.disabled = true; msg.className = ''; msg.textContent = '正在构建…'; try { const r = await api('/publish/site', {method:'POST', json:{target:b.dataset.build}}); msg.className = 'ok'; msg.textContent = '站点已构建：' + r.files + ' 个文件 → ' + r.site_dir; } catch(e){ msg.className = 'bad'; msg.textContent = '构建失败：' + (e.message || e); } b.disabled = false; });
+  box.querySelectorAll('[data-deploy]').forEach(b => b.onclick = async () => { b.disabled = true; msg.className = ''; msg.textContent = '正在部署…'; try { const r = await api('/publish/deploy', {method:'POST', json:{target:b.dataset.deploy}}); msg.className = 'ok'; msg.textContent = '已部署到 ' + r.target + '：上传 ' + r.uploaded + '，跳过 ' + r.skipped + (r.url ? ' · ' + r.url : ''); } catch(e){ msg.className = 'bad'; msg.textContent = '部署失败：' + (e.message || e); } b.disabled = false; });
+}
+function presentAll(){
+  const url = location.origin + BASE + '/presentation?token=' + encodeURIComponent(token);
+  const w = window.open(url, '_blank');
+  if (!w){ openPanel('整库展示', '<p>浏览器拦截了新窗口。复制下面的地址在新标签里打开：</p><input type="text" readonly value="' + esc(url) + '">'); }
+}
+
+/* ═══════════ F2-5 系统：插件、设计规范、连接器、存档、备份、视图、在线 ═══════════ */
+let plugins = [];
+async function loadPlugins(){
+  try { plugins = (await api('/plugins')).plugins || []; } catch(e){ plugins = []; }
+  /* 启用插件的命令进 / 指令表 */
+  for (let i = CMDS.length - 1; i >= 0; i--) if (CMDS[i].plug) CMDS.splice(i, 1);
+  plugins.filter(p => p.enabled).forEach(p => {
+    (p.commands || []).forEach(c => { const e = ['/' + (c.title || c.id), p.name + ' 的命令', () => runPluginCommand(p, c)]; e.plug = 1; CMDS.push(e); });
+    (p.views || []).forEach(v => { const e = ['/' + (v.title || v.id), '打开 ' + p.name + ' 的视图', () => openPluginView(p, v)]; e.plug = 1; CMDS.push(e); });
+  });
+}
+async function openPlugins(){
+  await loadPlugins();
+  const box = openPanel('插件', (plugins.length ? plugins.map(p => '<div class="row"><div class="grow"><span>' + esc(p.name) + ' <small>v' + esc(p.version || '') + '</small></span><small>' + esc(p.description || '') + ((p.views || []).length ? ' · 视图 ' + p.views.length : '') + ((p.commands || []).length ? ' · 命令 ' + p.commands.length : '') + '</small></div>' +
+    ((p.views || []).map((v, i) => p.enabled ? '<button class="btn" data-view="' + esc(p.id) + ':' + i + '">' + esc(v.title || '视图') + '</button>' : '').join('')) +
+    '<button class="btn" data-toggle="' + esc(p.id) + '">' + (p.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(p.id) + '">删除</button></div>').join('')
+    : '<p class="empty">还没有插件。</p>') +
+    '<label for="pl-url">从 GitHub 安装</label><input type="text" id="pl-url" placeholder="https://github.com/作者/仓库"><p class="hint">仓库根或一层子目录里有 manifest.json 就行，一个仓库可以带多个插件。启用后，插件的命令和视图会出现在 / 指令里。</p><div class="acts"><button class="btn pri" id="pl-go">安装</button><span id="pl-msg"></span></div>');
+  box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
+  box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; }
+    await api('/plugins/remove', {method:'POST', json:{name:b.dataset.del}}).catch(e => toast(esc(e.message), true)); openPlugins();
+  });
+  $('pl-go').onclick = async () => { const url = $('pl-url').value.trim(); if (!url) return; const m = $('pl-msg'); m.className = ''; m.textContent = '正在安装…'; try { const r = await api('/plugins/install', {method:'POST', json:{url}}); m.className = 'ok'; m.textContent = '装好了：' + (r.installed || []).join('、'); setTimeout(openPlugins, 600); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+}
+async function runPluginCommand(p, c){
+  if (c.type === 'open-url'){ window.open(c.payload, '_blank'); return; }
+  if (c.type === 'insert-snippet'){
+    if (!reading){ toast('先打开一篇文档'); return; }
+    if (!editing) toggleEdit();
+    const ed = $('editor'); if (!ed) return; const at = ed.selectionStart ?? ed.value.length;
+    ed.value = ed.value.slice(0, at) + (c.payload || '') + '\n' + ed.value.slice(at); ed.dispatchEvent(new Event('input'));
+    toast('已插入「' + esc(c.title || '片段') + '」'); return;
+  }
+  toast('这个插件命令的类型（' + esc(c.type || '?') + '）知识场还不支持，可以在 /经典界面 里用', true);
+}
+/* 插件视图：沙箱 iframe + postMessage，权限按 manifest 逐项校验（与经典壳同一协议） */
+let plugCtx = null;
+function openPluginView(p, v){
+  plugCtx = {id:p.id, perms:new Set(v.permissions || [])};
+  const box = openPanel(p.name + ' · ' + (v.title || '视图'), '<iframe id="plug-frame" sandbox="allow-scripts allow-forms" style="width:100%;height:60vh;border:0;border-radius:var(--r-md);background:var(--paper)"></iframe>');
+  box.querySelector('iframe').src = BASE + '/plugins/view/' + encodeURIComponent(p.id) + '/' + encodeURIComponent(v.entry || 'view.html') + '?token=' + encodeURIComponent(token);
+  $('panel').querySelector('.pbox').style.width = 'min(860px,100%)';
+}
+addEventListener('message', e => {
+  const d = e.data || {}; if (d.source !== 'thirdc-plugin') return;
+  const fr = $('plug-frame'); if (!plugCtx || !fr || e.source !== fr.contentWindow) return;
+  const reply = (ok, result, error) => { try { e.source.postMessage({source:'thirdc-host', id:d.id, ok, result, error}, '*'); } catch(_){} };
+  const need = perm => { if (!plugCtx.perms.has(perm)){ reply(false, null, '无权限：' + d.call + '（manifest 需声明 ' + perm + '）'); return false; } return true; };
+  (async () => {
+    switch (d.call){
+      case 'getDocument': if (!need('doc:read')) return; if (!reading || !docData) return reply(false, null, '当前没有打开的文档');
+        return reply(true, {path:reading.p, title:reading.full, markdown:editing ? $('editor').value : docData.source});
+      case 'insertText': { if (!need('editor:insert')) return; if (!reading) return reply(false, null, '当前没有打开的文档');
+        if (!editing) toggleEdit(); const ed = $('editor'); const at = ed.selectionStart ?? ed.value.length; ed.value = ed.value.slice(0, at) + (d.args.text || '') + ed.value.slice(ed.selectionEnd ?? at); ed.dispatchEvent(new Event('input')); return reply(true, {at}); }
+      case 'saveDocument': { if (!need('doc:write')) return; if (!reading) return reply(false, null, '当前没有打开的文档');
+        await api('/doc?path=' + encP(reading.p), {method:'PUT', body:d.args.markdown || '', headers:{'content-type':'text/markdown'}});
+        const dd = await api('/doc?path=' + encP(reading.p)); docData = dd; if (editing) $('editor').value = dd.source; else renderRead(dd); return reply(true, {saved:reading.p}); }
+      case 'toast': toast(esc(d.args.message || '')); return reply(true, {});
+      case 'setViewTitle': $('p-title').textContent = $('p-title').textContent.split(' · ')[0] + ' · ' + (d.args.title || ''); return reply(true, {});
+      default: return reply(false, null, '未知调用：' + d.call);
+    }
+  })().catch(err => reply(false, null, err.message));
+});
+async function openDesign(){
+  const box = openPanel('设计规范', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let d; try { d = await api('/design'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const ps = d.profiles || [];
+  box.innerHTML = '<p class="hint" style="margin-top:0">设计规范决定发布出去的网页和 Agent 生成内容的样子（配色、字体、组件）。</p>' +
+    (ps.length ? ps.map(p => { const name = p.name || p; return '<div class="row"><div class="grow"><span>' + esc(name) + (name === d.active ? ' · 正在用' : '') + '</span><small>' + esc([p.kind, p.source].filter(Boolean).join(' · ')) + '</small></div>' + (name === d.active ? '' : '<button class="btn" data-use="' + esc(name) + '">用这套</button>') + '</div>'; }).join('') : '<p class="empty">还没有导入过设计规范。</p>') +
+    '<label for="dz-url">从网页消化一套设计规范</label><input type="text" id="dz-url" placeholder="https://你喜欢的网站"><div class="acts"><button class="btn pri" id="dz-go">消化</button><span id="dz-msg"></span></div>';
+  box.querySelectorAll('[data-use]').forEach(b => b.onclick = async () => { try { await api('/design/active', {method:'POST', json:{name:b.dataset.use}}); toast('设计规范切到 <b>' + esc(b.dataset.use) + '</b>'); openDesign(); } catch(e){ toast(esc(e.message), true); } });
+  $('dz-go').onclick = async () => { const url = $('dz-url').value.trim(); if (!url) return; const m = $('dz-msg'); m.className = ''; m.textContent = '正在消化（可能要半分钟）…'; try { const r = await api('/design/import-url', {method:'POST', json:{url}}); m.className = 'ok'; m.textContent = '消化完成' + (r.name ? '：' + r.name : ''); setTimeout(openDesign, 800); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+}
+async function openConnections(){
+  const box = openPanel('连接器', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let d; try { d = await api('/connections'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const cs = d.connections || [];
+  box.innerHTML = '<p class="hint" style="margin-top:0">连接器让外部工具（MCP server）把数据灌进库里。</p>' +
+    (cs.length ? cs.map(c => '<div class="row"><div class="grow"><span>' + esc(c.name) + '</span><small>' + esc(c.command + ' ' + (c.args || []).join(' ')) + '</small><small class="res" data-res="' + esc(c.name) + '"></small></div><button class="btn" data-probe="' + esc(c.name) + '">探测</button><button class="btn pri" data-pull="' + esc(c.name) + '">采集</button></div>').join('')
+      : '<p class="empty">还没有连接器。在库根的 thirdc.toml 里加：</p><pre style="font:400 var(--fs-2)/1.6 var(--f-mono);background:var(--paper);padding:10px 12px;border-radius:var(--r-md)">[[connections]]\nname = "openflow"\ncommand = "openflow"\nargs = ["mcp"]</pre>');
+  const res = n => box.querySelector('[data-res="' + CSS.escape(n) + '"]');
+  box.querySelectorAll('[data-probe]').forEach(b => b.onclick = async () => { const r0 = res(b.dataset.probe); r0.textContent = '探测中…'; try { const r = await api('/conn/probe', {method:'POST', json:{name:b.dataset.probe}}); r0.textContent = (r.server || '') + ' · 工具 ' + (r.tools || []).length + ' · 资源 ' + (r.resources || []).length; } catch(e){ r0.textContent = '探测失败：' + (e.message || e); } });
+  box.querySelectorAll('[data-pull]').forEach(b => b.onclick = async () => { const r0 = res(b.dataset.pull); r0.textContent = '采集中…'; try { const r = await api('/conn/pull', {method:'POST', json:{name:b.dataset.pull}}); r0.textContent = '采集 ' + (r.imported || []).length + ' · 跳过 ' + ((r.skipped || []).length || 0); await refreshNow(); const ns = (r.imported || []).map(x => byPath.get(x.rel)).filter(Boolean); if (ns.length) paint(ns.map(n => ({n, norm:1})), {soft:true}); } catch(e){ r0.textContent = '采集失败：' + (e.message || e); } });
+}
+async function openGit(){
+  const box = openPanel('存档（git）', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let st, lg; try { [st, lg] = await Promise.all([api('/git/status'), api('/git/log').catch(() => ({log:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p><p class="hint">库还不是 git 仓库时，存一次档就会自动初始化。</p><div class="acts"><button class="btn pri" id="git-init">存一次档</button></div>'; $('git-init').onclick = () => gitCommit('初始化'); return; }
+  box.innerHTML = '<p>分支 <b>' + esc(st.branch || '?') + '</b> · ' + (st.changes ? st.changes + ' 处还没存档' : '都存过档了') + '</p>' +
+    '<label for="git-msg">这次存档说明</label><input type="text" id="git-msg" placeholder="比如：整理十月笔记"><div class="acts"><button class="btn pri" id="git-go">存档</button></div>' +
+    '<label for="git-remote">同步到远端</label><input type="text" id="git-remote" placeholder="origin（只能指向你自己的服务器）"><div class="acts"><button class="btn" id="git-sync">拉取并推送</button><span id="git-msgline"></span></div>' +
+    '<label>最近的存档</label>' + ((lg.log || []).slice(0, 12).map(x => '<div class="row"><div class="grow"><span>' + esc(x.subject) + '</span><small>' + esc(x.hash) + '</small></div></div>').join('') || '<p class="empty">还没有存档</p>');
+  $('git-go').onclick = () => gitCommit($('git-msg').value.trim() || '存档');
+  $('git-sync').onclick = async () => { const r = $('git-remote').value.trim() || 'origin'; const m = $('git-msgline'); m.className = ''; m.textContent = '同步中…'; try { const x = await api('/git/sync', {method:'POST', json:{remote:r}}); m.className = 'ok'; m.textContent = x.detail || '已同步'; await refreshNow(); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+}
+async function gitCommit(msg){ try { const r = await api('/git/commit', {method:'POST', json:{message:msg}}); toast('已存档 <b>' + (r.committed || 0) + '</b> 个文件'); openGit(); } catch(e){ toast('<b>存档失败</b>：' + esc(e.message || e), true); } }
+async function openBackup(){
+  const box = openPanel('备份', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let s = {}; try { s = await api('/backup/status'); } catch(e){}
+  const cp = s.compliance || {}, ts = Object.entries(s.targets || {});
+  box.innerHTML = '<p>' + (s.configured ? (s.running ? '正在备份…' : '已配置') : '还没有配置备份') + (s.last_error ? ' · <span class="bad">上次出错：' + esc(s.last_error) + '</span>' : '') + '</p>' +
+    (cp.message ? '<p class="' + (cp.ok ? 'ok' : 'hint') + '">' + esc(String(cp.message).replace(/\s*[✓✗]\s*/g, cp.ok ? ' 已达标 ' : ' 未达标 ')) + '</p>' : '') +
+    (ts.length ? '<label>备份目标</label>' + ts.map(([k, v]) => '<div class="row"><div class="grow"><span>' + esc(k) + '</span><small>' + esc(typeof v === 'object' ? Object.entries(v).map(([a, b]) => a + ' ' + b).join(' · ') : String(v)) + '</small></div></div>').join('') : '') +
+    '<p class="hint">备份是端到端加密的（3-2-1 纪律，见 docs/spec/backup.md）；目标在 thirdc.toml 的 [backup] 里配。</p><div class="acts"><button class="btn pri" id="bk-go">现在备份一次</button><span id="bk-msg"></span></div>';
+  $('bk-go').onclick = async () => { const m = $('bk-msg'); m.className = ''; m.textContent = '正在备份…'; try { const r = await api('/backup/run', {method:'POST'}); m.className = r.ok === false ? 'bad' : 'ok'; m.textContent = r.note || r.detail || (r.ok === false ? '没有备份' : '已开始备份'); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+}
+/* 视图：一句话描述 → 表格 / 看板（内核 view/resolve，配了模型更聪明） */
+async function makeView(prompt){
+  if (!prompt){
+    const box = openPanel('视图', '<label for="vw-p">想看什么样的视图</label><input type="text" id="vw-p" placeholder="比如：带 #任务 标签的文档按状态分组成看板"><p class="hint">从文档的 frontmatter 和标签里取列。没配模型时按规则理解，配了模型能理解更复杂的说法。</p><div class="acts"><button class="btn pri" id="vw-go">生成</button></div>');
+    const go = () => { const v = $('vw-p').value.trim(); if (v) makeView(v); };
+    $('vw-go').onclick = go; box.querySelector('#vw-p').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+    return;
+  }
+  const box = openPanel('视图 · ' + prompt, '<span class="thinking"><i></i><i></i><i></i> 正在生成</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(980px,100%)';
+  try {
+    const r = await api('/view/resolve', {method:'POST', json:{prompt, current:reading ? reading.p : ''}});
+    box.innerHTML = '<p class="hint" style="margin-top:0">' + esc(r.spec_text || '') + ' · ' + (r.rows || []).length + ' 行</p><iframe class="styled" sandbox="" style="width:100%;height:60vh;border:0;border-radius:var(--r-md);background:var(--paper)"></iframe>';
+    box.querySelector('iframe').srcdoc = r.html || '<p>没有结果</p>';
+  } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; }
+}
+/* 在线：同一个库在几台设备上开着 */
+function presence(){
+  try {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(proto + '://' + location.host + BASE + '/ws?token=' + encodeURIComponent(token));
+    const show = () => showVault();
+    ws.onmessage = ev => { let d; try { d = JSON.parse(ev.data); } catch(e){ return; } const x = d.data || d;
+      if (x.type === 'join' || d.type === 'join' || x.type === 'leave' || d.type === 'leave'){ peersN = x.peers || peersN; show(); }
+      if (x.type === 'hello' && x.peers) { peersN = x.peers; show(); } };
+    ws.onclose = () => setTimeout(presence, 15000);
+  } catch(e){}
+}
+let peersN = 1;
+function showVault(){ $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇' + (peersN > 1 ? ' · ' + peersN + ' 处在线' : ''); }
+/* Agent 的轨迹：经过的文档连成一条线，当前那篇套一个呼吸的环 */
+function drawAgentTrail(){
+  const R0 = agentRun; if (!R0 || !R0.trail.length) return;
+  ctx.strokeStyle = 'oklch(' + C.lit + ' / .7)'; ctx.lineWidth = 1.6; ctx.setLineDash([2, 5]);
+  ctx.beginPath(); R0.trail.forEach((n, i) => { i ? ctx.lineTo(n.scx, n.scy) : ctx.moveTo(n.scx, n.scy); }); ctx.stroke(); ctx.setLineDash([]);
+  R0.trail.forEach(n => { ctx.fillStyle = 'oklch(' + C.lit + ')'; ctx.beginPath(); ctx.arc(n.scx, n.scy, 3, 0, 7); ctx.fill(); });
+  const c = R0.cur; if (!c) return;
+  const ph = R0.live && !reduce ? (performance.now() % 1400) / 1400 : 0;
+  ctx.strokeStyle = 'oklch(' + C.lit + ' / ' + (1 - ph) * .9 + ')'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(c.scx, c.scy, 9 + ph * 14, 0, 7); ctx.stroke();
+}
+
 /* ───────── 视图、主题、帮助 ───────── */
 function setLayout(l){
   layout = l; $('l-sem').classList.toggle('on', l === 'sem'); $('l-time').classList.toggle('on', l === 'time');
@@ -1769,7 +2237,8 @@ loadField().then(() => {
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
-window.__field = {get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+loadPlugins(); presence();
+window.__field = {runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>

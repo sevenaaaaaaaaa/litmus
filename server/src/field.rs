@@ -9,7 +9,7 @@
 //!
 //! 坐标是派生层：缓存在 `.thirdc/field.json`，删掉即可重建；增量更新时旧坐标不动。
 
-use super::{AppState, check_token, err};
+use super::{AppState, SseEvent, check_token, err, extract_memo_tags};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -31,6 +31,8 @@ pub struct DocMeta {
     pub excerpt: String,
     /// 文件修改时间（unix 秒）：「最近」列表用
     pub mtime: i64,
+    /// 标签（frontmatter tags 与正文 #标签，与经典壳同一规则）
+    pub tags: Vec<String>,
 }
 
 pub struct Cached {
@@ -48,6 +50,14 @@ fn cache() -> &'static Mutex<HashMap<PathBuf, Arc<Cached>>> {
 fn build_lock() -> &'static tokio::sync::Mutex<()> {
     static L: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
     L.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+/// 62 款阅读风格（与经典壳同一份参数），按需加载。
+pub async fn reading_styles() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8"), (header::CACHE_CONTROL, "public, max-age=3600")],
+        include_str!("../web/reading-styles.js"),
+    )
 }
 
 pub async fn page() -> impl IntoResponse {
@@ -242,7 +252,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .map(|p| {
                 let (title, text) = &texts[p];
                 let mtime = stats.get(p).map(|s| s.0).unwrap_or(0);
-                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime }
+                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()) }
             })
             .collect();
         // 派生层落盘：只存坐标（可删可重建）
@@ -266,7 +276,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             "regions": f.region_names.iter().zip(count.iter()).map(|(n, c)| json!({"name": n, "count": c})).collect::<Vec<_>>(),
             "docs": meta.iter().enumerate().map(|(i, m)| json!({
                 "p": m.path, "t": m.title, "k": m.kind, "d": m.date, "ex": m.excerpt,
-                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime,
+                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime, "g": m.tags,
             })).collect::<Vec<_>>(),
             "edges": f.edges.iter().map(|(a, b, w)| json!([a, b, (w * 1000.0).round() / 1000.0])).collect::<Vec<_>>(),
         });
@@ -338,6 +348,86 @@ pub fn links_of(paths: &[String], meta: &[DocMeta], texts: &HashMap<String, (Str
         }
     }
     seen.into_iter().collect()
+}
+
+// ───────── Agent：让它去做，过程画在场上 ─────────
+
+/// 工具参数里只回传「指向哪里」的字段，正文不回传（可能很长，也不需要画）。
+fn step_args(v: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    if let Some(o) = v.as_object() {
+        for k in ["path", "query", "title", "name", "from", "to", "q", "topic"] {
+            if let Some(x) = o.get(k) {
+                if let Some(s) = x.as_str() {
+                    out.insert(k.to_string(), json!(s.chars().take(200).collect::<String>()));
+                }
+            }
+        }
+    }
+    Value::Object(out)
+}
+
+/// `POST /field/agent {message, context?}` → SSE：`step`（工具、指向、成败、摘要）… `reply` → `done`。
+/// 配了模型走带工具的 Agent；没配走离线命令模式。对话照常记进 Agent 记忆（与经典壳一致）。
+pub async fn agent(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    use axum::response::sse::Sse;
+    use futures_util::stream;
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let message = req.get("message").and_then(|m| m.as_str()).unwrap_or("").trim().to_string();
+    if message.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "说说要它做什么").into_response();
+    }
+    let context = req.get("context").and_then(|m| m.as_str()).unwrap_or("").to_string();
+    let ai = st.kernel.lock().unwrap().vault.config.ai.clone();
+    let server = st.mcp.clone();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<SseEvent>();
+    let t0 = std::time::Instant::now();
+    tokio::spawn(async move {
+        let ev = |name: &str, data: Value| -> SseEvent { Ok(axum::response::sse::Event::default().event(name).data(data.to_string())) };
+        let full = if context.is_empty() { message.clone() } else { format!("{message}\n\n（我正在看：{context}）") };
+        let ai_on = ai.as_ref().map(|c| !c.base_url.is_empty()).unwrap_or(false);
+        let _ = tx.send(ev("start", json!({ "mode": if ai_on { "ai" } else { "command" } })));
+        let result = match ai {
+            Some(cfg) if !cfg.base_url.is_empty() => {
+                let tx_step = tx.clone();
+                thirdc_mcp::agent::run_ai_with(&server, &cfg, &full, move |s| {
+                    let _ = tx_step.send(ev("step", json!({ "tool": s.tool, "args": step_args(&s.args), "ok": s.ok, "summary": s.summary.chars().take(300).collect::<String>() })));
+                })
+                .await
+            }
+            _ => {
+                let out = thirdc_mcp::agent::command_mode(&server, &full);
+                for s in &out.steps {
+                    let _ = tx.send(ev("step", json!({ "tool": s.tool, "args": step_args(&s.args), "ok": s.ok, "summary": s.summary.chars().take(300).collect::<String>() })));
+                }
+                Ok(out)
+            }
+        };
+        {
+            let today = kernel_core::today_string();
+            if let Ok(mut k) = server.kernel.lock() {
+                let _ = k.append_conversation(&today, "我", &message);
+                if let Ok(out) = &result {
+                    let _ = k.append_conversation(&today, "studio", &out.reply);
+                }
+            }
+        }
+        match result {
+            Ok(out) => {
+                let _ = tx.send(ev("reply", json!({ "mode": out.mode, "text": out.reply })));
+                let _ = tx.send(ev("done", json!({ "ok": true, "tokens": out.tokens, "ms": t0.elapsed().as_millis() as u64 })));
+            }
+            Err(e) => {
+                let _ = tx.send(ev("error", json!({ "message": e.to_string() })));
+                let _ = tx.send(ev("done", json!({ "ok": false, "ms": t0.elapsed().as_millis() as u64 })));
+            }
+        }
+    });
+    let out = stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|item| (item, rx)) });
+    Sse::new(out).into_response()
 }
 
 // ───────── 模型设置：只改 thirdc.toml 的 [ai] 表 ─────────
@@ -849,6 +939,29 @@ mod api_tests {
         // 重新打开库：配置能被内核读回
         let v = kernel_core::Vault::open(dir.path()).unwrap();
         assert_eq!(v.config.ai.unwrap().model, "demo-2");
+    }
+
+    #[tokio::test]
+    async fn agent_streams_steps_in_command_mode_and_tags_come_through() {
+        let (app, token, _dir) = app();
+        seed(&app, &token).await;
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/带标签.md")), "---\ntags: [周报]\n---\n# 带标签\n\n正文 #复盘").await;
+        assert_eq!(st, 200);
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let doc = d["docs"].as_array().unwrap().iter().find(|x| x["p"] == "Notes/带标签.md").unwrap().clone();
+        let tags: Vec<String> = doc["g"].as_array().unwrap().iter().map(|t| t.as_str().unwrap().to_string()).collect();
+        assert!(tags.contains(&"周报".to_string()) && tags.contains(&"复盘".to_string()), "{tags:?}");
+
+        let req = Request::builder().method("POST").uri("/field/agent")
+            .header("authorization", format!("Bearer {token}")).header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"搜索 同步","context":"Notes/同步/协议.md"}"#)).unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("event: start") && text.contains("event: reply") && text.contains("event: done"), "{text}");
+        let (st, _) = call(&app, &token, "POST", "/field/agent", r#"{"message":"  "}"#).await;
+        assert_eq!(st, 400);
     }
 
     #[tokio::test]
