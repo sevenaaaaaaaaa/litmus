@@ -590,7 +590,8 @@ function mkNode(d){
   el.className = 'n'; el.dataset.k = d.k;
   el.innerHTML = '<i class="sp"></i><span class="tx"><span class="t"></span><span class="meta"></span><span class="ex"></span></span>';
   nodesEl.appendChild(el);
-  const n = {p:d.p, el, cur:0, tgt:0, delay:0, vis:0, born:1, w:110, wx:undefined, wy:undefined};
+  el.style.display = 'none';
+  const n = {p:d.p, el, cur:0, tgt:0, delay:0, vis:0, born:1, w:110, wx:undefined, wy:undefined, off:true};
   el._n = n;
   return n;
 }
@@ -683,7 +684,17 @@ function regionSem(){
     R.sx = x; R.sy = ys[Math.floor(ys.length * .12)] - 40;
   });
 }
-function measure(list){ (list || nodes).forEach(n => { n.w = Math.max(40, Math.min(276, n.el.querySelector('.t').offsetWidth + 16)); }); }
+/* 标签宽度用 canvas 量字，不读 DOM：读 offsetWidth 会让 1.2 万个节点逐个强制排版 */
+let measureCtx = null, measureFont = '';
+function measure(list){
+  if (!measureCtx){
+    const probe = document.createElement('span'); probe.className = 'n'; probe.innerHTML = '<span class="tx"><span class="t">字</span></span>';
+    probe.style.visibility = 'hidden'; nodesEl.appendChild(probe);
+    const cs = getComputedStyle(probe.querySelector('.t')); measureFont = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; probe.remove();
+    measureCtx = document.createElement('canvas').getContext('2d'); measureCtx.font = measureFont;
+  }
+  (list || nodes).forEach(n => { n.w = Math.max(40, Math.min(276, Math.ceil(measureCtx.measureText(n.title || '').width) + 16)); });
+}
 /* 标题避让：只在中小库做（大库远景只看点阵，标题按需出现） */
 function relax(){
   if (nodes.length > 600) return;
@@ -859,8 +870,9 @@ function frame(t){
     const x = n.wx * cam.s + cam.ox, y = n.wy * cam.s + cam.oy; n.scx = x; n.scy = y;
     if (dots) continue;
     const off = x < -300 || x > vw + 40 || y < -80 || y > vh + 80 || n.vis < .02;
-    if (off){ if (!n.off){ n.el.style.visibility = 'hidden'; n.off = true; } continue; }
-    if (n.off){ n.el.style.visibility = ''; n.off = false; }
+    /* 视口外的节点退出排版（display:none 而不是 visibility）：1.2 万篇时缩放切换不再整页重排 */
+    if (off){ if (!n.off){ n.el.style.display = 'none'; n.off = true; } continue; }
+    if (n.off){ n.el.style.display = ''; n.off = false; }
     shown.push(n);
     const op = n.vis * (qActive ? .26 + .74 * Math.min(1, n.cur * 1.7) : 1);
     n.el.style.transform = 'translate(' + (x - 5).toFixed(1) + 'px,' + (y - 12).toFixed(1) + 'px) scale(' + ((.7 + .3 * n.vis) * tsc).toFixed(3) + ')';
@@ -938,8 +950,13 @@ function draw(dots){
   ctx.lineWidth = 1;
   if (!dots || qActive){
     ctx.setLineDash([1.5, 4]);
+    /* 大库：线只画在视口里；意思相近的淡点线只连「标题露出来的」两端，免得满屏灰网 */
+    const big = nodes.length > 1500;
+    const outside = (a, b) => (a.scx < -60 && b.scx < -60) || (a.scx > vw + 60 && b.scx > vw + 60) || (a.scy < -60 && b.scy < -60) || (a.scy > vh + 60 && b.scy > vh + 60);
     for (const [a, b] of edges){
       const v = Math.min(a.vis, b.vis); if (v < .05) continue;
+      if (outside(a, b)) continue;
+      if (big && !qActive && (a.off || b.off || a.muted || b.muted)) continue;
       const lit = Math.min(a.cur, b.cur);
       const base = dots ? 0 : (qActive ? .14 : .4) * v * (layout === 'time' ? 0 : 1);
       if (!base && lit <= .06) continue;
@@ -949,6 +966,7 @@ function draw(dots){
     ctx.setLineDash([]);
     for (const [a, b] of links){
       const v = Math.min(a.vis, b.vis); if (v < .05) continue;
+      if (outside(a, b)) continue;
       const lit = Math.min(a.cur, b.cur);
       const base = dots ? 0 : (qActive ? .2 : .5) * v * (layout === 'time' ? .5 : 1);
       if (base) curve(a, b, 'oklch(' + C.ink3 + ' / ' + base.toFixed(3) + ')', 1.2);

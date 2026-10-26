@@ -180,7 +180,7 @@ fn excerpt_of(text: &str) -> String {
             continue;
         }
         let s: String = t.trim_start_matches(['-', '*', '>', ' ']).replace("**", "").replace('`', "");
-        return s.chars().take(120).collect();
+        return s.chars().take(64).collect();
     }
     String::new()
 }
@@ -228,13 +228,24 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             }
         }
     }
+    let trace = std::env::var("THIRDC_FIELD_TRACE").is_ok();
+    let t0 = std::time::Instant::now();
     let (corpus, stats) = {
         let k = st.kernel.lock().unwrap();
         let (_, corpus) = k.hybrid_snapshot().map_err(|e| e.to_string())?;
         (corpus, k.doc_stats().unwrap_or_default())
     };
+    if trace {
+        eprintln!("[field] snapshot {:?}", t0.elapsed());
+    }
     let root2 = root.clone();
     let built = tokio::task::spawn_blocking(move || {
+        let lap = std::time::Instant::now();
+        let mark = |what: &str| {
+            if trace {
+                eprintln!("[field] {what} {:?}", lap.elapsed());
+            }
+        };
         let prev = load_prev(&root2);
         let docs: Vec<(String, String, String)> = corpus
             .into_iter()
@@ -244,7 +255,9 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             })
             .collect();
         let texts: HashMap<String, (String, String)> = docs.iter().map(|(p, t, x)| (p.clone(), (t.clone(), x.clone()))).collect();
+        mark("docs");
         let f = field::build(&docs, &prev, rebuild);
+        mark("build");
         let meta: Vec<DocMeta> = f
             .vectors
             .paths
@@ -269,7 +282,9 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
         for &r in &f.region {
             count[r] += 1;
         }
+        mark("meta+pos");
         let links = links_of(&f.vectors.paths, &meta, &texts);
+        mark("links");
         let names = load_region_names(&root2);
         let body = json!({
             "epoch": epoch,
@@ -282,6 +297,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             "edges": f.edges.iter().map(|(a, b, w)| json!([a, b, (w * 1000.0).round() / 1000.0])).collect::<Vec<_>>(),
         });
         let body = Bytes::from(serde_json::to_vec(&body).unwrap_or_default());
+        mark("json");
         Cached { epoch, field: f, meta, body }
     })
     .await

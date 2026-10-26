@@ -132,34 +132,53 @@ impl Vectors {
         let mut order: Vec<usize> = (0..docs.len()).collect();
         order.sort_by(|&a, &b| docs[a].0.cmp(&docs[b].0));
         let n = docs.len().max(1) as f32;
-        // 1) 词频：临时词号（按出现先后），标题 ×3。加法只有小整数，与顺序无关，结果确定
+        // 1) 词频：各线程各自分配临时词号，再按词合并。标题 ×3；加法只有小整数，与顺序、线程数都无关
+        let parts: Vec<(HashMap<String, u32>, Vec<Vec<(u32, f32)>>)> = par_map(order.len(), |range| {
+            let mut local: HashMap<String, u32> = HashMap::new();
+            let mut out: Vec<Vec<(u32, f32)>> = Vec::with_capacity(range.len());
+            let mut tf: HashMap<u32, f32> = HashMap::new();
+            for &i in &order[range] {
+                let (_, title, body) = &docs[i];
+                tf.clear();
+                let mut add = |t: &str, w: f32, tf: &mut HashMap<u32, f32>| {
+                    let id = match local.get(t) {
+                        Some(&id) => id,
+                        None => {
+                            let id = local.len() as u32;
+                            local.insert(t.to_string(), id);
+                            id
+                        }
+                    };
+                    *tf.entry(id).or_insert(0.0) += w;
+                };
+                each_token(title, |t| add(t, 3.0, &mut tf));
+                each_token(body, |t| add(t, 1.0, &mut tf));
+                let mut v: Vec<(u32, f32)> = tf.iter().map(|(&k, &c)| (k, c)).collect();
+                v.sort_by_key(|x| x.0);
+                out.push(v);
+            }
+            vec![(local, out)]
+        });
         let mut tmp: HashMap<String, u32> = HashMap::new();
         let mut tmp_df: Vec<u32> = Vec::new();
         let mut tfs: Vec<Vec<(u32, f32)>> = Vec::with_capacity(docs.len());
-        let mut tf: HashMap<u32, f32> = HashMap::new();
-        for &i in &order {
-            let (_, title, body) = &docs[i];
-            tf.clear();
-            let mut add = |t: &str, w: f32, tf: &mut HashMap<u32, f32>| {
-                let id = match tmp.get(t) {
-                    Some(&id) => id,
-                    None => {
-                        let id = tmp.len() as u32;
-                        tmp.insert(t.to_string(), id);
-                        tmp_df.push(0);
-                        id
-                    }
-                };
-                *tf.entry(id).or_insert(0.0) += w;
-            };
-            each_token(title, |t| add(t, 3.0, &mut tf));
-            each_token(body, |t| add(t, 1.0, &mut tf));
-            let mut v: Vec<(u32, f32)> = tf.iter().map(|(&k, &c)| (k, c)).collect();
-            v.sort_by_key(|x| x.0);
-            for &(k, _) in &v {
-                tmp_df[k as usize] += 1;
+        for (local, out) in parts {
+            let mut map: Vec<u32> = vec![0; local.len()];
+            for (t, lid) in local {
+                let gid = *tmp.entry(t).or_insert_with(|| {
+                    tmp_df.push(0);
+                    (tmp_df.len() - 1) as u32
+                });
+                map[lid as usize] = gid;
             }
-            tfs.push(v);
+            for v in out {
+                let mut g: Vec<(u32, f32)> = v.into_iter().map(|(k, c)| (map[k as usize], c)).collect();
+                g.sort_by_key(|x| x.0);
+                for &(k, _) in &g {
+                    tmp_df[k as usize] += 1;
+                }
+                tfs.push(g);
+            }
         }
         // 2) 词表：只在 ≥2 篇出现（小库除外）且不在 >60% 篇里出现的词；按字典序定最终词号
         let small = docs.len() < 8;
@@ -184,8 +203,9 @@ impl Vectors {
         let term_id: HashMap<String, u32> = vocab.iter().enumerate().map(|(i, t)| (t.clone(), i as u32)).collect();
         let idf: Vec<f32> = df.iter().map(|&d| (1.0 + n / (1.0 + d as f32)).ln()).collect();
         // 3) 向量：次线性 tf × idf，截前 TERMS_PER_DOC，L2 归一
-        let mut vecs = Vec::with_capacity(docs.len());
-        for tf in &tfs {
+        let vecs: Vec<SparseVec> = par_map(tfs.len(), |range| {
+          let mut vecs = Vec::with_capacity(range.len());
+          for tf in &tfs[range] {
             let mut v: Vec<(u32, f32)> = tf
                 .iter()
                 .filter_map(|&(k, c)| {
@@ -198,7 +218,9 @@ impl Vectors {
             normalize(&mut v);
             v.sort_by_key(|x| x.0);
             vecs.push(SparseVec(v));
-        }
+          }
+          vecs
+        });
         Vectors {
             paths: order.iter().map(|&i| docs[i].0.clone()).collect(),
             vecs,
@@ -243,10 +265,13 @@ impl Vectors {
                 }
             }
         }
-        let mut out = Vec::with_capacity(n);
+        let posting = &posting;
+        par_map(n, |range| {
+        let mut out = Vec::with_capacity(range.len());
         let mut acc: Vec<f32> = vec![0.0; n];
         let mut touched: Vec<u32> = Vec::new();
-        for (i, v) in self.vecs.iter().enumerate() {
+        for i in range {
+            let v = &self.vecs[i];
             for &(t, w) in &v.0 {
                 for &(j, wj) in &posting[t as usize] {
                     if j as usize == i {
@@ -274,7 +299,22 @@ impl Vectors {
             touched.clear();
         }
         out
+        })
     }
+}
+
+/// 按下标区间切块并行，结果按原顺序拼回（每块独立计算，输出与线程数无关）。
+fn par_map<T: Send>(n: usize, f: impl Fn(std::ops::Range<usize>) -> Vec<T> + Sync) -> Vec<T> {
+    let threads = std::thread::available_parallelism().map(|x| x.get()).unwrap_or(1).min(8);
+    if threads <= 1 || n < 512 {
+        return f(0..n);
+    }
+    let chunk = n.div_ceil(threads);
+    let f = &f;
+    std::thread::scope(|sc| {
+        let hs: Vec<_> = (0..threads).map(|t| sc.spawn(move || f((t * chunk).min(n)..((t + 1) * chunk).min(n)))).collect();
+        hs.into_iter().flat_map(|h| h.join().expect("field worker")).collect()
+    })
 }
 
 fn normalize(v: &mut [(u32, f32)]) {
@@ -334,6 +374,20 @@ pub fn layout(v: &Vectors, knn: &[Vec<(usize, f32)>], prev: &HashMap<String, (f3
         for p in raw.iter_mut() {
             *p = ((p.0 - mx) / sd * radius * 0.5, (p.1 - my) / sd * radius * 0.5);
         }
+        // 投影出来中心极密（近似高斯）：按到中心的距离排名，把半径摊匀到整张圆盘（角度不变，远近次序不变）。
+        // 否则前几十轮斥力在中心格子里是 O(n²)，1.2 万篇要十几秒。
+        let mut by_r: Vec<usize> = (0..n).collect();
+        by_r.sort_by(|&a, &b| {
+            let ra = raw[a].0 * raw[a].0 + raw[a].1 * raw[a].1;
+            let rb = raw[b].0 * raw[b].0 + raw[b].1 * raw[b].1;
+            ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b))
+        });
+        for (rank, &i) in by_r.iter().enumerate() {
+            let (x, y) = raw[i];
+            let r0 = (x * x + y * y).sqrt();
+            let r1 = radius * 0.92 * ((rank as f32 + 0.5) / n as f32).sqrt();
+            raw[i] = if r0 > 1e-6 { (x / r0 * r1, y / r0 * r1) } else { (r1, 0.0) };
+        }
         let mut pts = raw;
         relax(&mut pts, knn, &vec![true; n], 260, radius);
         return pts;
@@ -375,66 +429,123 @@ fn mean(p: &[(f32, f32)]) -> (f32, f32) {
     (p.iter().map(|x| x.0).sum::<f32>() / n, p.iter().map(|x| x.1).sum::<f32>() / n)
 }
 
+/// 每个格子参与斥力计算的点数上限（超过就等距抽样）。
+const REPEL_CAP: usize = 24;
+
 /// 力导向精修：近邻弹簧 + 网格分桶的短程斥力 + 轻微向心力。确定性（固定迭代序）。
 fn relax(pts: &mut [(f32, f32)], knn: &[Vec<(usize, f32)>], movable: &[bool], iters: usize, radius: f32) {
     let n = pts.len();
     let cell = SPACING * 1.6;
     let mut disp = vec![(0.0f32, 0.0f32); n];
+    let mut cells = vec![(0i32, 0i32); n];
+    let (mut start, mut fill, mut order): (Vec<usize>, Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new(), Vec::new());
+    let mut indeg = vec![0usize; n];
+    for nb in knn.iter() {
+        for &(j, _) in nb {
+            indeg[j] += 1;
+        }
+    }
+    let inv_deg: Vec<f32> = indeg.iter().map(|&d| 1.0 / (d.max(1) as f32).sqrt().max(1.0)).collect();
     for it in 0..iters {
         let temp = SPACING * 0.9 * (1.0 - it as f32 / iters as f32) + 1.0;
         for d in disp.iter_mut() {
             *d = (0.0, 0.0);
         }
-        // 斥力：同格与相邻格
-        let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        // 斥力：同格与相邻格。稠密网格 + 计数排序（同格内按下标升序，与逐个 push 的顺序一致，结果逐位不变）
+        let (mut gx0, mut gy0, mut gx1, mut gy1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         for (i, p) in pts.iter().enumerate() {
-            grid.entry(((p.0 / cell).floor() as i32, (p.1 / cell).floor() as i32)).or_default().push(i);
+            let c = ((p.0 / cell).floor() as i32, (p.1 / cell).floor() as i32);
+            cells[i] = c;
+            gx0 = gx0.min(c.0);
+            gy0 = gy0.min(c.1);
+            gx1 = gx1.max(c.0);
+            gy1 = gy1.max(c.1);
         }
-        for i in 0..n {
-            if !movable[i] {
-                continue;
-            }
-            let (gx, gy) = ((pts[i].0 / cell).floor() as i32, (pts[i].1 / cell).floor() as i32);
-            for dx in -1..=1 {
-                for dy in -1..=1 {
-                    if let Some(list) = grid.get(&(gx + dx, gy + dy)) {
-                        for &j in list {
-                            if j == i {
-                                continue;
-                            }
-                            let (mut ddx, mut ddy) = (pts[i].0 - pts[j].0, pts[i].1 - pts[j].1);
-                            let mut d2 = ddx * ddx + ddy * ddy;
-                            if d2 < 1e-4 {
-                                let h = fnv(&format!("{i}:{j}"));
-                                ddx = hnorm(h);
-                                ddy = hnorm(h >> 7);
-                                d2 = ddx * ddx + ddy * ddy + 1e-4;
-                            }
-                            let d = d2.sqrt();
-                            if d < cell {
-                                let f = SPACING * SPACING / d2.max(SPACING * SPACING * 0.04) * 0.9;
-                                disp[i].0 += ddx / d * f;
-                                disp[i].1 += ddy / d * f;
+        let gw = (gx1 - gx0 + 1).max(1) as usize;
+        let gh = (gy1 - gy0 + 1).max(1) as usize;
+        let slot = |c: (i32, i32)| (c.1 - gy0) as usize * gw + (c.0 - gx0) as usize;
+        start.clear();
+        start.resize(gw * gh + 1, 0);
+        for c in cells.iter() {
+            start[slot(*c) + 1] += 1;
+        }
+        for k in 1..start.len() {
+            start[k] += start[k - 1];
+        }
+        fill.clear();
+        fill.extend_from_slice(&start[..gw * gh]);
+        order.resize(n, 0);
+        for (i, c) in cells.iter().enumerate() {
+            let s = slot(*c);
+            order[fill[s]] = i;
+            fill[s] += 1;
+        }
+        // 每个点的斥力只读坐标、只写自己：按区间并行，结果与线程数无关
+        let rep: Vec<(f32, f32)> = {
+            let (pts, cells, order, start) = (&*pts, &cells, &order, &start);
+            par_map(n, |range| {
+                range
+                    .map(|i| {
+                        let mut acc = (0.0f32, 0.0f32);
+                        if !movable[i] {
+                            return acc;
+                        }
+                        let (gx, gy) = cells[i];
+                        for dx in -1..=1 {
+                            for dy in -1..=1 {
+                                let (cx, cy) = (gx + dx, gy + dy);
+                                if cx < gx0 || cx > gx1 || cy < gy0 || cy > gy1 {
+                                    continue;
+                                }
+                                let s = slot((cx, cy));
+                                let list = &order[start[s]..start[s + 1]];
+                                // 挤成一团的格子：等距抽样，力按步长放大（总量近似不变）。代价封顶，挤得越密推得越开
+                                let step = list.len().div_ceil(REPEL_CAP).max(1);
+                                let mass = step as f32;
+                                for &j in list.iter().step_by(step) {
+                                    if j == i {
+                                        continue;
+                                    }
+                                    let (mut ddx, mut ddy) = (pts[i].0 - pts[j].0, pts[i].1 - pts[j].1);
+                                    let mut d2 = ddx * ddx + ddy * ddy;
+                                    if d2 < 1e-4 {
+                                        let h = fnv(&format!("{i}:{j}"));
+                                        ddx = hnorm(h);
+                                        ddy = hnorm(h >> 7);
+                                        d2 = ddx * ddx + ddy * ddy + 1e-4;
+                                    }
+                                    let d = d2.sqrt();
+                                    if d < cell {
+                                        let f = SPACING * SPACING / d2.max(SPACING * SPACING * 0.04) * 0.9 * mass;
+                                        acc.0 += ddx / d * f;
+                                        acc.1 += ddy / d * f;
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            }
-        }
+                        acc
+                    })
+                    .collect()
+            })
+        };
+        disp.copy_from_slice(&rep);
         // 弹簧：近邻越像，静长越短
         for i in 0..n {
             for &(j, s) in &knn[i] {
                 let (dx, dy) = (pts[j].0 - pts[i].0, pts[j].1 - pts[i].1);
                 let d = (dx * dx + dy * dy).sqrt().max(1e-3);
                 let rest = SPACING * (0.75 + 1.4 * (1.0 - s.clamp(0.0, 1.0)));
-                let f = (d - rest) * 0.06 * (0.3 + s);
+                // 拉力封顶：一篇被很多远处的近邻同时拉时不至于把整簇吸成实心球（大库里斥力只看邻格，长程拉力会压倒它）
+                let f = (d - rest).clamp(-SPACING, SPACING * 1.5) * 0.06 * (0.3 + s);
                 if movable[i] {
                     disp[i].0 += dx / d * f;
                     disp[i].1 += dy / d * f;
                 }
                 if movable[j] {
-                    disp[j].0 -= dx / d * f;
-                    disp[j].1 -= dy / d * f;
+                    // 被很多篇当近邻的「枢纽」只按入度的平方根受力，否则整簇会被吸成一团
+                    let g = f * inv_deg[j];
+                    disp[j].0 -= dx / d * g;
+                    disp[j].1 -= dy / d * g;
                 }
             }
         }
