@@ -307,6 +307,14 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 .lprog i.cur{background:var(--ink-3)}.lprog i.ok{background:var(--litmus)}.lprog i.mid{background:oklch(var(--litmus-c) / .45)}.lprog i.no{background:var(--acid)}
 body.learning #doc .body{filter:blur(7px);opacity:.55;transition:filter var(--dur-4),opacity var(--dur-4);user-select:none}
 body.learning.peek #doc .body{filter:none;opacity:1;user-select:auto}
+.n[data-k="ext"] .sp{background:transparent;box-shadow:none;border:1.4px dashed var(--ink-3);width:6px;height:6px}
+.n[data-k="ext"] .t{font-style:italic}
+.extb{margin:-6px 0 18px;padding:12px 14px;border-radius:var(--r-md);background:var(--paper);box-shadow:inset 0 0 0 1px var(--rule);display:flex;flex-direction:column;gap:2px;font-size:var(--fs-2);color:var(--ink-2)}
+.extb b{font:600 var(--fs-1) var(--f-mono);letter-spacing:.08em;color:var(--ink-3)}.extb span{color:var(--ink)}.extb small{font:400 var(--fs-1) var(--f-mono);word-break:break-all}
+.extb .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#p-body details.more{margin-top:12px}#p-body details.more summary{cursor:pointer;font-size:var(--fs-2);color:var(--ink-2)}
+#p-body .addf{margin-top:8px}#p-body .addf label{display:inline;font:inherit;color:var(--ink);margin-right:10px;letter-spacing:0}
+#p-body .lede{margin-top:0}
 .orgbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.orgbar .sel{width:auto;max-width:280px}.orgbar .hint{margin:0}
 .orgtabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--rule);margin:0 -2px 6px;padding-bottom:6px}
 .orgtabs button{border:0;background:none;border-radius:var(--r-pill);padding:5px 11px;font-size:var(--fs-2);color:var(--ink-2);cursor:pointer}
@@ -526,6 +534,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>内容日历</td><td>/日历：每天写了什么、哪天该复习</td></tr>
         <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
+        <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
         <tr><td>社区插件、网页本地化</td><td>/插件 里的社区插件一键装；粘贴网址回车，正文和图片一起存进库</td></tr>
       </tbody>
     </table></div>
@@ -539,6 +548,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
       <span><i style="width:16px;height:0;border-radius:0;background:none;border-top:1.5px dotted var(--ink-3)"></i>意思相近</span>
       <span><i style="background:var(--litmus)"></i>与此刻的意图相关</span><span><i style="background:var(--acid)"></i>刚记下，尚未沉淀</span>
       <span><i style="width:16px;height:0;border-radius:0;background:none;border-top:1.6px dashed var(--litmus)"></i>Agent 走过的路</span>
+      <span><i style="background:none;border:1.4px dashed var(--ink-3);width:7px;height:7px"></i>库外（数据源里的，原处索引）</span>
     </div>
     <p class="lede" style="margin-top:28px"><button class="btn" id="help-classic">回到经典界面</button> <button class="btn" id="help-rebuild">整体重排一次</button></p>
   </div>
@@ -627,7 +637,7 @@ function shortLabel(t){
 }
 function setNode(n, d){
   n.full = d.t || n.p.split('/').pop();
-  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y; n.m = d.m || 0; n.g = d.g || [];
+  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y; n.m = d.m || 0; n.g = d.g || []; n.src = d.s || null;
   n.ts = Math.round((Date.parse(n.d) - T0) / DAY);
   n.el.dataset.k = n.k;
   n.el.querySelector('.t').textContent = n.title;
@@ -1199,11 +1209,12 @@ async function openDoc(n){
   focusOn(n.wx + n.w / 2, n.wy, s, (vw - sheetW()) / 2, vw < 720 ? vh * .14 + 40 : vh * .45);
   const nearP = query ? Promise.resolve(lastRel.filter(x => x.n !== n).slice(0, 5)) : reactToDoc(n);
   try {
-    const d = await api('/doc?path=' + encodeURIComponent(n.p));
+    const d = n.k === 'ext' ? await openExt(n) : await api('/doc?path=' + encodeURIComponent(n.p));
     if (reading !== n) return;
-    docData = d;
-    $('s-edit').hidden = d.format === 'html';
+    docData = n.k === 'ext' ? docData : d;
+    $('s-edit').hidden = d.format === 'html' || n.k === 'ext';
     renderRead(d);
+    if (n.k === 'ext'){ $('doc').querySelector('.dmeta').insertAdjacentHTML('afterend', extBanner(d)); wireExtBanner(n, d); }
   } catch(e){
     if (reading !== n) return;
     $('doc').querySelector('.body').innerHTML = '<p>打不开这篇：' + esc(e.message || e) + '</p>';
@@ -1221,7 +1232,7 @@ function renderRead(d){
   const inner = $('doc').querySelector('.inner'); if (!inner) return;
   const body = inner.querySelector('.body');
   const meta = inner.querySelector('.dmeta');
-  meta.textContent = reading.d + ' · ' + ({doc:'文档', memo:'随手记', answer:'收下的答案', source:'采集原文', html:'HTML 文档'}[reading.k] || '文档') + ' · ' + (d.source || '').length.toLocaleString() + ' 字';
+  meta.textContent = reading.d + ' · ' + ({doc:'文档', memo:'随手记', answer:'收下的答案', source:'采集原文', html:'HTML 文档', ext:'库外'}[reading.k] || '文档') + ' · ' + (d.source || '').length.toLocaleString() + ' 字';
   const tg = reading.g || []; let tagEl = inner.querySelector('.dtags');
   if (tg.length){ if (!tagEl){ tagEl = document.createElement('div'); tagEl.className = 'dtags chips'; meta.after(tagEl); } tagEl.innerHTML = tg.map(t => '<button class="chip" data-tag="' + esc(t) + '"><span>#' + esc(t) + '</span></button>').join(''); tagEl.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { q.value = '#' + b.dataset.tag; onInput(); const rel = showTag(b.dataset.tag); if (rel.length > 1) toast('#' + esc(b.dataset.tag) + ' · <b>' + rel.length + '</b> 篇亮起'); }); }
   else if (tagEl) tagEl.remove();
@@ -1533,6 +1544,7 @@ const CMDS = [
   ['/整理', '全库整理：过时的知识、零散的碎片、放错的位置、重复；可按区域和时间缩小范围', openOrganize],
   ['/区域', '给场上的区域改名（也可以双击区域名）', openRegions],
   ['/分享', '发出过的加密分享，可撤回', openShares],
+  ['/数据源', '把下载、文稿、截图、各处的 md、agent 会话、LinkTo、Google 接进来（原处索引，导入才进库）', () => openSources()],
   ['/学习', '学正在读的这篇：合上原文，一节一节用自己的话讲', () => startLearn(reading)],
   ['/复习', '今天该复习的文档，以及接下来的', openReview],
   ['/日历', '哪天写了什么、哪天该复习', () => openCalendar()],
@@ -1724,6 +1736,18 @@ async function createDoc(title, dir){
 $('s-more').onclick = () => {
   if (!reading) return;
   const n = reading, isMd = /\.md$/i.test(n.p);
+  if (n.k === 'ext'){
+    const fileLike = docData && docData.loc && docData.loc.startsWith('/');
+    openPop($('s-more'), [
+      ...(fileLike && docData.exists ? [{label:'移进库（原件进 Assets）', run:() => $('doc').querySelector('[data-imp="move"]').click()}] : []),
+      {label:fileLike ? '复制进库（原件留着）' : '导入进库', run:() => $('doc').querySelector('[data-imp="copy"]').click()},
+      {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
+      {label:'复制原处路径', run:() => copyText(docData.loc || n.p)},
+      '-',
+      {label:'管理数据源…', run:() => openSources()}
+    ]);
+    return;
+  }
   openPop($('s-more'), [
     {label:'重命名或移动…', run:() => moveDoc(n)},
     {label:'复制文件路径', run:() => copyText(n.p)},
@@ -2843,13 +2867,13 @@ async function startLearn(n){
   if (!n){ if (reading) n = reading; else { toast('先打开一篇，或在 /复习 里选一篇'); return; } }
   endLearn(true); endAgent(); dissolveCrystal();
   if (reading !== n) await openDoc(n);
-  let d = docData; if (!d || d.path !== n.p){ try { d = await api('/doc?path=' + encP(n.p)); } catch(e){ toast(esc(e.message), true); return; } }
+  let d = docData; if (!d || d.path !== n.p){ try { d = n.k === 'ext' ? await openExt(n) : await api('/doc?path=' + encP(n.p)); } catch(e){ toast(esc(e.message), true); return; } }
   if (editing) toggleEdit();
   const secs = sectionsOf(d.source || '', n.full);
   if (!secs.length){ toast('这篇太短了，没什么可复述的'); return; }
   const el = document.createElement('div'); el.className = 'agent learn';
   document.body.appendChild(el); document.body.classList.add('learning');
-  learnRun = {n, secs, i:0, grades:[], el, t0:Date.now()};
+  learnRun = {n, secs, i:0, grades:[], answers:[], feedback:[], el, t0:Date.now()};
   renderLearn();
 }
 function renderLearn(){
@@ -2874,6 +2898,7 @@ function renderLearn(){
     btn.disabled = true; show('<span class="thinking"><i></i><i></i><i></i> ' + (task === 'check' ? '对照原文看你讲的' : '出题中') + '</span>');
     try {
       const r = await api('/field/learn', {method:'POST', json:{task, title:L.n.full, section:s.h, text:s.text, answer:$('ln-a').value}});
+      if (task === 'check') L.feedback[L.i] = r.text;
       show('<div class="reply">' + (task === 'question' ? '<p><b>想一想：</b>' + esc(r.text) + '</p>' : r.text.split('\n').filter(Boolean).map(l => '<p>' + esc(l).replace(/^(讲对了|漏掉了|讲偏了)：/, '<b>$1：</b>') + '</p>').join('')) + '</div>');
       if (r.grade){ const b = el.querySelector('[data-g="' + r.grade + '"]'); if (b) b.classList.add('sug'); }
     } catch(e){ show('<p class="hint">' + esc(e.message || e) + '</p>' + (e.status === 409 ? '<p><button class="btn" id="ln-set">去设置模型</button></p>' : '')); const sb = $('ln-set'); if (sb) sb.onclick = openSettings; }
@@ -2881,7 +2906,7 @@ function renderLearn(){
   };
   $('ln-q').onclick = () => ai('question', $('ln-q'));
   $('ln-c').onclick = () => { if (!$('ln-a').value.trim()){ $('ln-a').focus(); toast('先写下你的复述'); return; } ai('check', $('ln-c')); };
-  el.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { L.grades[L.i] = b.dataset.g; L.i++; renderLearn(); });
+  el.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { L.answers[L.i] = $('ln-a').value; L.grades[L.i] = b.dataset.g; L.i++; renderLearn(); });
   setTimeout(() => { const a = $('ln-a'); if (a) a.focus(); }, 60);
 }
 function scrollToSection(h){
@@ -2893,17 +2918,21 @@ async function finishLearn(){
   const L = learnRun; if (!L) return;
   const g = L.grades, again = g.filter(x => x === 'again').length, hard = g.filter(x => x === 'hard').length;
   const grade = again * 3 >= g.length ? 'again' : (again || hard) ? 'hard' : 'good';
-  let card = null; try { card = (await api('/field/learn/grade', {method:'POST', json:{path:L.n.p, grade}})).card; learnState.cards[L.n.p] = card; } catch(e){ toast('<b>复习时间没记上</b>：' + esc(e.message || e), true); }
+  L.docGrade = grade;
+  let card = null;
+  if (!L.n.p.startsWith('ext:')){ try { card = (await api('/field/learn/grade', {method:'POST', json:{path:L.n.p, grade}})).card; learnState.cards[L.n.p] = card; } catch(e){ toast('<b>复习时间没记上</b>：' + esc(e.message || e), true); } }
   const days = card ? Math.max(1, Math.round((card.due * 1000 - Date.now()) / DAY)) : null;
   const mins = Math.max(1, Math.round((Date.now() - L.t0) / 60000));
   L.el.innerHTML = '<div class="ah"><b>学</b><span class="at"></span><button class="x" aria-label="结束">×</button></div>' +
     '<div class="lprog">' + g.map(x => '<i class="' + ({good:'ok', hard:'mid', again:'no'}[x]) + '"></i>').join('') + '</div>' +
     '<p class="lh">讲完了 ' + g.length + ' 节，用了 ' + mins + ' 分钟</p><p>讲清楚 ' + (g.length - again - hard) + ' 节，模糊 ' + hard + ' 节，没讲出来 ' + again + ' 节。</p>' +
     (days ? '<p class="hint">' + (grade === 'again' ? '明天' : days + ' 天后') + '再讲一遍（' + new Date(card.due * 1000).toLocaleDateString() + '）。到时候 /复习 里会有它。</p>' : '') +
-    '<div class="la"><button class="btn pri" id="ln-end">好</button>' + (again || hard ? '<button class="btn" id="ln-again">只练模糊的几节</button>' : '') + '</div>';
+    (L.n.p.startsWith('ext:') ? '<p class="hint">这篇在库外，不排复习；把学习笔记存进库后，笔记会进复习。</p>' : '') +
+    '<div class="la"><button class="btn pri" id="ln-save">把学习笔记存进库</button><button class="btn" id="ln-end">好</button>' + (again || hard ? '<button class="btn" id="ln-again">只练模糊的几节</button>' : '') + '</div>';
   L.el.querySelector('.at').textContent = L.n.full; L.el.querySelector('.x').onclick = () => endLearn();
   $('ln-end').onclick = () => endLearn();
-  if ($('ln-again')) $('ln-again').onclick = () => { const weak = L.secs.filter((_, i) => g[i] !== 'good'); learnRun = Object.assign(L, {secs:weak, i:0, grades:[], t0:Date.now()}); renderLearn(); };
+  $('ln-save').onclick = async () => { $('ln-save').disabled = true; await saveLearning(L); endLearn(); };
+  if ($('ln-again')) $('ln-again').onclick = () => { const weak = L.secs.filter((_, i) => g[i] !== 'good'); learnRun = Object.assign(L, {secs:weak, i:0, grades:[], answers:[], feedback:[], t0:Date.now()}); renderLearn(); };
   document.body.classList.remove('peek');
 }
 function endLearn(quiet){ if (!learnRun) return; learnRun.el.remove(); learnRun = null; document.body.classList.remove('learning', 'peek'); }
@@ -2989,6 +3018,129 @@ async function localizeUrl(url){
   }
 }
 
+
+/* ═══════════ G3 数据源：库外的内容原处索引，导入才进库 ═══════════ */
+const SRC_KIND = {folder:'文件夹', agent:'agent 会话', mcp:'连接器', google:'Google', rest:'JSON 接口'};
+const EXT_KIND = {md:'Markdown', txt:'文本', html:'网页', docx:'Word', pptx:'PPT', xlsx:'Excel', pdf:'PDF', epub:'EPUB', img:'截图', agent:'agent 会话', mcp:'连接器资源', mail:'邮件', event:'日程', drive:'Drive 文档', rest:'接口条目'};
+let srcPoll = 0;
+async function openSources(first){
+  const box = openPanel(first ? '把你的知识接进来' : '数据源', '<span class="thinking"><i></i><i></i><i></i> 正在看这台电脑上有什么</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(860px,100%)';
+  let cur, det;
+  try { [cur, det] = await Promise.all([api('/sources'), api('/sources/detect')]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const have = cur.sources || [];
+  const added = c => have.some(s => s.kind === c.kind && (c.path ? s.path === c.path : c.connection ? s.connection === c.connection : c.kind === 'google' || c.kind === 'rest' ? false : s.agent === c.agent));
+  const cands = (det.candidates || []).filter(c => !added(c));
+  const row = s => {
+    const sc = s.scan || {};
+    const status = sc.running ? '<span class="thinking"><i></i><i></i><i></i> 扫描中 ' + (sc.seen || 0) + '</span>' : sc.error ? '<span class="bad">' + esc(sc.error) + '</span>' : sc.finished ? s.items + ' 篇 · ' + new Date(sc.finished * 1000).toLocaleString() : '还没扫描';
+    return '<div class="row"><div class="grow"><span>' + esc(s.name) + ' <em class="kind">' + (SRC_KIND[s.kind] || s.kind) + '</em>' + (s.enabled ? '' : ' <em class="kind">已停用</em>') + '</span><small>' + esc(s.path || s.connection || (s.services || []).join(' · ') || (s.rest && s.rest.url) || '') + '</small><small>' + status + '</small></div><div class="oacts">' +
+      (s.kind === 'google' && !s.authorized ? '<button class="btn pri" data-gauth="' + esc(s.id) + '">连接 Google</button>' : '<button class="btn" data-scan="' + esc(s.id) + '"' + (sc.running ? ' disabled' : '') + '>' + (sc.finished ? '重新扫描' : '扫描') + '</button>') +
+      '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
+  };
+  box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .thirdc/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
+    (have.length ? '<label>已接入 · ' + have.length + '</label>' + have.map(row).join('') : '') +
+    (cands.length ? '<label>可以接入</label>' + cands.map((c, i) => '<label class="row chk"><input type="checkbox" data-ci="' + i + '"' + (first && (c.kind === 'folder' || c.kind === 'agent') ? ' checked' : '') + '><div class="grow"><span>' + esc(c.name) + ' <em class="kind">' + (SRC_KIND[c.kind] || c.kind) + '</em></span><small>' + esc(c.path || c.connection || '') + (c.count ? ' · 约 ' + c.count + ' 个' : '') + ' · ' + esc(c.why || '') + '</small></div></label>').join('') : '') +
+    '<details class="more"><summary>手动添加</summary>' +
+      '<div class="addf"><select id="sa-k" class="sel"><option value="folder">本地文件夹</option><option value="agent">agent 会话（Claude Code / Codex）</option><option value="mcp">连接器（MCP，比如 LinkTo）</option><option value="google">Google（Drive / Gmail / Calendar）</option><option value="rest">任意 JSON 接口</option></select>' +
+      '<div id="sa-f"></div></div></details>' +
+    '<p class="hint">' + (cur.tools && !cur.tools.tesseract && !/Mac/.test(navigator.platform) ? '截图里的文字要用 tesseract 识别；没装时截图只按文件名收录。' : '') + (cur.tools && !cur.tools.pdftotext ? ' PDF 要用 pdftotext（brew install poppler）。' : '') + '</p>' +
+    '<div class="acts">' + (cands.length ? '<button class="btn pri" id="sa-go">接入勾选的并扫描</button>' : '') + (first ? '<button class="btn" id="sa-skip">以后再说</button>' : '') + '<span id="sa-msg"></span></div>';
+  const form = () => {
+    const k = $('sa-k').value, f = $('sa-f');
+    f.innerHTML = k === 'folder' ? '<input type="text" id="sa-path" placeholder="文件夹路径，比如 ~/Downloads 或 ~/InputFlow/docs"><input type="text" id="sa-ext" placeholder="只要这些扩展名（可选，逗号分隔）：md, pdf, docx, png" style="margin-top:8px">'
+      : k === 'agent' ? '<select id="sa-agent" class="sel"><option value="claude">Claude Code（~/.claude/projects）</option><option value="codex">Codex（~/.codex/sessions）</option></select>'
+      : k === 'mcp' ? '<input type="text" id="sa-conn" placeholder="连接名，比如 linkto"><input type="text" id="sa-cmd" placeholder="启动命令（新连接才填），比如 linkto mcp 或 npx -y @linkto/mcp" style="margin-top:8px"><p class="hint">填了启动命令会写进 thirdc.toml 的 [[connections]]（原有内容保留）；已经配过的连接只填名字。读的是它提供的资源（resources）。</p>'
+      : k === 'google' ? '<label><input type="checkbox" value="drive" checked> Drive 文档</label> <label><input type="checkbox" value="gmail"> Gmail</label> <label><input type="checkbox" value="calendar"> Calendar</label><input type="text" id="sa-q" placeholder="筛选（可选）：Drive 查询或 Gmail 搜索语句，如 label:项目 newer_than:180d" style="margin-top:8px"><p class="hint">要先在 Google Cloud 控制台建一个「桌面应用」OAuth 客户端，把 client id 与 secret 存进 /凭证（名字 google_client_id、google_client_secret）。只读权限。</p>'
+      : '<input type="text" id="sa-url" placeholder="地址，如 https://api.example.com/notes?limit=200"><input type="text" id="sa-hdr" placeholder="请求头（可选）：Authorization: Bearer {{secret:example_token}}" style="margin-top:8px"><input type="text" id="sa-items" placeholder="条目数组的位置（JSON Pointer，如 /data/items；顶层就是数组则留空）" style="margin-top:8px"><input type="text" id="sa-map" placeholder="字段：id=id, title=title, body=content, date=updated_at" style="margin-top:8px">';
+    f.insertAdjacentHTML('beforeend', '<input type="text" id="sa-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn" id="sa-add">添加并扫描</button></div>');
+    $('sa-add').onclick = async () => {
+      const s = {kind:k, name:$('sa-name').value.trim()};
+      if (k === 'folder'){ s.path = $('sa-path').value.trim(); s.exts = $('sa-ext').value.split(/[,，\s]+/).map(x => x.replace(/^\./, '').trim()).filter(Boolean); }
+      if (k === 'agent'){ s.agent = $('sa-agent').value; s.name = s.name || (s.agent === 'codex' ? 'Codex 会话' : 'Claude Code 会话'); }
+      if (k === 'mcp'){ s.connection = $('sa-conn').value.trim(); const cmd = $('sa-cmd').value.trim(); if (cmd){ const parts = cmd.match(/(?:[^\s"]+|"[^"]*")+/g).map(x => x.replace(/^"|"$/g, '')); try { await api('/sources/connection', {method:'POST', json:{name:s.connection, command:parts[0], args:parts.slice(1)}}); } catch(e){ toast('<b>连接没写进去</b>：' + esc(e.message || e), true); return; } } s.name = s.name || ('连接器 · ' + s.connection); }
+      if (k === 'google'){ s.services = [...f.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value); s.query = $('sa-q').value.trim() || null; s.name = s.name || 'Google'; }
+      if (k === 'rest'){ const m = Object.fromEntries($('sa-map').value.split(/[,，]/).map(x => x.split('=').map(y => y.trim())).filter(x => x.length === 2 && x[1])); const hd = $('sa-hdr').value.trim(), hi = hd.indexOf(':'); s.rest = Object.assign({url:$('sa-url').value.trim(), items:$('sa-items').value.trim(), headers:hi > 0 ? {[hd.slice(0, hi).trim()]:hd.slice(hi + 1).trim()} : {}}, m); }
+      await addSources([s]);
+    };
+  };
+  $('sa-k').onchange = form; form();
+  const addSources = async list => {
+    const m = $('sa-msg'); if (m){ m.className = ''; m.textContent = '正在接入…'; }
+    const fails = [];
+    for (const s of list){
+      try { const r = await api('/sources', {method:'POST', json:{source:s}}); if (r.source.kind !== 'google') await api('/sources/' + r.source.id + '/scan', {method:'POST'}); }
+      catch(e){ fails.push(s.name + '：' + (e.message || e)); }
+    }
+    await api('/sources', {method:'POST', json:{onboarded:true}}).catch(() => {});
+    if (fails.length) toast('<b>' + fails.length + ' 个没接上</b>：' + esc(fails[0]), true);
+    openSources();
+  };
+  if ($('sa-go')) $('sa-go').onclick = () => addSources([...box.querySelectorAll('input[data-ci]:checked')].map(c => { const x = cands[+c.dataset.ci]; return {kind:x.kind, name:x.name, path:x.path || null, exts:x.exts || [], recursive:x.recursive !== false, agent:x.agent || null, connection:x.connection || null, services:x.services || []}; }));
+  if ($('sa-skip')) $('sa-skip').onclick = async () => { await api('/sources', {method:'POST', json:{onboarded:true}}).catch(() => {}); closePanel(); toast('之后想接，输入 /数据源'); };
+  box.querySelectorAll('[data-scan]').forEach(b => b.onclick = async () => { b.disabled = true; try { await api('/sources/' + b.dataset.scan + '/scan', {method:'POST'}); } catch(e){ toast(esc(e.message), true); } openSources(); });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次（原文件不动）'; b.classList.add('danger'); return; } await api('/sources/' + b.dataset.del, {method:'DELETE'}).catch(e => toast(esc(e.message), true)); await refreshNow(); openSources(); });
+  box.querySelectorAll('[data-off]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.off); s.enabled = !s.enabled; await api('/sources', {method:'POST', json:{source:s}}).catch(e => toast(esc(e.message), true)); await refreshNow(); openSources(); });
+  box.querySelectorAll('[data-look]').forEach(b => b.onclick = () => { const s = have.find(x => x.id === b.dataset.look), ns = nodes.filter(n => n.src === s.name && n.p.startsWith('ext:' + s.id + '/')); closePanel(); if (!ns.length){ toast('这个来源还没有条目'); return; } lastRel = ns.map(n => ({n, norm:1})); paint(lastRel, {soft:ns.length > 40}); fit(ns); $('reading').innerHTML = '<span>库外 · ' + esc(s.name) + ' · ' + ns.length + ' 篇</span>'; });
+  box.querySelectorAll('[data-gauth]').forEach(b => b.onclick = async () => {
+    try { const r = await api('/sources/google/start?id=' + encodeURIComponent(b.dataset.gauth) + '&origin=' + encodeURIComponent(location.origin + BASE)); if (DESK) await window.__TAURI_INTERNALS__.invoke('desktop_open_path', {p:r.url}); else window.open(r.url, '_blank'); toast('在浏览器里完成授权，回来点「扫描」'); }
+    catch(e){ toast('<b>没法开始授权</b>：' + esc(e.message || e), true); if (e.status === 409) setTimeout(openSecrets, 1200); }
+  });
+  /* 有在扫描的：每 2 秒看一眼，扫完刷新场 */
+  clearTimeout(srcPoll);
+  if (have.some(s => s.scan && s.scan.running)) srcPoll = setTimeout(async () => { if ($('panel').hidden) { refreshNow(); return; } const r = await api('/sources').catch(() => null); if (r && !r.sources.some(s => s.scan && s.scan.running)){ await refreshNow(); } openSources(); }, 2000);
+  else if (have.length) refreshSoon();
+}
+/* 第一次打开：库里有东西但还没接过来源，引导一次 */
+setTimeout(async () => { try { const r = await api('/sources'); if (!r.onboarded && $('panel').hidden && nodes.length) openSources(true); } catch(e){} }, 2500);
+
+/* 库外文档：只读打开，导入或学习 */
+async function openExt(n){
+  const d = await api('/field/ext?p=' + encodeURIComponent(n.p));
+  docData = Object.assign({}, d, {path:n.p});
+  return d;
+}
+function extBanner(d){
+  const fileLike = d.loc && d.loc.startsWith('/');
+  return '<div class="extb"><b>库外</b><span>' + esc(d.src) + ' · ' + esc(EXT_KIND[d.kind] || d.kind) + ' · ' + esc(d.date || '') + '</span><small>' + esc(d.loc || '') + (fileLike && !d.exists ? '（原件已不在）' : '') + '</small>' + (d.note ? '<small class="bad">' + esc(d.note) + '</small>' : '') +
+    '<div class="acts">' + (fileLike && d.exists ? '<button class="btn pri" data-imp="move">移进库</button><button class="btn" data-imp="copy">复制进库</button>' : '<button class="btn pri" data-imp="copy">导入进库</button>') + '<button class="btn" data-imp="learn">先学习</button>' + (fileLike && d.exists && DESK ? '<button class="btn" data-imp="reveal">在访达中显示</button>' : (!fileLike && /^https?:/.test(d.loc || '') ? '<a class="btn" href="' + esc(d.loc) + '" target="_blank" rel="noopener">打开原处</a>' : '')) + '</div></div>';
+}
+function wireExtBanner(n, d){
+  const el = $('doc').querySelector('.extb'); if (!el) return;
+  el.querySelectorAll('[data-imp]').forEach(b => b.onclick = async () => {
+    const how = b.dataset.imp;
+    if (how === 'learn') return startLearn(n);
+    if (how === 'reveal') return window.__TAURI_INTERNALS__.invoke('desktop_reveal_path', {p:d.loc}).catch(e => toast(esc(e), true));
+    b.disabled = true;
+    try {
+      const r = await api('/field/ext/import', {method:'POST', json:{p:n.p, mode:how}});
+      await refreshNow(); const m = byPath.get(r.path);
+      if (m){ flash(m); openDoc(m); }
+      toast(how === 'move' && r.moved ? '已移进库，存为 <b>' + esc(r.path) + '</b>' + (r.asset ? '；原件在 <b>' + esc(r.asset) + '</b>' : '') : '已导入为 <b>' + esc(r.path) + '</b>' + (how === 'copy' ? '，原件留在原处' : ''));
+    } catch(e){ b.disabled = false; toast('<b>没导入成</b>：' + esc(e.message || e), true); }
+  });
+}
+/* 学习成果存进库：每节的复述 + AI 的点评 + 出处 */
+async function saveLearning(L){
+  const isExt = L.n.p.startsWith('ext:');
+  const src = isExt ? (docData && docData.loc ? docData.loc : L.n.full) : '[[' + L.n.p.split('/').pop().replace(/\.md$/, '') + ']]';
+  const lines = ['# ' + L.n.full + ' · 学习笔记', '', '> 学自 ' + src + '（' + todayStr() + '）', ''];
+  L.secs.forEach((s, i) => {
+    if (!L.answers[i] && !L.feedback[i]) return;
+    lines.push('## ' + s.h, '');
+    if (L.answers[i]) lines.push(L.answers[i].trim(), '');
+    if (L.feedback[i]) lines.push('> ' + L.feedback[i].replace(/\n+/g, '\n> '), '');
+    lines.push('*自评：' + ({good:'讲清楚了', hard:'有点模糊', again:'没讲出来'}[L.grades[i]] || '') + '*', '');
+  });
+  const name = (L.n.full + ' 学习笔记').replace(/[\\/:*?"<>|#\n\r\t]/g, '').slice(0, 60);
+  let path = 'Notes/学习/' + name + '.md'; for (let k = 2; byPath.has(path) && k < 50; k++) path = 'Notes/学习/' + name + ' ' + k + '.md';
+  try { await api('/doc?path=' + encP(path), {method:'PUT', body:lines.join('\n'), headers:{'content-type':'text/markdown'}});
+    /* 学习笔记接着进复习：按这次讲得怎样排 */
+    if (L.docGrade) api('/field/learn/grade', {method:'POST', json:{path, grade:L.docGrade}}).then(r => { learnState.cards[path] = r.card; }).catch(() => {});
+    await refreshNow(); const m = byPath.get(path); if (m) flash(m); toastAct('学习笔记存为 <b>' + esc(path) + '</b>', '打开', () => m && openDoc(m)); }
+  catch(e){ toast('<b>没存上</b>：' + esc(e.message || e), true); }
+}
+
 /* ───────── 视图、主题、帮助 ───────── */
 function setLayout(l){
   layout = l; $('l-sem').classList.toggle('on', l === 'sem'); $('l-time').classList.toggle('on', l === 'time');
@@ -3067,7 +3219,7 @@ loadField().then(() => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence();
-window.__field = {mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+window.__field = {openSources, saveLearning, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>

@@ -102,6 +102,7 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | F4-4 插件索引与网页本地化 | /插件 内嵌 `/plugin-index` 一键装；`POST /field/localize {url, html?}`：取 `<article>`/`<main>`/`<body>`，去导航页眉页脚侧栏表单，kernel-convert 转 Markdown，图片 `kc-img://` 占位后下载入 Assets（单张 10MB、合计 60MB、最多 40 张），失败的留原地址；桌面先 `desktop_render_page` | 已完成 |
 | G1 大库提速 | 见 `PERF.md`「知识场大库纪律」 | 已完成 |
 | G2 全库整理 | `server/src/organize.rs`。场构建时算信号（正文字数、TODO、计划日期）；`POST /field/organize {scope}` 增加 `fragments`（< 280 字的文档按近邻 ≥ 0.3 连通，3–12 篇一组，按跨越时间排序）、`stale`（superseded / expired / todo / aging）、`options`（区域与日期范围）；`POST /field/merge`（plain / ai，原文 keep / archive，返回撤销说明）；`POST /field/refresh`（参照更新版起草，不写盘）；`/field/patrol`（估算 / 开始 / 进度 / 停下，每批 30 篇补标签起标题、每批 6 篇核实过时，结果存 `.thirdc/patrol.json`） | 已完成 |
+| G3 数据源 | `server/src/sources.rs`。配置 `.thirdc/sources.json`，索引 `.thirdc/sources/index.json`，抽出的文字 `.thirdc/sources/text/<hash>.txt`（设备本地）。种类 folder / agent / mcp / google / rest；`/sources`（列表、增改、`onboarded`）、`/sources/detect`（只数个数）、`/sources/{id}/scan`（后台增量：路径 + 大小 + 修改时间不变就沿用）、`/sources/connection`（写 thirdc.toml 的 [[connections]]）、`/sources/google/start|callback`（OAuth 本机回环，refresh token 存凭证库）。知识场把条目当 `ext:<源>/<条目>` 节点铺进场（`k=ext`、`s`=来源名），缓存键加 `sources::REV`；`/field/ext` 只读、`/field/ext/import`（move / copy）；结晶能读库外原文；整理排除库外。截图 OCR：macOS Vision（首次编译一个 Swift 小程序到临时目录）→ tesseract | 已完成 |
 
 其他未做：学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。
 

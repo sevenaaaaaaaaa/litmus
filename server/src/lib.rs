@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex};
 mod field;
 mod field_tools;
 mod organize;
+mod sources;
 mod share;
 
 pub struct AppState {
@@ -208,6 +209,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/merge", post(organize::merge))
         .route("/field/refresh", post(organize::refresh))
         .route("/field/patrol", get(organize::patrol_status).post(organize::patrol_start).delete(organize::patrol_stop))
+        .route("/sources", get(sources::list).post(sources::upsert))
+        .route("/sources/detect", get(sources::detect))
+        .route("/sources/connection", post(sources::add_connection))
+        .route("/sources/google/start", get(sources::google_start))
+        .route("/sources/google/callback", get(sources::google_callback))
+        .route("/sources/{id}", axum::routing::delete(sources::remove))
+        .route("/sources/{id}/scan", post(sources::scan))
+        .route("/field/ext", get(sources::ext_get))
+        .route("/field/ext/import", post(sources::ext_import))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {

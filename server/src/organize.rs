@@ -145,6 +145,10 @@ impl Scope {
             .iter()
             .enumerate()
             .map(|(i, m)| {
+                // 库外的不参与整理（不能写）
+                if m.src.is_some() {
+                    return false;
+                }
                 if let Some(r) = &self.region {
                     if f.region_names.get(f.region[i]).map(|a| a != r).unwrap_or(true) {
                         return false;

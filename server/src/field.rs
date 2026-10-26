@@ -38,10 +38,14 @@ pub struct DocMeta {
     /// 过时信号：未完成的 TODO / 提到的计划日期（整理时与今天比较）
     pub todo: bool,
     pub plans: Vec<String>,
+    /// 库外来源名（库里的文档为 None）
+    pub src: Option<String>,
 }
 
 pub struct Cached {
     pub epoch: u64,
+    /// 库外来源的版本（扫描完成或来源变了就变）
+    pub ext_rev: u64,
     pub field: Field,
     pub meta: Vec<DocMeta>,
     pub body: Bytes,
@@ -225,9 +229,10 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
         let _ = k.sync_throttled();
         (k.vault.root.clone(), k.data_epoch())
     };
+    let ext_rev = super::sources::REV.load(std::sync::atomic::Ordering::SeqCst);
     if !rebuild {
         if let Some(c) = cache().lock().unwrap().get(&root) {
-            if c.epoch == epoch {
+            if c.epoch == epoch && c.ext_rev == ext_rev {
                 return Ok(c.clone());
             }
         }
@@ -236,7 +241,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
     // 排队期间别人可能已经建好
     if !rebuild {
         if let Some(c) = cache().lock().unwrap().get(&root) {
-            if c.epoch == epoch {
+            if c.epoch == epoch && c.ext_rev == ext_rev {
                 return Ok(c.clone());
             }
         }
@@ -260,13 +265,20 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             }
         };
         let prev = load_prev(&root2);
-        let docs: Vec<(String, String, String)> = corpus
+        let mut docs: Vec<(String, String, String)> = corpus
             .into_iter()
             .map(|(p, text)| {
                 let t = title_of(&p, &text);
                 (p, t, text)
             })
             .collect();
+        // 库外来源：原处索引的文字一起铺进场里（path 以 ext: 开头，不可写）
+        let ext = super::sources::corpus(&root2);
+        let mut ext_meta: HashMap<String, (String, String, i64, String)> = HashMap::new();
+        for (it, src_name, text) in ext {
+            ext_meta.insert(it.key.clone(), (src_name, it.date.clone(), it.mtime, it.kind.clone()));
+            docs.push((it.key, it.title, text));
+        }
         let texts: HashMap<String, (String, String)> = docs.iter().map(|(p, t, x)| (p.clone(), (t.clone(), x.clone()))).collect();
         mark("docs");
         let f = field::build(&docs, &prev, rebuild);
@@ -277,9 +289,13 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .iter()
             .map(|p| {
                 let (title, text) = &texts[p];
+                if let Some((src, date, mtime, _)) = ext_meta.get(p) {
+                    let (chars, todo, plans) = super::organize::signals(text);
+                    return DocMeta { path: p.clone(), title: title.clone(), kind: "ext", date: date.clone(), excerpt: excerpt_of(text), mtime: *mtime, tags: Vec::new(), chars, todo, plans, src: Some(src.clone()) };
+                }
                 let mtime = stats.get(p).map(|s| s.0).unwrap_or(0);
                 let (chars, todo, plans) = super::organize::signals(text);
-                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()), chars, todo, plans }
+                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()), chars, todo, plans, src: None }
             })
             .collect();
         // 派生层落盘：只存坐标（可删可重建）
@@ -306,13 +322,13 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             "regions": f.region_names.iter().zip(count.iter()).map(|(n, c)| json!({"name": names.get(n).cloned().unwrap_or_else(|| n.clone()), "auto": n, "count": c})).collect::<Vec<_>>(),
             "docs": meta.iter().enumerate().map(|(i, m)| json!({
                 "p": m.path, "t": m.title, "k": m.kind, "d": m.date, "ex": m.excerpt,
-                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime, "g": m.tags,
+                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime, "g": m.tags, "s": m.src,
             })).collect::<Vec<_>>(),
             "edges": f.edges.iter().map(|(a, b, w)| json!([a, b, (w * 1000.0).round() / 1000.0])).collect::<Vec<_>>(),
         });
         let body = Bytes::from(serde_json::to_vec(&body).unwrap_or_default());
         mark("json");
-        Cached { epoch, field: f, meta, body, knn: std::sync::OnceLock::new() }
+        Cached { epoch, ext_rev, field: f, meta, body, knn: std::sync::OnceLock::new() }
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -525,7 +541,7 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     renames.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     let mut dups = Vec::new();
     for &(a, b, w) in &f.edges {
-        if w >= 0.86 && a < n && b < n && (keep[a] || keep[b]) {
+        if w >= 0.86 && a < n && b < n && keep[a] && keep[b] {
             dups.push(json!({ "a": c.meta[a].path, "b": c.meta[b].path, "ta": c.meta[a].title, "tb": c.meta[b].title, "sim": (w * 100.0).round() / 100.0 }));
         }
     }
@@ -961,7 +977,7 @@ pub async fn crystal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     let paths: Vec<String> = req
         .get("paths")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).filter(|p| kernel_core::is_safe_doc_path(p)).take(6).collect())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).filter(|p| kernel_core::is_safe_doc_path(p) || p.starts_with("ext:")).take(6).collect())
         .unwrap_or_default();
     if q.is_empty() || paths.is_empty() {
         return err(StatusCode::BAD_REQUEST, "需要问题 q 和至少一篇来源 paths").into_response();
@@ -973,6 +989,11 @@ pub async fn crystal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     let sources: Vec<(String, String, String)> = paths
         .iter()
         .filter_map(|p| {
+            // 库外的一篇：读索引里抽好的文字
+            if p.starts_with("ext:") {
+                let (it, _) = super::sources::find_item(&root, p)?;
+                return Some((p.clone(), it.title.clone(), super::sources::read_text(&root, &it.hash)));
+            }
             let text = std::fs::read_to_string(root.join(p)).ok()?;
             Some((p.clone(), title_of(p, &text), text))
         })
@@ -1085,6 +1106,7 @@ pub async fn note(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
 #[cfg(test)]
 mod api_tests {
     use axum::body::Body;
+    use axum::http::HeaderMap;
     use axum::http::Request;
     use serde_json::Value;
     use tower::ServiceExt;
@@ -1648,6 +1670,194 @@ mod api_tests {
         assert_eq!(st, 200, "{rf}");
         assert!(rf["markdown"].as_str().unwrap().contains("2025-04") && rf["changes"].as_str().unwrap().contains("发布日期"));
         assert!(rf["before"].as_str().unwrap().contains("预计 2025-02"), "不写盘，原文还在");
+    }
+
+    #[tokio::test]
+    async fn outside_sources_are_indexed_in_place_and_imported_on_demand() {
+        let (app, token, dir) = app();
+        seed(&app, &token).await;
+        let outside = tempfile::tempdir().unwrap();
+        let o = outside.path();
+        std::fs::write(o.join("同步笔记.md"), "# 外面的同步笔记\n\n同步 冲突 合并 两边保留 CRDT 设备 离线。").unwrap();
+        std::fs::write(o.join("发布.txt"), "发布 站点 部署 线上 构建 静态 域名 证书。").unwrap();
+        std::fs::write(o.join("页面.html"), "<html><head><title>网页标题</title></head><body><h1>部署手册</h1><p>部署 发布 线上 服务器。</p></body></html>").unwrap();
+        std::fs::write(o.join("忽略.bin"), "x").unwrap();
+        std::fs::create_dir_all(o.join(".hidden")).unwrap();
+        std::fs::write(o.join(".hidden/秘密.md"), "# 不该收").unwrap();
+        // 不能把库自己当来源
+        let (st, _) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "folder", "path": dir.path().join("Notes").to_string_lossy()}}).to_string()).await;
+        assert_eq!(st, 400);
+        let (st, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "folder", "name": "下载", "path": o.to_string_lossy()}}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (st, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        assert_eq!(st, 200);
+        let mut list = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            list = call(&app, &token, "GET", "/sources", "").await.1;
+            if list["sources"][0]["scan"]["running"] == false {
+                break;
+            }
+        }
+        assert_eq!(list["sources"][0]["items"], 3, "md / txt / html 三篇，隐藏目录与不认识的扩展名不收：{list}");
+        // 场里出现库外节点：kind=ext，带来源名；原文件没被复制进库
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let ext: Vec<&Value> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").collect();
+        assert_eq!(ext.len(), 3, "{d}");
+        assert!(ext.iter().all(|x| x["s"] == "下载" && x["p"].as_str().unwrap().starts_with(&format!("ext:{id}/"))));
+        assert!(ext.iter().any(|x| x["t"] == "部署手册"), "html 取正文标题");
+        assert!(!dir.path().join("Notes/同步笔记.md").exists());
+        // 显色能找到库外的；结晶能读库外的原文
+        let (_, react) = call(&app, &token, "GET", "/field/react?q=%E5%90%8C%E6%AD%A5%E5%86%B2%E7%AA%81", "").await;
+        let docs = d["docs"].as_array().unwrap();
+        let key = ext.iter().find(|x| x["t"] == "外面的同步笔记").unwrap()["p"].as_str().unwrap().to_string();
+        let idx = docs.iter().position(|x| x["p"] == key.as_str()).unwrap() as u64;
+        assert!(react["hits"].as_array().unwrap().iter().any(|h| h[0] == idx), "{react}");
+        let (_, c) = call(&app, &token, "POST", "/field/crystal", &serde_json::json!({"q": "同步冲突怎么办", "paths": [key]}).to_string()).await;
+        assert!(c["text"].as_str().unwrap().contains("外面的同步笔记"), "{c}");
+        // 整理不碰库外的
+        let (_, plan) = call(&app, &token, "POST", "/field/organize", "{}").await;
+        assert!(!plan.to_string().contains("ext:"), "{plan}");
+        // 打开：只读正文
+        let (st, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&key)), "").await;
+        assert_eq!(st, 200);
+        assert_eq!(e["src"], "下载");
+        assert!(e["html"].as_str().unwrap().contains("两边保留") && e["exists"] == true);
+        // 复制进库：原件留着
+        let (st, imp) = call(&app, &token, "POST", "/field/ext/import", &serde_json::json!({"p": key, "mode": "copy"}).to_string()).await;
+        assert_eq!(st, 200, "{imp}");
+        let md = std::fs::read_to_string(dir.path().join(imp["path"].as_str().unwrap())).unwrap();
+        assert!(md.starts_with("# 外面的同步笔记") && md.contains("导入自") && md.contains("两边保留"), "{md}");
+        assert!(o.join("同步笔记.md").exists());
+        // 移进库：原件进 Assets，原处没了，索引里也去掉
+        let txt_key = ext.iter().find(|x| x["p"].as_str().unwrap().ends_with("发布.txt")).unwrap()["p"].as_str().unwrap().to_string();
+        let (st, mv) = call(&app, &token, "POST", "/field/ext/import", &serde_json::json!({"p": txt_key, "mode": "move"}).to_string()).await;
+        assert_eq!(st, 200, "{mv}");
+        assert_eq!(mv["moved"], true);
+        assert!(!o.join("发布.txt").exists());
+        assert!(mv["asset"].is_null(), "纯文本移进库不另存附件：正文就是原件");
+        assert!(std::fs::read_to_string(dir.path().join(mv["path"].as_str().unwrap())).unwrap().contains("证书"));
+        // 网页之类：原件进 Assets/imported/，正文链过去
+        let html_key = ext.iter().find(|x| x["p"].as_str().unwrap().ends_with("页面.html")).unwrap()["p"].as_str().unwrap().to_string();
+        let (_, hv) = call(&app, &token, "POST", "/field/ext/import", &serde_json::json!({"p": html_key, "mode": "move"}).to_string()).await;
+        assert_eq!(hv["asset"], "Assets/imported/页面.html", "{hv}");
+        assert!(dir.path().join("Assets/imported/页面.html").is_file() && !o.join("页面.html").exists());
+        assert!(std::fs::read_to_string(dir.path().join(hv["path"].as_str().unwrap())).unwrap().contains("](Assets/imported/页面.html)"));
+        let (_, d2) = call(&app, &token, "GET", "/field/data", "").await;
+        assert_eq!(d2["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 1);
+        // 停用来源：场里的库外节点消失；移除：索引清掉，原文件不动
+        let mut src: Value = list["sources"][0].clone();
+        src["enabled"] = serde_json::json!(false);
+        let (_, _) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": src}).to_string()).await;
+        let (_, d3) = call(&app, &token, "GET", "/field/data", "").await;
+        assert_eq!(d3["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 0);
+        let (st, _) = call(&app, &token, "DELETE", &format!("/sources/{id}"), "").await;
+        assert_eq!(st, 200);
+        assert!(o.join("同步笔记.md").exists());
+    }
+
+    #[tokio::test]
+    async fn agent_sessions_rest_and_google_sources() {
+        let (app, token, _dir) = app();
+        // Claude Code 会话目录
+        let sess = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(sess.path().join("-Users-x-InputFlow")).unwrap();
+        std::fs::write(sess.path().join("-Users-x-InputFlow/a.jsonl"), r#"{"type":"user","cwd":"/Users/x/InputFlow","message":{"role":"user","content":"候选词排序怎么改"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"结论：按频率降序，同频按最近使用。"}]}}"#).unwrap();
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "agent", "agent": "claude", "name": "Claude Code", "path": sess.path().to_string_lossy()}}).to_string()).await;
+        let aid = r["source"]["id"].as_str().unwrap().to_string();
+        // 一个假的 JSON 接口 + 假的 Google
+        use axum::{routing::{get, post}, Router};
+        let api = Router::new()
+            .route("/notes", get(|h: HeaderMap| async move {
+                let ok = h.get("authorization").and_then(|v| v.to_str().ok()) == Some("Bearer tk-123");
+                axum::Json(if ok { serde_json::json!({"data": {"items": [{"id": 1, "name": "接口里的一条", "content": "同步 冲突 的说明", "updated_at": "2026-01-02T00:00:00Z"}]}}) } else { serde_json::json!({"data": {"items": []}}) })
+            }))
+            .route("/token", post(|| async { axum::Json(serde_json::json!({"access_token": "ya29"})) }))
+            .route("/files", get(|| async { axum::Json(serde_json::json!({"files": [{"id": "f1", "name": "云端方案", "modifiedTime": "2026-02-03T01:02:03Z", "webViewLink": "https://docs/f1"}]})) }))
+            .route("/files/f1/export", get(|| async { "# 云端方案\n\n发布 站点 部署".to_string() }))
+            .route("/users/me/messages", get(|| async { axum::Json(serde_json::json!({"messages": [{"id": "m1"}]})) }))
+            .route("/users/me/messages/m1", get(|| async { axum::Json(serde_json::json!({"internalDate": "1767225600000", "payload": {"headers": [{"name": "Subject", "value": "周会纪要"}, {"name": "From", "value": "a@x"}], "mimeType": "text/plain", "body": {"data": "5L2g5aW977yM6L-Z5piv5q2j5paH"}}})) }));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, api).await.unwrap() });
+        let base = format!("http://{addr}");
+        let (_, _) = call(&app, &token, "POST", "/secrets", r#"{"name":"demo_token","value":"tk-123"}"#).await;
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "rest", "name": "我的接口", "rest": {"url": format!("{base}/notes"), "headers": {"Authorization": "Bearer {{secret:demo_token}}"}, "items": "/data/items", "title": "name", "body": "content", "date": "updated_at"}}}).to_string()).await;
+        let rid = r["source"]["id"].as_str().unwrap().to_string();
+        std::env::set_var("THIRDC_GOOGLE_OAUTH", &base);
+        std::env::set_var("THIRDC_GOOGLE_DRIVE", &base);
+        std::env::set_var("THIRDC_GOOGLE_GMAIL", &base);
+        let (_, r) = call(&app, &token, "POST", "/sources", r#"{"source":{"kind":"google","name":"Google","services":["drive","gmail"]}}"#).await;
+        let gid = r["source"]["id"].as_str().unwrap().to_string();
+        // 没存 client id：授权给出可执行的提示
+        let (st, _) = call(&app, &token, "GET", &format!("/sources/google/start?id={gid}"), "").await;
+        assert_eq!(st, 409);
+        for (n, v) in [("google_client_id", "cid"), ("google_client_secret", "cs"), (&*format!("google_refresh:{gid}"), "rt")] {
+            let (_, _) = call(&app, &token, "POST", "/secrets", &serde_json::json!({"name": n, "value": v}).to_string()).await;
+        }
+        let (st, s) = call(&app, &token, "GET", &format!("/sources/google/start?id={gid}&origin=http://127.0.0.1:7717"), "").await;
+        assert_eq!(st, 200);
+        assert!(s["url"].as_str().unwrap().contains("drive.readonly") && s["url"].as_str().unwrap().contains("gmail.readonly"));
+        for id in [&aid, &rid, &gid] {
+            let (st, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+            assert_eq!(st, 200);
+        }
+        let mut list = Value::Null;
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            list = call(&app, &token, "GET", "/sources", "").await.1;
+            if list["sources"].as_array().unwrap().iter().all(|s| s["scan"]["running"] == false) {
+                break;
+            }
+        }
+        let by = |id: &str| list["sources"].as_array().unwrap().iter().find(|s| s["id"] == id).unwrap().clone();
+        assert_eq!(by(&aid)["items"], 1, "{list}");
+        assert_eq!(by(&rid)["items"], 1, "{list}");
+        assert_eq!(by(&gid)["items"], 2, "{list}");
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let titles: Vec<String> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").map(|x| x["t"].as_str().unwrap().to_string()).collect();
+        assert!(titles.iter().any(|t| t.starts_with("[InputFlow] 候选词排序怎么改")), "{titles:?}");
+        assert!(titles.contains(&"接口里的一条".to_string()) && titles.contains(&"云端方案".to_string()) && titles.contains(&"周会纪要".to_string()), "{titles:?}");
+        let key = d["docs"].as_array().unwrap().iter().find(|x| x["t"].as_str().unwrap().starts_with("[InputFlow]")).unwrap()["p"].as_str().unwrap().to_string();
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&key)), "").await;
+        assert!(e["source"].as_str().unwrap().contains("## 结论") && e["source"].as_str().unwrap().contains("按频率降序"));
+        let mail = d["docs"].as_array().unwrap().iter().find(|x| x["t"] == "周会纪要").unwrap()["p"].as_str().unwrap().to_string();
+        let (_, m) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&mail)), "").await;
+        assert!(m["source"].as_str().unwrap().contains("你好，这是正文"));
+        // 会话不是文件：只能复制进库
+        let (st, imp) = call(&app, &token, "POST", "/field/ext/import", &serde_json::json!({"p": mail, "mode": "move"}).to_string()).await;
+        assert_eq!(st, 200);
+        assert_eq!(imp["moved"], false);
+    }
+
+    #[tokio::test]
+    async fn connection_is_written_to_toml_and_mcp_source_reports_errors() {
+        let (app, token, dir) = app();
+        let cfg = dir.path().join("thirdc.toml");
+        let before = std::fs::read_to_string(&cfg).unwrap();
+        std::fs::write(&cfg, format!("# 我的注释\n{before}")).unwrap();
+        let (st, _) = call(&app, &token, "POST", "/sources/connection", r#"{"name":"bad name","command":"x"}"#).await;
+        assert_eq!(st, 400);
+        let (st, _) = call(&app, &token, "POST", "/sources/connection", r#"{"name":"linkto","command":"/nonexistent/linkto","args":["mcp","--stdio"]}"#).await;
+        assert_eq!(st, 200);
+        let (_, _) = call(&app, &token, "POST", "/sources/connection", r#"{"name":"linkto","command":"/nonexistent/linkto2","args":[]}"#).await;
+        let after = std::fs::read_to_string(&cfg).unwrap();
+        assert!(after.starts_with("# 我的注释") && after.matches("[[connections]]").count() == 1 && after.contains("linkto2"), "{after}");
+        assert_eq!(kernel_core::Vault::open(dir.path()).unwrap().config.connections[0].command, "/nonexistent/linkto2");
+        let (_, r) = call(&app, &token, "POST", "/sources", r#"{"source":{"kind":"mcp","connection":"linkto"}}"#).await;
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (_, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        let mut list = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            list = call(&app, &token, "GET", "/sources", "").await.1;
+            if list["sources"][0]["scan"]["running"] == false {
+                break;
+            }
+        }
+        assert!(list["sources"][0]["scan"]["error"].as_str().unwrap().contains("linkto"), "{list}");
     }
 
     #[tokio::test]
