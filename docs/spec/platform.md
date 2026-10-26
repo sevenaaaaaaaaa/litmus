@@ -9,8 +9,8 @@
             ┌──────────────── 同一份 server/web（单文件前端）────────────────┐
             │                                                                 │
    Web ─────┤  kernel-core / kernel-store / kernel-sync / kernel-md ...       │
-   macOS ───┤  thirdc-server（axum daemon，唯一业务真相）                     │
-   Windows ─┤      ↑ /desktop/* 仅在 THIRDC_DESKTOP=1 时可用                  │
+   macOS ───┤  litmus-server（axum daemon，唯一业务真相）                     │
+   Windows ─┤      ↑ /desktop/* 仅在 LITMUS_DESKTOP=1 时可用                  │
    Linux ───┤                                                                 │
    Android ─┤                                                                 │
    iOS ─────┘                                                                 │
@@ -55,7 +55,7 @@
   1. `cargo test` 全绿。
   2. 若改了 `server/web`：确认 `BASE` 前缀、登录门禁顺序（token 早于 DOM 绑定）、SW 缓存名 bump。
   3. 若改了内核/服务端：本地起 daemon 冒烟（含 `/desktop/*` 与线上 404 门禁）。
-  4. 构建并验证各端：`cargo build --release -p thirdc`（线上）→ 部署；`-p thirdc-desktop` → 打包；Windows/Linux 在 CI 出包。
+  4. 构建并验证各端：`cargo build --release -p litmus`（线上）→ 部署；`-p litmus-desktop` → 打包；Windows/Linux 在 CI 出包。
   5. 更新 `docs/spec/platform.md` 的能力矩阵与 `docs/RELEASE.md`。
   6. 提交信息里写明「影响端」。
 

@@ -4,7 +4,7 @@ use kernel_core::Vault;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "thirdc", version, about = "ThirdC Studio kernel CLI")]
+#[command(name = "litmus", version, about = "Litmus Studio kernel CLI")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -249,25 +249,25 @@ fn main() -> Result<()> {
         }
         Cmd::Serve { path, addr } => {
             let vault = Vault::open(&path)?;
-            let state = thirdc_server::build_state(vault).context("build state")?;
-            thirdc_server::spawn_watcher(state.clone()).context("spawn watcher")?;
-            println!("thirdc daemon listening on http://{addr}");
+            let state = litmus_server::build_state(vault).context("build state")?;
+            litmus_server::spawn_watcher(state.clone()).context("spawn watcher")?;
+            println!("litmus daemon listening on http://{addr}");
             println!("api token: {}", state.token);
-            println!("(Authorization: Bearer <token>，或 header x-thirdc-token)");
+            println!("(Authorization: Bearer <token>，或 header x-litmus-token)");
             let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(async move { thirdc_server::serve(&addr, state).await })
+            rt.block_on(async move { litmus_server::serve(&addr, state).await })
                 .context("serve")?;
         }
         Cmd::Reindex { path } => {
             let vault = Vault::open(&path)?;
-            let state = thirdc_server::build_state(vault).context("build state")?;
+            let state = litmus_server::build_state(vault).context("build state")?;
             let model = state.kernel.lock().unwrap().embedding_model();
             if model.is_empty() {
-                println!("未配置 [ai].embedding_model（thirdc.toml），密向量未启用");
+                println!("未配置 [ai].embedding_model（litmus.toml），密向量未启用");
                 return Ok(());
             }
             println!("密向量重建：模型 {model}，后台批量嵌入中…");
-            thirdc_server::rag_job_blocking(state.clone());
+            litmus_server::rag_job_blocking(state.clone());
             let k = state.kernel.lock().unwrap();
             let (covered, docs) = k.vector_stats().unwrap_or((0, 0));
             let err = state.rag.last_error.lock().unwrap().clone();
@@ -289,7 +289,7 @@ fn main() -> Result<()> {
                 .config
                 .backup
                 .clone()
-                .ok_or_else(|| anyhow::anyhow!("未配置备份：thirdc.toml 加 [backup] 与 [[backup.targets]]"))?;
+                .ok_or_else(|| anyhow::anyhow!("未配置备份：litmus.toml 加 [backup] 与 [[backup.targets]]"))?;
             let into: Option<String> = into;
             if let Some(ref dir) = into {
                 // 恢复模式
@@ -309,7 +309,7 @@ fn main() -> Result<()> {
                 if snap.is_empty() {
                     anyhow::bail!("目标「{}」没有可用快照", t.name);
                 }
-                                let passphrase = if cfg.passphrase.is_empty() { std::env::var("THIRDC_BACKUP_PASSPHRASE").unwrap_or_default() } else { cfg.passphrase.clone() };
+                                let passphrase = if cfg.passphrase.is_empty() { std::env::var("LITMUS_BACKUP_PASSPHRASE").or_else(|_| std::env::var("THIRDC_BACKUP_PASSPHRASE")).unwrap_or_default() } else { cfg.passphrase.clone() };
                 let (files, bytes) = kernel_backup::restore(t, &snap, std::path::Path::new(dir), &passphrase)?;
                 println!("已恢复 {snap}：{files} 个文件，{bytes} 字节 → {dir}");
                 return Ok(());
@@ -348,7 +348,7 @@ fn main() -> Result<()> {
         Cmd::Mcp { path } => {
             use std::io::{BufRead, Write};
             let vault = Vault::open(&path)?;
-            let server = thirdc_mcp::McpServer::open(vault).context("open mcp server")?;
+            let server = litmus_mcp::McpServer::open(vault).context("open mcp server")?;
             let stdin = std::io::stdin();
             let stdout = std::io::stdout();
             for line in stdin.lock().lines() {
@@ -618,7 +618,7 @@ fn main() -> Result<()> {
             ConnCmd::List { path } => {
                 let vault = Vault::open(&path)?;
                 if vault.config.connections.is_empty() {
-                    println!("(no connections configured in thirdc.toml)");
+                    println!("(no connections configured in litmus.toml)");
                 }
                 for c in &vault.config.connections {
                     println!("{:12}  {} {}", c.name, c.command, c.args.join(" "));
@@ -627,7 +627,7 @@ fn main() -> Result<()> {
             ConnCmd::Probe { path, name } => {
                 let vault = Vault::open(&path)?;
                 let cfg = find_conn(&vault, &name)?;
-                let (server, tools, resources) = thirdc_mcp::pull::probe(&cfg)?;
+                let (server, tools, resources) = litmus_mcp::pull::probe(&cfg)?;
                 println!("server: {server}");
                 println!("tools ({}): {}", tools.len(), tools.join(", "));
                 println!("resources ({}):", resources.len());
@@ -641,7 +641,7 @@ fn main() -> Result<()> {
                 let kernel = std::sync::Arc::new(std::sync::Mutex::new(
                     kernel_core::Kernel::open(vault).context("open kernel")?,
                 ));
-                let report = thirdc_mcp::pull::pull_resources(&cfg, &kernel)?;
+                let report = litmus_mcp::pull::pull_resources(&cfg, &kernel)?;
                 println!(
                     "server {} · tools {} · imported {} · skipped {}",
                     report.server,
@@ -666,8 +666,8 @@ fn main() -> Result<()> {
                 let vault = Vault::open(&path)?;
                 let cfg = find_conn(&vault, &name)?;
                 let parsed: serde_json::Value = serde_json::from_str(&args)?;
-                let result = thirdc_mcp::pull::call(&cfg, &tool, parsed)?;
-                let text = thirdc_mcp::client::extract_text(&result)
+                let result = litmus_mcp::pull::call(&cfg, &tool, parsed)?;
+                let text = litmus_mcp::client::extract_text(&result)
                     .unwrap_or_else(|| result.to_string());
                 println!("{text}");
                 if import {
@@ -692,7 +692,7 @@ fn find_conn(vault: &Vault, name: &str) -> Result<kernel_core::ConnectionConfig>
         .iter()
         .find(|c| c.name == name)
         .cloned()
-        .with_context(|| format!("connection '{name}' not found in thirdc.toml"))
+        .with_context(|| format!("connection '{name}' not found in litmus.toml"))
 }
 
 fn now_hms() -> String {

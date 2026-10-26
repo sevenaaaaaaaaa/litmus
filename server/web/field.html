@@ -8,7 +8,9 @@
 <script>
 /* 主题与桌面标记必须早于首帧 */
 (function(){
-  try{var p=localStorage.getItem('thirdc_theme')||'auto';if(p==='dark'||p==='light')document.documentElement.dataset.theme=p;}catch(e){}
+  /* 0.14 及以前的本地设置键叫 thirdc_*：改名成 litmus_*（只搬一次，新键已有就不覆盖） */
+  try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('thirdc_')===0){var n='litmus_'+k.slice(7);if(localStorage.getItem(n)===null)localStorage.setItem(n,localStorage.getItem(k));localStorage.removeItem(k);}}}catch(e){}
+  try{var p=localStorage.getItem('litmus_theme')||'auto';if(p==='dark'||p==='light')document.documentElement.dataset.theme=p;}catch(e){}
   if(window.__TAURI_INTERNALS__||window.__TAURI__)document.documentElement.classList.add('desktop');
 })();
 </script>
@@ -568,10 +570,10 @@ const BASE = location.pathname.replace(/\/field\/?$/, '').replace(/\/+$/, '');
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 let token = '';
-try { token = params.get('token') || localStorage.getItem('thirdc_token') || ''; if (params.get('token')) localStorage.setItem('thirdc_token', token); } catch(e){ token = params.get('token') || ''; }
+try { token = params.get('token') || localStorage.getItem('litmus_token') || ''; if (params.get('token')) localStorage.setItem('litmus_token', token); } catch(e){ token = params.get('token') || ''; }
 if (params.get('token')){ params.delete('token'); const r = params.toString(); history.replaceState(null, '', location.pathname + (r ? '?' + r : '') + location.hash); }
 if (!token){ showLogin(); return; }
-/* 网页版第一次打开：登录（thirdc.toml [auth] 的用户名密码；没设时用户名 admin、密码是令牌） */
+/* 网页版第一次打开：登录（litmus.toml [auth] 的用户名密码；没设时用户名 admin、密码是令牌） */
 function showLogin(){
   document.body.classList.add('login');
   const el = document.createElement('form'); el.id = 'login'; el.autocomplete = 'on';
@@ -585,7 +587,7 @@ function showLogin(){
       const r = await fetch(BASE + '/auth/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username:document.getElementById('lg-u').value.trim(), password:document.getElementById('lg-p').value})});
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.token) throw new Error(d.error || '登录失败');
-      try { localStorage.setItem('thirdc_token', d.token); localStorage.setItem('thirdc_user', document.getElementById('lg-u').value.trim()); } catch(_){}
+      try { localStorage.setItem('litmus_token', d.token); localStorage.setItem('litmus_user', document.getElementById('lg-u').value.trim()); } catch(_){}
       location.replace(location.pathname + location.search + location.hash);
     } catch(x){ er.textContent = x.message || String(x); }
   };
@@ -613,7 +615,7 @@ async function api(path, opts){
   }
   const text = await res.text(); let data;
   try { data = text ? JSON.parse(text) : {}; } catch(_){ data = {raw:text}; }
-  if (res.status === 401){ try { localStorage.removeItem('thirdc_token'); } catch(e){} location.replace(BASE + '/'); throw new Error('登录已失效'); }
+  if (res.status === 401){ try { localStorage.removeItem('litmus_token'); } catch(e){} location.replace(BASE + '/'); throw new Error('登录已失效'); }
   if (!res.ok) throw Object.assign(new Error(data.error || (res.status + ' ' + res.statusText)), {status:res.status});
   return data;
 }
@@ -650,7 +652,7 @@ function mkNode(d){
 }
 /* 场上的标签只要主干：「ADR-0002 — 文件为内容真相，…」→「ADR-0002 文件为内容真相」，副标题留给阅读页 */
 function shortLabel(t){
-  let s = String(t).replace(/^ThirdC\s+/, '').trim();
+  let s = String(t).replace(/^Litmus\s+/, '').trim();
   const m = s.match(/^(.+?)\s*(?:——|—|–|\s-\s|（|\(|：|:|\|)\s*(.*)$/);
   if (m && m[1].length >= 2){
     const head = m[1].trim();
@@ -1956,8 +1958,8 @@ async function openSettings(){
     '<div class="chips">' + presets.map((p, i) => '<button class="chip" data-pre="' + i + '"><span>' + esc(p[0]) + '</span></button>').join('') + '</div>' +
     '<label for="ai-url">接口地址</label><input type="text" id="ai-url" value="' + esc(a.base_url || '') + '" placeholder="https://api.deepseek.com/v1">' +
     '<label for="ai-model">模型</label><input type="text" id="ai-model" value="' + esc(a.model || '') + '" placeholder="deepseek-chat">' +
-    '<label for="ai-key">密钥</label><input type="password" id="ai-key" placeholder="' + (a.has_key ? '已保存，留空表示不改' : a.key_from_env ? '已从环境变量 THIRDC_AI_API_KEY 读取' : 'sk-…（本机 Ollama 可留空）') + '">' +
-    '<p class="hint">密钥写进库根目录的 thirdc.toml，只在这台电脑上。更稳妥的做法是设环境变量 THIRDC_AI_API_KEY，这里留空。</p>' +
+    '<label for="ai-key">密钥</label><input type="password" id="ai-key" placeholder="' + (a.has_key ? '已保存，留空表示不改' : a.key_from_env ? '已从环境变量 LITMUS_AI_API_KEY 读取' : 'sk-…（本机 Ollama 可留空）') + '">' +
+    '<p class="hint">密钥写进库根目录的 litmus.toml，只在这台电脑上。更稳妥的做法是设环境变量 LITMUS_AI_API_KEY，这里留空。</p>' +
     '<div class="acts"><button class="btn pri" id="ai-save">保存并测试</button><span id="ai-msg"></span></div>';
   box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
   $('ai-save').onclick = async () => {
@@ -2202,7 +2204,7 @@ async function openPublish(){
   const box = openPanel('发布', '<span class="thinking"><i></i><i></i><i></i> 正在读取发布目标</span>');
   let d, l; try { [d, l] = await Promise.all([api('/publish/targets'), api('/publish').catch(() => ({items:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   const kind = {local:'本地', git:'Git Pages', s3:'S3 兼容', 'cf-pages':'Cloudflare Pages'};
-  box.innerHTML = '<label>发布目标</label>' + ((d.targets || []).length ? d.targets.map(t => '<div class="row"><div class="grow"><span>' + esc(t.name) + (t.is_default ? ' · 默认' : '') + '</span><small>' + esc(kind[t.kind] || t.kind) + (t.dir ? ' · ' + esc(t.dir) : '') + '</small></div><button class="btn" data-build="' + esc(t.name) + '">构建站点</button><button class="btn pri" data-deploy="' + esc(t.name) + '">部署</button></div>').join('') : '<p class="empty">还没有发布目标。在 thirdc.toml 里加 [[publish.targets]]，见 docs/spec/publish-targets.md。</p>') +
+  box.innerHTML = '<label>发布目标</label>' + ((d.targets || []).length ? d.targets.map(t => '<div class="row"><div class="grow"><span>' + esc(t.name) + (t.is_default ? ' · 默认' : '') + '</span><small>' + esc(kind[t.kind] || t.kind) + (t.dir ? ' · ' + esc(t.dir) : '') + '</small></div><button class="btn" data-build="' + esc(t.name) + '">构建站点</button><button class="btn pri" data-deploy="' + esc(t.name) + '">部署</button></div>').join('') : '<p class="empty">还没有发布目标。在 litmus.toml 里加 [[publish.targets]]，见 docs/spec/publish-targets.md。</p>') +
     '<p class="hint">站点目录 ' + esc(d.site_dir || '') + (d.base_url ? ' · 公开地址 ' + esc(d.base_url) : '') + '</p><p id="pub-msg"></p>' +
     '<label>已发布的单篇网页</label>' + ((l.items || []).length ? l.items.slice(0, 30).map(i => '<div class="row"><div class="grow"><span>' + esc(i.url) + '</span><small>' + ((i.bytes || 0) / 1024).toFixed(1) + ' KB</small></div><a class="btn" href="' + esc(i.url.startsWith('http') ? i.url : BASE + i.url) + '" target="_blank" rel="noopener">打开</a></div>').join('') : '<p class="empty">还没有。阅读页「⋯」→「发布为公开网页」。</p>');
   const msg = $('pub-msg');
@@ -2262,9 +2264,9 @@ function openPluginView(p, v){
   $('panel').querySelector('.pbox').style.width = 'min(860px,100%)';
 }
 addEventListener('message', e => {
-  const d = e.data || {}; if (d.source !== 'thirdc-plugin') return;
+  const d = e.data || {}; if (d.source !== 'litmus-plugin') return;
   const fr = $('plug-frame'); if (!plugCtx || !fr || e.source !== fr.contentWindow) return;
-  const reply = (ok, result, error) => { try { e.source.postMessage({source:'thirdc-host', id:d.id, ok, result, error}, '*'); } catch(_){} };
+  const reply = (ok, result, error) => { try { e.source.postMessage({source:'litmus-host', id:d.id, ok, result, error}, '*'); } catch(_){} };
   const need = perm => { if (!plugCtx.perms.has(perm)){ reply(false, null, '无权限：' + d.call + '（manifest 需声明 ' + perm + '）'); return false; } return true; };
   (async () => {
     switch (d.call){
@@ -2297,7 +2299,7 @@ async function openConnections(){
   const cs = d.connections || [];
   box.innerHTML = '<p class="hint" style="margin-top:0">连接器让外部工具（MCP server）把数据灌进库里。</p>' +
     (cs.length ? cs.map(c => '<div class="row"><div class="grow"><span>' + esc(c.name) + '</span><small>' + esc(c.command + ' ' + (c.args || []).join(' ')) + '</small><small class="res" data-res="' + esc(c.name) + '"></small></div><button class="btn" data-probe="' + esc(c.name) + '">探测</button><button class="btn pri" data-pull="' + esc(c.name) + '">采集</button></div>').join('')
-      : '<p class="empty">还没有连接器。在库根的 thirdc.toml 里加：</p><pre style="font:400 var(--fs-2)/1.6 var(--f-mono);background:var(--paper);padding:10px 12px;border-radius:var(--r-md)">[[connections]]\nname = "openflow"\ncommand = "openflow"\nargs = ["mcp"]</pre>');
+      : '<p class="empty">还没有连接器。在库根的 litmus.toml 里加：</p><pre style="font:400 var(--fs-2)/1.6 var(--f-mono);background:var(--paper);padding:10px 12px;border-radius:var(--r-md)">[[connections]]\nname = "openflow"\ncommand = "openflow"\nargs = ["mcp"]</pre>');
   const res = n => box.querySelector('[data-res="' + CSS.escape(n) + '"]');
   box.querySelectorAll('[data-probe]').forEach(b => b.onclick = async () => { const r0 = res(b.dataset.probe); r0.textContent = '探测中…'; try { const r = await api('/conn/probe', {method:'POST', json:{name:b.dataset.probe}}); r0.textContent = (r.server || '') + ' · 工具 ' + (r.tools || []).length + ' · 资源 ' + (r.resources || []).length; } catch(e){ r0.textContent = '探测失败：' + (e.message || e); } });
   box.querySelectorAll('[data-pull]').forEach(b => b.onclick = async () => { const r0 = res(b.dataset.pull); r0.textContent = '采集中…'; try { const r = await api('/conn/pull', {method:'POST', json:{name:b.dataset.pull}}); r0.textContent = '采集 ' + (r.imported || []).length + ' · 跳过 ' + ((r.skipped || []).length || 0); await refreshNow(); const ns = (r.imported || []).map(x => byPath.get(x.rel)).filter(Boolean); if (ns.length) paint(ns.map(n => ({n, norm:1})), {soft:true}); } catch(e){ r0.textContent = '采集失败：' + (e.message || e); } });
@@ -2320,7 +2322,7 @@ async function openBackup(){
   box.innerHTML = '<p>' + (s.configured ? (s.running ? '正在备份…' : '已配置') : '还没有配置备份') + (s.last_error ? ' · <span class="bad">上次出错：' + esc(s.last_error) + '</span>' : '') + '</p>' +
     (cp.message ? '<p class="' + (cp.ok ? 'ok' : 'hint') + '">' + esc(String(cp.message).replace(/\s*[✓✗]\s*/g, cp.ok ? ' 已达标 ' : ' 未达标 ')) + '</p>' : '') +
     (ts.length ? '<label>备份目标</label>' + ts.map(([k, v]) => '<div class="row"><div class="grow"><span>' + esc(k) + '</span><small>' + esc(typeof v === 'object' ? Object.entries(v).map(([a, b]) => a + ' ' + b).join(' · ') : String(v)) + '</small></div></div>').join('') : '') +
-    '<p class="hint">备份是端到端加密的（3-2-1 纪律，见 docs/spec/backup.md）；目标在 thirdc.toml 的 [backup] 里配。</p><div class="acts"><button class="btn pri" id="bk-go">现在备份一次</button><span id="bk-msg"></span></div>';
+    '<p class="hint">备份是端到端加密的（3-2-1 纪律，见 docs/spec/backup.md）；目标在 litmus.toml 的 [backup] 里配。</p><div class="acts"><button class="btn pri" id="bk-go">现在备份一次</button><span id="bk-msg"></span></div>';
   $('bk-go').onclick = async () => { const m = $('bk-msg'); m.className = ''; m.textContent = '正在备份…'; try { const r = await api('/backup/run', {method:'POST'}); m.className = r.ok === false ? 'bad' : 'ok'; m.textContent = r.note || r.detail || (r.ok === false ? '没有备份' : '已开始备份'); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
 }
 /* 视图：一句话描述 → 表格 / 看板（内核 view/resolve，配了模型更聪明） */
@@ -2761,13 +2763,13 @@ async function openUpdate(){
 }
 
 
-/* ═══════════ F4 凭证库（只在本机，明文存 .thirdc/secrets.json） ═══════════ */
+/* ═══════════ F4 凭证库（只在本机，明文存 .litmus/local/secrets.json） ═══════════ */
 async function openSecrets(){
   const box = openPanel('凭证库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   let r; try { r = await api('/secrets'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   const list = r.secrets || [];
   const mask = v => v ? v.slice(0, 3) + '•'.repeat(Math.min(12, Math.max(4, v.length - 5))) + (v.length > 8 ? v.slice(-2) : '') : '';
-  box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备（库的 .thirdc/ 里），不同步、不进 git。</p>' +
+  box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备（库的 .litmus/local/ 里），不同步、不进 git。</p>' +
     (list.length ? list.map((s, i) => '<div class="row"><div class="grow"><span>' + esc(s.name) + '</span><small data-v="' + i + '">' + esc(mask(s.value)) + (s.note ? ' · ' + esc(s.note) : '') + '</small></div><button class="btn" data-show="' + i + '">显示</button><button class="btn" data-copy="' + i + '">复制</button><button class="btn" data-del="' + i + '">删除</button></div>').join('') : '<p class="empty">还没有凭证。</p>') +
     '<label for="sc-n">新增或更新（同名会覆盖）</label><input type="text" id="sc-n" placeholder="名字，比如 openai" autocomplete="off"><input type="password" id="sc-v" placeholder="值" autocomplete="new-password" style="margin-top:8px"><input type="text" id="sc-note" placeholder="备注（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="sc-go">保存</button><span id="sc-msg"></span></div>';
   box.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const i = +b.dataset.show, sm = box.querySelector('[data-v="' + i + '"]'), s = list[i]; const on = b.textContent === '显示'; sm.textContent = (on ? s.value : mask(s.value)) + (s.note ? ' · ' + s.note : ''); b.textContent = on ? '隐藏' : '显示'; });
@@ -2785,7 +2787,7 @@ async function openSecrets(){
 addEventListener('tray-secrets', () => openSecrets());
 
 /* ═══════════ F4 知识库：切换、新建、连接远程库；退出登录 ═══════════ */
-function webSpaces(){ try { return JSON.parse(localStorage.getItem('thirdc_workspaces') || '[]'); } catch(e){ return []; } }
+function webSpaces(){ try { return JSON.parse(localStorage.getItem('litmus_workspaces') || '[]'); } catch(e){ return []; } }
 async function openVaults(){
   if (DESK){
     const box = openPanel('知识库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
@@ -2811,23 +2813,23 @@ async function openVaults(){
   const box = openPanel('知识库', '<p class="hint" style="margin-top:0">这是网页里的鹿蕊：一个地址就是一个库。下面记着你连过的库（只存在这个浏览器里）。</p>' +
     '<div class="row"><div class="grow"><span>' + esc(vaultName || '当前库') + ' · 当前</span><small>' + esc(here) + '</small></div></div>' +
     list.filter(w => w.url !== here).map((w, i) => '<div class="row"><div class="grow"><span>' + esc(w.name || w.url) + '</span><small>' + esc(w.url) + '</small></div><button class="btn" data-go="' + i + '">切过去</button><button class="btn" data-rm="' + i + '">移除</button></div>').join('') +
-    '<label for="ws-url">连接另一个库</label><input type="text" id="ws-url" placeholder="地址，比如 https://example.com/thirdc"><input type="password" id="ws-tok" placeholder="令牌（那台鹿蕊的 .thirdc/machine.toml 里的 token）" style="margin-top:8px"><input type="text" id="ws-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="ws-go">记下并切过去</button></div>');
+    '<label for="ws-url">连接另一个库</label><input type="text" id="ws-url" placeholder="地址，比如 https://example.com/litmus"><input type="password" id="ws-tok" placeholder="令牌（那台鹿蕊的 .litmus/local/machine.toml 里的 token）" style="margin-top:8px"><input type="text" id="ws-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="ws-go">记下并切过去</button></div>');
   const others = list.filter(w => w.url !== here);
-  box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const w = others[+b.dataset.go]; try { localStorage.setItem('thirdc_token', w.token); localStorage.setItem('thirdc_last_ws', w.url); } catch(e){} location.href = w.url + '/field?token=' + encodeURIComponent(w.token); });
-  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const w = others[+b.dataset.rm]; try { localStorage.setItem('thirdc_workspaces', JSON.stringify(list.filter(x => x !== w))); } catch(e){} openVaults(); });
+  box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const w = others[+b.dataset.go]; try { localStorage.setItem('litmus_token', w.token); localStorage.setItem('litmus_last_ws', w.url); } catch(e){} location.href = w.url + '/field?token=' + encodeURIComponent(w.token); });
+  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const w = others[+b.dataset.rm]; try { localStorage.setItem('litmus_workspaces', JSON.stringify(list.filter(x => x !== w))); } catch(e){} openVaults(); });
   $('ws-go').onclick = () => {
     const url = $('ws-url').value.trim().replace(/\/+$/, '').replace(/\/field$/, ''), tok = $('ws-tok').value.trim(), name = $('ws-name').value.trim();
     if (!/^https?:\/\//.test(url) || !tok){ toast('地址要以 http(s):// 开头，令牌也要填', true); return; }
     const next = list.filter(w => w.url !== url); next.push({name:name || url.replace(/^https?:\/\//, ''), url, token:tok});
     if (!next.some(w => w.url === here)) next.unshift({name:vaultName || '这个库', url:here, token});
-    try { localStorage.setItem('thirdc_workspaces', JSON.stringify(next)); localStorage.setItem('thirdc_token', tok); } catch(e){}
+    try { localStorage.setItem('litmus_workspaces', JSON.stringify(next)); localStorage.setItem('litmus_token', tok); } catch(e){}
     location.href = url + '/field?token=' + encodeURIComponent(tok);
   };
 }
 async function logout(){
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还有没存上的改动</b>，等它存好再退出', true); return; } }
   if (DESK){ toast('桌面 App 不需要登录：它直接打开本机的库'); return; }
-  try { localStorage.removeItem('thirdc_token'); localStorage.removeItem('thirdc_user'); } catch(e){}
+  try { localStorage.removeItem('litmus_token'); localStorage.removeItem('litmus_user'); } catch(e){}
   location.href = BASE + '/';
 }
 
@@ -3060,7 +3062,7 @@ async function openSources(first){
       (s.kind === 'google' && !s.authorized ? '<button class="btn pri" data-gauth="' + esc(s.id) + '">连接 Google</button>' : '<button class="btn" data-scan="' + esc(s.id) + '"' + (sc.running ? ' disabled' : '') + '>' + (sc.finished ? '重新扫描' : '扫描') + '</button>') +
       '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
   };
-  box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .thirdc/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
+  box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .litmus/local/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
     (have.length ? '<label>已接入 · ' + have.length + '</label>' + have.map(row).join('') : '') +
     (cands.length ? '<label>可以接入</label>' + cands.map((c, i) => '<label class="row chk"><input type="checkbox" data-ci="' + i + '"' + (first && (c.kind === 'folder' || c.kind === 'agent') ? ' checked' : '') + '><div class="grow"><span>' + esc(c.name) + ' <em class="kind">' + (SRC_KIND[c.kind] || c.kind) + '</em></span><small>' + esc(c.path || c.connection || '') + (c.count ? ' · 约 ' + c.count + ' 个' : '') + ' · ' + esc(c.why || '') + '</small></div></label>').join('') : '') +
     '<details class="more"><summary>手动添加</summary>' +
@@ -3072,7 +3074,7 @@ async function openSources(first){
     const k = $('sa-k').value, f = $('sa-f');
     f.innerHTML = k === 'folder' ? '<input type="text" id="sa-path" placeholder="文件夹路径，比如 ~/Downloads 或 ~/InputFlow/docs"><input type="text" id="sa-ext" placeholder="只要这些扩展名（可选，逗号分隔）：md, pdf, docx, png" style="margin-top:8px">'
       : k === 'agent' ? '<select id="sa-agent" class="sel"><option value="claude">Claude Code（~/.claude/projects）</option><option value="codex">Codex（~/.codex/sessions）</option></select>'
-      : k === 'mcp' ? '<input type="text" id="sa-conn" placeholder="连接名，比如 linkto"><input type="text" id="sa-cmd" placeholder="启动命令（新连接才填），比如 linkto mcp 或 npx -y @linkto/mcp" style="margin-top:8px"><p class="hint">填了启动命令会写进 thirdc.toml 的 [[connections]]（原有内容保留）；已经配过的连接只填名字。读的是它提供的资源（resources）。</p>'
+      : k === 'mcp' ? '<input type="text" id="sa-conn" placeholder="连接名，比如 linkto"><input type="text" id="sa-cmd" placeholder="启动命令（新连接才填），比如 linkto mcp 或 npx -y @linkto/mcp" style="margin-top:8px"><p class="hint">填了启动命令会写进 litmus.toml 的 [[connections]]（原有内容保留）；已经配过的连接只填名字。读的是它提供的资源（resources）。</p>'
       : k === 'google' ? '<label><input type="checkbox" value="drive" checked> Drive 文档</label> <label><input type="checkbox" value="gmail"> Gmail</label> <label><input type="checkbox" value="calendar"> Calendar</label><input type="text" id="sa-q" placeholder="筛选（可选）：Drive 查询或 Gmail 搜索语句，如 label:项目 newer_than:180d" style="margin-top:8px"><p class="hint">要先在 Google Cloud 控制台建一个「桌面应用」OAuth 客户端，把 client id 与 secret 存进 /凭证（名字 google_client_id、google_client_secret）。只读权限。</p>'
       : '<input type="text" id="sa-url" placeholder="地址，如 https://api.example.com/notes?limit=200"><input type="text" id="sa-hdr" placeholder="请求头（可选）：Authorization: Bearer {{secret:example_token}}" style="margin-top:8px"><input type="text" id="sa-items" placeholder="条目数组的位置（JSON Pointer，如 /data/items；顶层就是数组则留空）" style="margin-top:8px"><input type="text" id="sa-map" placeholder="字段：id=id, title=title, body=content, date=updated_at" style="margin-top:8px">';
     f.insertAdjacentHTML('beforeend', '<input type="text" id="sa-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn" id="sa-add">添加并扫描</button></div>');
@@ -3175,7 +3177,7 @@ $('l-sem').onclick = () => setLayout('sem'); $('l-time').onclick = () => setLayo
 $('b-fit').onclick = () => fit();
 function toggleTheme(){
   const r = document.documentElement; r.dataset.theme = C.dark ? 'light' : 'dark';
-  try { localStorage.setItem('thirdc_theme', r.dataset.theme); } catch(e){}
+  try { localStorage.setItem('litmus_theme', r.dataset.theme); } catch(e){}
   readColors(); kick();
   if (DESK) window.__TAURI_INTERNALS__.invoke('desktop_set_native_theme', {theme:r.dataset.theme}).catch(() => {});
 }

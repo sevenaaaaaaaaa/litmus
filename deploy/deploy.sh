@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ThirdC 双轨部署（唯一入口）
+# Litmus 双轨部署（唯一入口）
 #   GitHub 轨：gitleaks 扫描 → git add -A（.gitignore 已排除密钥/本地数据）→ commit → push origin main
 #   服务器轨：rsync 工作区源码（含 gitignored 但服务器需要的文件）→ 服务器 cargo build → 重启 systemd
 # 用法：./deploy/deploy.sh [--skip-build] [--server-only] [--dry-run] [-m "提交信息"]
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 
 SSH_KEY="./.deploy-ssh/key"
 SSH_PORT="28766"; USER_="root"; HOST="172.96.253.73"
-REMOTE_DIR="/www/wwwroot/thirdc"
+REMOTE_DIR="/www/wwwroot/litmus"
 OPS_DIR="/www/ops/litmus"   # outside any web root; never --delete
 SSH_OPTS="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new"
 SSH_CMD="${SSH_OPTS} ${USER_}@${HOST}"
@@ -66,11 +66,21 @@ else
   git push origin main
 fi
 
+# ─── 2a. 服务器还是旧布局（/www/wwwroot/thirdc 是真目录）时先一次性迁移，否则会在新路径起一个空库 ───
+if $SSH_CMD "test -d /www/wwwroot/thirdc -a ! -L /www/wwwroot/thirdc"; then
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "⚠ 服务器还是旧布局 /www/wwwroot/thirdc：正式部署时会先跑 deploy/migrate-from-thirdc.sh"
+  else
+    step "服务器迁移 thirdc → litmus（一次性）"
+    $SSH_CMD 'bash -s' < deploy/migrate-from-thirdc.sh
+  fi
+fi
+
 # ─── 2. 服务器轨：rsync 源码（保留旧排除项；--delete 沿用旧脚本） ───
 step "rsync → ${HOST}:${REMOTE_DIR}/src/"
 RSYNC_FLAGS="-az"; [ "$DRY_RUN" = 1 ] && RSYNC_FLAGS="-azn --itemize-changes"
 rsync $RSYNC_FLAGS --delete -e "${SSH_OPTS}" \
-  --exclude '.git' --exclude 'target' --exclude '.thirdc' \
+  --exclude '.git' --exclude 'target' --exclude '.litmus/local' --exclude '.thirdc' \
   --exclude 'server-kb' --exclude '.deploy-ssh' \
   --exclude 'desktop/gen' --exclude 'third_party' --exclude '.v2c' --exclude '.video_agent' \
   --exclude '.DS_Store' \
@@ -91,7 +101,7 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 # ─── 3. 服务器构建 + 重启（与旧脚本一致） ───
-step "服务器构建 + 重启 thirdc"
-$SSH_CMD "cd ${REMOTE_DIR}/src && ${SKIP_BUILD:+echo skip-build || }cargo build --release -p thirdc 2>&1 | tail -1; mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/thirdc ${REMOTE_DIR}/bin/thirdc.new && mv -f ${REMOTE_DIR}/bin/thirdc.new ${REMOTE_DIR}/bin/thirdc"
-$SSH_CMD "cp ${REMOTE_DIR}/src/deploy/thirdc.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable thirdc && systemctl restart thirdc"
-echo "ThirdC: https://nownexts.com/thirdc/  (daemon on 127.0.0.1:7700)"
+step "服务器构建 + 重启 litmus"
+$SSH_CMD "cd ${REMOTE_DIR}/src && ${SKIP_BUILD:+echo skip-build || }cargo build --release -p litmus 2>&1 | tail -1; mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/litmus ${REMOTE_DIR}/bin/litmus.new && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
+$SSH_CMD "systemctl disable --now thirdc 2>/dev/null; cp ${REMOTE_DIR}/src/deploy/litmus.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable litmus && systemctl restart litmus"
+echo "Litmus: https://nownexts.com/litmus/  (daemon on 127.0.0.1:7700)"

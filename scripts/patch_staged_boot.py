@@ -29,7 +29,7 @@ s = s.replace('''    <div style="width:52px;height:52px;border-radius:17px;backg
 s = s.replace("let browsePath='Notes';\nlet canvasState='idle';", '''let browsePath='Notes';
 let canvasState='idle';
 /* ── 本地缓存（stale-while-revalidate）：下次打开秒出，再后台校准 ── */
-const CACHE_KEY='thirdc_cache_v1';
+const CACHE_KEY='litmus_cache_v1';
 function cacheGet(k){try{return (JSON.parse(localStorage.getItem(CACHE_KEY)||'{}'))[k]}catch{return null}}
 function cacheSet(k,v){try{const o=JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');o[k]=v;localStorage.setItem(CACHE_KEY,JSON.stringify(o))}catch{}}
 /* ── 侧栏骨架 ── */
@@ -84,7 +84,7 @@ function renderTreeFromTree(t){
     el.innerHTML=`<span class="nm"></span>${tags}`;
     el.querySelector('.nm').textContent=d.title||d.path.split('/').pop();
     el.onclick=()=>openDoc(d.path);
-    el.ondragstart=e=>{e.dataTransfer.setData('text/thirdc-path',d.path)};
+    el.ondragstart=e=>{e.dataTransfer.setData('text/litmus-path',d.path)};
     return el;
   }
   function row(name,count,path){
@@ -106,7 +106,7 @@ function renderTreeFromTree(t){
           loading.innerHTML='<span class="nm" style="color:var(--faint)">载入文件…</span>';kids.appendChild(loading);
           api('/browse?path='+encodeURIComponent(path.path)).then(b=>{
             loading.remove();
-            const cached=JSON.parse(localStorage.getItem('thirdc_dir_'+path.path)||'null')||b;
+            const cached=JSON.parse(localStorage.getItem('litmus_dir_'+path.path)||'null')||b;
             (cached.docs||[]).forEach(d=>kids.appendChild(leaf(d)));
           }).catch(()=>loading.remove());
         }
@@ -117,7 +117,7 @@ function renderTreeFromTree(t){
     r.ondragleave=()=>r.classList.remove('drop-hot');
     r.ondrop=async e=>{
       e.preventDefault();r.classList.remove('drop-hot');
-      const from=e.dataTransfer.getData('text/thirdc-path');if(!from)return;
+      const from=e.dataTransfer.getData('text/litmus-path');if(!from)return;
       const fname=from.split('/').pop();const to=`Notes/${path.path.replace(/^Notes\\//,'')}/${fname}`;
       if(to===from)return;
       try{await api('/doc/move',{method:'POST',json:{from,to}});toast(`${from} → ${to}`,'ok');await refreshAll();if(current===from)openDoc(to);}

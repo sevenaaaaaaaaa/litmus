@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::{DeployError, DeployReport, DeployState};
 
-/// 全量备份：把库根（Notes/ + Assets/ + thirdc.toml）PUT 到 WebDAV。
+/// 全量备份：把库根（Notes/ + Assets/ + litmus.toml）PUT 到 WebDAV。
 /// 增量：DeployState 记内容哈希，未变跳过。
 pub fn backup_webdav(
     vault_root: &Path,
@@ -46,7 +46,7 @@ pub fn backup_webdav(
             }
         }
     }
-    files.push(("thirdc.toml".into(), vault_root.join("thirdc.toml")));
+    files.push(("litmus.toml".into(), vault_root.join("litmus.toml")));
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut uploaded = 0usize;
@@ -84,7 +84,7 @@ pub fn backup_webdav(
     }
     // 保存增量状态
     if errors.is_empty() {
-        let sp = vault_root.join(".thirdc/deploy/webdav-backup.json");
+        let sp = vault_root.join(".litmus/local/deploy/webdav-backup.json");
         if let Some(d) = sp.parent() { let _ = std::fs::create_dir_all(d); }
         let _ = std::fs::write(&sp, serde_json::to_string_pretty(&state).unwrap_or_default());
     }

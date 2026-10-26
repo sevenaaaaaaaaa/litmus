@@ -13,7 +13,7 @@ s = s.replace(old2, new2, 1)
 
 # JS：预设加载与应用（覆盖 app 的 CSS 变量，双主题）
 old3 = "async function loadDesigns(){"
-new3 = '''let themePreset=JSON.parse(localStorage.getItem('thirdc_preset')||'null');
+new3 = '''let themePreset=JSON.parse(localStorage.getItem('litmus_preset')||'null');
 function applyThemePreset(){
   const el=document.getElementById('theme-override')||document.createElement('style');
   el.id='theme-override';
@@ -46,7 +46,7 @@ async function loadPresets(){
       if(active)b.style.borderColor='var(--accent)';
       b.onclick=async()=>{
         themePreset=active?null:v;
-        localStorage.setItem('thirdc_preset',JSON.stringify(themePreset));
+        localStorage.setItem('litmus_preset',JSON.stringify(themePreset));
         applyThemePreset();loadPresets();
         toast(active?'已恢复内置主题':'已应用预设：'+v.name,'ok');
       };

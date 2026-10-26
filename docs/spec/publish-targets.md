@@ -21,18 +21,18 @@
 | `s3` | ✅ 已落地 | S3 / R2 / OSS / COS / MinIO：SigV4 直传，path-style + prefix，按内容哈希增量 |
 | `cf-pages` | ✅ 已落地 | 直传 API：multipart（manifest 按哈希映射、同内容文件去重上传）；整站指纹未变则跳过 |
 
-### 配置（thirdc.toml）
+### 配置（litmus.toml）
 
 ```toml
 [publish]
-site_dir = ".thirdc/site"          # 构建目录
+site_dir = ".litmus/local/site"          # 构建目录
 default_target = "gh-pages"
 base_url = "https://kb.example.com" # 有它才生成 sitemap.xml / 复制链接
 
 [[publish.targets]]
 name = "local"
 kind = "local"
-dir = ".thirdc/site"
+dir = ".litmus/local/site"
 
 [[publish.targets]]
 name = "gh-pages"                  # GitHub Pages
@@ -68,7 +68,7 @@ public_base_url = "https://kb.example.com"   # 复制链接/Sitemap 用
 
 `git` 目标细节：
 - 仓库不存在则 `git init -b <branch>`；远端 URL 变了自动 `set-url`。
-- 提交身份用 `-c user.name=thirdc -c user.email=thirdc@localhost`，**不碰你的全局 git 配置**。
+- 提交身份用 `-c user.name=litmus -c user.email=litmus@localhost`，**不碰你的全局 git 配置**。
 - 无变更（`git status --porcelain` 为空）→ 不产生空提交，报告「无变更」。
 - 凭据交给 git 自己（SSH key / credential helper / GITHUB_TOKEN），**我们不存任何密钥**。
 
@@ -76,7 +76,7 @@ public_base_url = "https://kb.example.com"   # 复制链接/Sitemap 用
 
 | 入口 | 用法 |
 |---|---|
-| CLI | `thirdc publish <vault> [--target 名称] [--build-only]` |
+| CLI | `litmus publish <vault> [--target 名称] [--build-only]` |
 | HTTP | `GET /publish/targets` 目标与站点目录 |
 | HTTP | `POST /publish/site {target?}` 只构建，返回文件数与预览 |
 | HTTP | `POST /publish/deploy {target}` 构建并推送，返回 `{uploaded, skipped, detail, url}` |
@@ -93,7 +93,7 @@ public_base_url = "https://kb.example.com"   # 复制链接/Sitemap 用
   与 botocore 完全一致。（其中 `GET /` 的签名与 AWS 官方 SigV4 测试套件 `get-vanilla` 相同。）
 - **S3 集成测试**：本地起极简 HTTP 服务当"桶"，验证每次 PUT 都带 SigV4 与内容哈希、
   path-style + prefix 正确、内容未变时不再发请求、改一个文件只传一个。
-- 端到端（真实进程 + 活 mock 桶）：`thirdc publish --target r2-mock` → **16 个签名 PUT**，
+- 端到端（真实进程 + 活 mock 桶）：`litmus publish --target r2-mock` → **16 个签名 PUT**，
   对象键形如 `/kb/site/agent-%E7%9A%84-html.html`；二次发布 0 请求。
 - HTTP：`/publish/site` 返回 15 文件 183KB；`/publish/deploy` 返回 `uploaded=16`。
 

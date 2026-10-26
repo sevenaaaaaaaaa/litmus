@@ -1,4 +1,4 @@
-//! thirdc-server: 本地 daemon 的 HTTP API（loopback + token 认证）。
+//! litmus-server: 本地 daemon 的 HTTP API（loopback + token 认证）。
 //!
 //! 所有客户端（桌面/移动/Web/扩展/agent）都通过这套 API 操作库，
 //! 不允许任何客户端绕过内核直改 sidecar。
@@ -34,14 +34,14 @@ mod share;
 
 pub struct AppState {
     pub kernel: Arc<Mutex<Kernel>>,
-    pub mcp: Arc<thirdc_mcp::McpServer>,
+    pub mcp: Arc<litmus_mcp::McpServer>,
     pub hub: Arc<PresenceHub>,
     pub token: String,
     /// memo 模式的文档索引缓存：(构建时的数据代数, 文档列表)。
     /// memo 模式的文档索引缓存：(构建时的数据代数, 序列化好的 JSON 响应体)。
     /// 缓存字节而非结构体：1.2 万篇 3MB 的 JSON 不必每次请求重序列化。
     memo_cache: Arc<Mutex<Option<(u64, axum::body::Bytes)>>>,
-    /// 是否由桌面壳启动（THIRDC_DESKTOP=1）：控制 /desktop/* 独占端点的可用性。
+    /// 是否由桌面壳启动（LITMUS_DESKTOP=1）：控制 /desktop/* 独占端点的可用性。
     pub desktop: bool,
     /// 远端拉取的后台任务状态：结构秒回，正文流式拉取，前端轮询进度。
     pub pull: Arc<Mutex<PullJob>>,
@@ -116,7 +116,7 @@ fn check_token(state: &AppState, headers: &HeaderMap) -> Result<(), (StatusCode,
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .or_else(|| headers.get("x-thirdc-token").and_then(|v| v.to_str().ok()))
+        .or_else(|| headers.get("x-litmus-token").and_then(|v| v.to_str().ok()))
         .unwrap_or("");
     if provided == state.token {
         Ok(())
@@ -183,7 +183,7 @@ fn shell_version() -> &'static String {
     V.get_or_init(|| {
         // 壳 = field.html + tokens.css：只改配色也必须换缓存键
         let html = [include_str!("../web/field.html"), include_str!("../web/tokens.css")].concat();
-        format!("thirdc-shell-{}", &kernel_core::Cas::hash_hex(html.as_bytes())[..12])
+        format!("litmus-shell-{}", &kernel_core::Cas::hash_hex(html.as_bytes())[..12])
     })
 }
 
@@ -768,9 +768,9 @@ async fn chat(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> imp
 
     let outcome = match ai {
         Some(cfg) if !cfg.base_url.is_empty() => {
-            match thirdc_mcp::agent::run_ai(&server, &cfg, &message).await {
+            match litmus_mcp::agent::run_ai(&server, &cfg, &message).await {
                 Ok(o) => o,
-                Err(e) => thirdc_mcp::agent::Outcome {
+                Err(e) => litmus_mcp::agent::Outcome {
                     mode: "ai-error",
                     reply: format!("模型调用失败：{e}"),
                     steps: Vec::new(),
@@ -778,7 +778,7 @@ async fn chat(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> imp
                 },
             }
         }
-        _ => thirdc_mcp::agent::command_mode(&server, &message),
+        _ => litmus_mcp::agent::command_mode(&server, &message),
     };
 
     let steps: Vec<Value> = outcome
@@ -907,7 +907,7 @@ async fn agent_apply(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         _ => unreachable!(),
     };
     let prompt = format!("你是文本编辑。请对下面的文字执行：{verb}。只输出结果本身，不要解释、不要 Markdown 代码围栏。\n\n{subject}");
-    let outcome = match thirdc_mcp::agent::run_ai(&server, &cfg, &prompt).await {
+    let outcome = match litmus_mcp::agent::run_ai(&server, &cfg, &prompt).await {
         Ok(o) => o,
         Err(e) => return err(StatusCode::BAD_GATEWAY, format!("模型调用失败：{e}")).into_response(),
     };
@@ -952,7 +952,7 @@ async fn doc_tidy(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     for (idx, c) in chunks.iter().cloned().enumerate() {
         let cfg = cfg.clone();
         set.spawn(async move {
-            let r = thirdc_mcp::agent::complete(&cfg, TIDY_SYSTEM, &c).await;
+            let r = litmus_mcp::agent::complete(&cfg, TIDY_SYSTEM, &c).await;
             (idx, c, r)
         });
     }
@@ -1143,7 +1143,7 @@ async fn doc_autoname(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
                 if let Some(cfg) = ai.filter(|c| !c.base_url.is_empty()) {
                     let sample: String = body.chars().take(3000).collect();
                     let sys = "为用户的笔记起一个简洁准确的中文标题：不超过 20 个字，概括主题，不要书名号、引号、句末标点，只输出标题本身。";
-                    if let Ok(t) = thirdc_mcp::agent::complete(&cfg, sys, &sample).await {
+                    if let Ok(t) = litmus_mcp::agent::complete(&cfg, sys, &sample).await {
                         let t = t.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
                         let t = t.trim_start_matches('#').trim().trim_matches(|c| "《》\"“”'「」：:".contains(c)).trim();
                         let t: String = t.chars().take(30).collect();
@@ -1742,7 +1742,7 @@ async fn health(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespo
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
-    Json(json!({ "ok": true, "name": "thirdc", "version": env!("CARGO_PKG_VERSION"), "api": HOST_API_LEVEL })).into_response()
+    Json(json!({ "ok": true, "name": "litmus", "version": env!("CARGO_PKG_VERSION"), "api": HOST_API_LEVEL })).into_response()
 }
 
 /// 公开版本端点（无 token）：浏览器版「关于」页显示当前版本，桌面端走 Tauri updater。
@@ -1977,7 +1977,7 @@ async fn backup_run(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
     };
     let cfg_ready = { let k = st.kernel.lock().unwrap(); k.vault.config.backup.is_some() };
     if !cfg_ready {
-        return Json(json!({ "ok": false, "note": "未配置 [backup]（thirdc.toml）" })).into_response();
+        return Json(json!({ "ok": false, "note": "未配置 [backup]（litmus.toml）" })).into_response();
     }
     let already = st.backup.running.load(std::sync::atomic::Ordering::SeqCst);
     if !already {
@@ -2035,11 +2035,11 @@ async fn rag_status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
 }
 
 // ── 凭证库：本地登录凭证/密码的简单保管入口 ─────────────────────────────
-// 文件真相：.thirdc/secrets.json（unix 0600，.thirdc 天然不入 git）。
+// 文件真相：.litmus/local/secrets.json（unix 0600，.litmus/local 天然不入 git）。
 // 与 machine.toml 的 token 同一威胁模型——拿到磁盘/TOKEN 的人本就能读到一切。
 
 fn secrets_path(vault_root: &std::path::Path) -> std::path::PathBuf {
-    vault_root.join(".thirdc").join("secrets.json")
+    vault_root.join(".litmus/local").join("secrets.json")
 }
 
 fn now_ms() -> u64 {
@@ -2368,11 +2368,11 @@ async fn delete_doc(
 }
 
 /* ───────── 回收站（软删除 / 恢复 / 保留期） ─────────
- * 删除 = 移入 `.thirdc/trash/<相对路径>`，清单 `.thirdc/trash/index.json`。
- * 保留期取 thirdc.toml `trash_days`：缺省 30 天，0 = 永久保留。 */
+ * 删除 = 移入 `.litmus/local/trash/<相对路径>`，清单 `.litmus/local/trash/index.json`。
+ * 保留期取 litmus.toml `trash_days`：缺省 30 天，0 = 永久保留。 */
 
 fn trash_dir(root: &std::path::Path) -> std::path::PathBuf {
-    root.join(".thirdc").join("trash")
+    root.join(".litmus/local").join("trash")
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -2618,12 +2618,12 @@ pub fn spawn_watcher(state: Arc<AppState>) -> anyhow::Result<()> {
             let mut k = state.kernel.lock().unwrap();
             match k.sync_all() {
                 Ok(n) if n > 0 => {
-                    println!("[thirdc] watcher merged {n} external change(s)");
+                    println!("[litmus] watcher merged {n} external change(s)");
                     drop(k);
                     maybe_auto_publish(&state, &sidecar);
                 }
                 Ok(_) => {}
-                Err(e) => eprintln!("[thirdc] watcher sync error: {e}"),
+                Err(e) => eprintln!("[litmus] watcher sync error: {e}"),
             }
         }
     });
@@ -2634,14 +2634,14 @@ pub fn spawn_watcher(state: Arc<AppState>) -> anyhow::Result<()> {
 pub fn build_state(vault: Vault) -> anyhow::Result<Arc<AppState>> {
     let machine = vault.ensure_machine()?;
     let kernel = Arc::new(Mutex::new(Kernel::open(vault)?));
-    let mcp = Arc::new(thirdc_mcp::McpServer::new(kernel.clone()));
+    let mcp = Arc::new(litmus_mcp::McpServer::new(kernel.clone()));
     Ok(Arc::new(AppState {
         kernel,
         mcp,
         hub: Arc::new(PresenceHub::new()),
         token: machine.token,
         memo_cache: Arc::new(Mutex::new(None)),
-        desktop: std::env::var("THIRDC_DESKTOP").map(|v| v == "1").unwrap_or(false),
+        desktop: std::env::var("LITMUS_DESKTOP").or_else(|_| std::env::var("THIRDC_DESKTOP")).map(|v| v == "1").unwrap_or(false),
         pull: Arc::new(Mutex::new(PullJob::default())),
         rag: Arc::new(RagJob::default()),
         backup: Arc::new(BackupJob::default()),
@@ -3083,7 +3083,7 @@ mod tests {
         assert_eq!(v["trash"], true, "delete 应进回收站: {v}");
         assert!(!dir.path().join("Notes/x.md").exists(), "原路径应消失");
         assert!(
-            dir.path().join(".thirdc/trash/Notes/x.md").is_file(),
+            dir.path().join(".litmus/local/trash/Notes/x.md").is_file(),
             "文件应在回收站"
         );
 
@@ -3122,7 +3122,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(dir.path().join("Notes/x.md").is_file(), "恢复后回到原路径");
-        assert!(!dir.path().join(".thirdc/trash/Notes/x.md").exists());
+        assert!(!dir.path().join(".litmus/local/trash/Notes/x.md").exists());
 
         // 再删一次 + 彻底删除
         let resp = app
@@ -3154,7 +3154,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let v = body_json(resp).await;
         assert_eq!(v["purged"], 1);
-        assert!(!dir.path().join(".thirdc/trash/Notes/x.md").exists(), "彻底删除后回收站内文件消失");
+        assert!(!dir.path().join(".litmus/local/trash/Notes/x.md").exists(), "彻底删除后回收站内文件消失");
 
         // 列表已空
         let resp = app
@@ -3207,7 +3207,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK, "文件夹删除应成功");
         assert!(!dir.path().join("Notes/研究").exists(), "原文件夹应消失");
         assert!(
-            dir.path().join(".thirdc/trash/Notes/研究/b.md").is_file(),
+            dir.path().join(".litmus/local/trash/Notes/研究/b.md").is_file(),
             "文件夹整体应在回收站"
         );
 
@@ -3267,7 +3267,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        assert!(dir.path().join(".thirdc/trash/Notes/Projects/子/b.md").is_file());
+        assert!(dir.path().join(".litmus/local/trash/Notes/Projects/子/b.md").is_file());
 
         // 再删父目录 Projects：目标名 trash/Notes/Projects 已被非空容器占用
         let resp = app
@@ -3284,7 +3284,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK, "父目录删除应绕开非空容器落去 Projects.1");
         assert!(!dir.path().join("Notes/Projects").exists());
-        assert!(dir.path().join(".thirdc/trash/Notes/Projects.1/a.md").is_file());
+        assert!(dir.path().join(".litmus/local/trash/Notes/Projects.1/a.md").is_file());
         // 旧子项的清单记录不受影响，仍可恢复
         let resp = app
             .clone()
@@ -3850,7 +3850,7 @@ async fn chat_stream(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         let result = match ai {
             Some(cfg) if !cfg.base_url.is_empty() => {
                 let tx_step = tx.clone();
-                thirdc_mcp::agent::run_ai_with(&server, &cfg, &enriched, move |s| {
+                litmus_mcp::agent::run_ai_with(&server, &cfg, &enriched, move |s| {
                     let _ = tx_step.send(ev(
                         "step",
                         json!({ "tool": s.tool, "ok": s.ok, "summary": s.summary }),
@@ -3859,7 +3859,7 @@ async fn chat_stream(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
                 .await
             }
             _ => {
-                let out = thirdc_mcp::agent::command_mode(&server, &enriched);
+                let out = litmus_mcp::agent::command_mode(&server, &enriched);
                 for s in &out.steps {
                     let _ = tx.send(ev("step", json!({ "tool": s.tool, "ok": s.ok, "summary": s.summary, "args": s.args })));
                 }
@@ -4677,7 +4677,7 @@ async fn conn_probe(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
     let Some(cfg) = cfg else {
         return err(StatusCode::NOT_FOUND, format!("连接 {name} 不存在")).into_response();
     };
-    let r = tokio::task::spawn_blocking(move || thirdc_mcp::pull::probe(&cfg)).await;
+    let r = tokio::task::spawn_blocking(move || litmus_mcp::pull::probe(&cfg)).await;
     match r {
         Ok(Ok((server, tools, resources))) => Json(json!({ "server": server, "tools": tools, "resources": resources })).into_response(),
         Ok(Err(e)) => err(StatusCode::BAD_REQUEST, e).into_response(),
@@ -4699,7 +4699,7 @@ async fn conn_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
         return err(StatusCode::NOT_FOUND, format!("连接 {name} 不存在")).into_response();
     };
     let kernel = st.kernel.clone();
-    let r = tokio::task::spawn_blocking(move || thirdc_mcp::pull::pull_resources(&cfg, &kernel)).await;
+    let r = tokio::task::spawn_blocking(move || litmus_mcp::pull::pull_resources(&cfg, &kernel)).await;
     match r {
         Ok(Ok(report)) => Json(json!({
             "server": report.server,
@@ -4769,7 +4769,7 @@ use axum::extract::ws::WebSocketUpgrade;
 /* ───────── ConFlow 对话流（矩阵整合）：对话列表 + 知识卡生成 ───────── */
 async fn conflow_conversations(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
-    match thirdc_mcp::conflow::list_conversations(&st.mcp) {
+    match litmus_mcp::conflow::list_conversations(&st.mcp) {
         Ok(list) => Json(json!({ "conversations": list })).into_response(),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
@@ -4779,7 +4779,7 @@ async fn conflow_digest(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let path = req.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    match thirdc_mcp::conflow::digest(&st.mcp, &path) {
+    match litmus_mcp::conflow::digest(&st.mcp, &path) {
         Ok(r) => {
             audit_log(&st.kernel.lock().unwrap().vault.sidecar(), "conflow-digest", &r);
             Json(json!({ "ok": true, "result": r })).into_response()
@@ -4911,10 +4911,10 @@ async fn metrics(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResp
         .map(|t| t.lines().count())
         .unwrap_or(0);
     let body = format!(
-        "# HELP thirdc_docs 知识库文档数\n# TYPE thirdc_docs gauge\nthirdc_docs {docs}\n\
-# HELP thirdc_assets 附件数\n# TYPE thirdc_assets gauge\nthirdc_assets {assets}\n\
-# HELP thirdc_captured_items 采集条目数\n# TYPE thirdc_captured_items gauge\nthirdc_captured_items {items}\n\
-# HELP thirdc_publishes_total 发布次数\n# TYPE thirdc_publishes_total counter\nthirdc_publishes_total {publishes}\n"
+        "# HELP litmus_docs 知识库文档数\n# TYPE litmus_docs gauge\nlitmus_docs {docs}\n\
+# HELP litmus_assets 附件数\n# TYPE litmus_assets gauge\nlitmus_assets {assets}\n\
+# HELP litmus_captured_items 采集条目数\n# TYPE litmus_captured_items gauge\nlitmus_captured_items {items}\n\
+# HELP litmus_publishes_total 发布次数\n# TYPE litmus_publishes_total counter\nlitmus_publishes_total {publishes}\n"
     );
     ([(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")], body).into_response()
 }
@@ -5328,7 +5328,7 @@ fn import_document(ext: &str, bytes: &[u8]) -> Result<(kernel_convert::Converted
     if kernel_convert::supports(&ext) {
         return kernel_convert::convert(&ext, bytes).map(|c| (c, format!("native-{ext}")));
     }
-    let tmp_dir = std::env::temp_dir().join(format!("thirdc-imp-{}-{}", std::process::id(), now_secs()));
+    let tmp_dir = std::env::temp_dir().join(format!("litmus-imp-{}-{}", std::process::id(), now_secs()));
     let _ = std::fs::create_dir_all(&tmp_dir);
     let tmp = tmp_dir.join(format!("in.{ext}"));
     let _ = std::fs::write(&tmp, bytes);
@@ -5372,10 +5372,10 @@ fn import_document(ext: &str, bytes: &[u8]) -> Result<(kernel_convert::Converted
 
 /// 旧路径：scripts/extract_doc.py（服务器部署形态常备 PyMuPDF / python-docx）。
 fn python_extract(path: &std::path::Path) -> Option<String> {
-    let script = std::env::var("THIRDC_EXTRACT_SCRIPT").ok().map(std::path::PathBuf::from).filter(|p| p.is_file())
+    let script = std::env::var("LITMUS_EXTRACT_SCRIPT").or_else(|_| std::env::var("THIRDC_EXTRACT_SCRIPT")).ok().map(std::path::PathBuf::from).filter(|p| p.is_file())
         .or_else(|| Some(std::path::PathBuf::from("scripts/extract_doc.py")).filter(|p| p.is_file()))
         .or_else(|| std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("../src/scripts/extract_doc.py"))).filter(|p| p.is_file()))?;
-    let python = std::env::var("THIRDC_PYTHON").ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "python3".to_string());
+    let python = std::env::var("LITMUS_PYTHON").or_else(|_| std::env::var("THIRDC_PYTHON")).ok().filter(|p| !p.is_empty()).unwrap_or_else(|| "python3".to_string());
     let o = std::process::Command::new(python).arg(&script).arg(path).output().ok()?;
     let v: Value = serde_json::from_slice(&o.stdout).ok()?;
     v["ok"].as_bool().filter(|x| *x)?;
@@ -5613,7 +5613,7 @@ async fn ingest_file(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
 }
 
 /// 用户名密码登录：验证后返回 token。
-/// 凭据：thirdc.toml [auth] 设了用户名密码则用它；否则默认 admin / machine token。
+/// 凭据：litmus.toml [auth] 设了用户名密码则用它；否则默认 admin / machine token。
 async fn auth_login(
     State(st): State<Arc<AppState>>,
     body: Bytes,
@@ -5675,7 +5675,7 @@ async fn view_resolve(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         };
         let server = st.mcp.clone();
         let full = format!(
-            "你是 ThirdC 视图规格生成器。把用户的一句话转成 ```view 代码块内的 yamlish 规格。\
+            "你是 Litmus 视图规格生成器。把用户的一句话转成 ```view 代码块内的 yamlish 规格。\
              只输出规格文本本身，不要解释、不要 Markdown 代码围栏。\n\n\
              可用键：type(table|kanban|calendar|list)、source(all|here|folder:路径|query:关键词)、\
              fields(列，逗号分隔)、filter(tag:x|text:x|kind:x|key=value)、\
@@ -5687,7 +5687,7 @@ async fn view_resolve(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
              relation: related\nrollup: 关联工时 = related.hours:sum\ntotal: hours\nsort: hours:desc\nlimit: 50\n\n\
              用户：{p}"
         );
-        let outcome = match thirdc_mcp::agent::run_ai(&server, &cfg, &full).await {
+        let outcome = match litmus_mcp::agent::run_ai(&server, &cfg, &full).await {
             Ok(o) => o,
             Err(e) => return err(StatusCode::BAD_GATEWAY, format!("模型调用失败：{e}")).into_response(),
         };
@@ -5771,7 +5771,7 @@ async fn backup_vault(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };
     let hash = kernel_core::Cas::hash_hex(&encrypted);
-    let fname = format!("thirdc-backup-{}-{}.tcenc", chrono_today(), &hash[..8]);
+    let fname = format!("litmus-backup-{}-{}.tcenc", chrono_today(), &hash[..8]);
     let dir = k.vault.sidecar().join("backups");
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join(&fname);
@@ -6154,7 +6154,7 @@ async fn tree(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespons
 
 
 // ───────────────────────── 桌面端独占能力（/desktop/*） ─────────────────────────
-// 仅当 THIRDC_DESKTOP=1（桌面壳启动）时可用；线上部署返回 404。
+// 仅当 LITMUS_DESKTOP=1（桌面壳启动）时可用；线上部署返回 404。
 
 fn desktop_guard(st: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
     if st.desktop {
@@ -6230,7 +6230,7 @@ fn total_memory_gb() -> f64 {
     0.0
 }
 
-/// 统计库内文件数与总字节（跳过 .git/.thirdc 等）。
+/// 统计库内文件数与总字节（跳过 .git/.litmus/local 等）。
 fn count_vault_files(root: &std::path::Path) -> (usize, u64) {
     let mut n = 0usize;
     let mut bytes = 0u64;
@@ -6264,7 +6264,7 @@ fn now_iso() -> String {
 
 /// 读取导入溯源索引（sha256 → 记录）。
 fn read_import_index(root: &std::path::Path) -> serde_json::Map<String, Value> {
-    std::fs::read_to_string(root.join(".thirdc").join("import-index.json"))
+    std::fs::read_to_string(root.join(".litmus/local").join("import-index.json"))
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
         .and_then(|v| v.as_object().cloned())
@@ -6470,7 +6470,7 @@ fn inline_html_project(html: &str, src_root: &std::path::Path, html_dir: &std::p
 }
 
 fn write_import_index(root: &std::path::Path, map: &serde_json::Map<String, Value>) {
-    let dir = root.join(".thirdc");
+    let dir = root.join(".litmus/local");
     let _ = std::fs::create_dir_all(&dir);
     if let Ok(s) = serde_json::to_string_pretty(&Value::Object(map.clone())) {
         let _ = std::fs::write(dir.join("import-index.json"), s);
@@ -6541,11 +6541,11 @@ fn with_provenance(body_md: &str, src: &str, sha: &str, mtime: u64, extractor: &
 /// 导入本机目录到库：md/txt/html 直接入库；office/pdf/图片经抽取器转 md 入库；
 /// 其余格式计入待转码。用 sha256 去重并记录溯源。
 /// body: { path: "/abs/dir" }
-/* ───────── UI 状态同步（侧栏树展开 / 最近文档：存 .thirdc/ui-state.json，随库跨设备） ───────── */
+/* ───────── UI 状态同步（侧栏树展开 / 最近文档：存 .litmus/local/ui-state.json，随库跨设备） ───────── */
 async fn get_ui_state(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    let body = std::fs::read_to_string(root.join(".thirdc").join("ui-state.json")).unwrap_or_default();
+    let body = std::fs::read_to_string(root.join(".litmus/local").join("ui-state.json")).unwrap_or_default();
     let v: Value = serde_json::from_str(&body).unwrap_or(json!({ "updatedAt": 0 }));
     Json(v).into_response()
 }
@@ -6560,7 +6560,7 @@ async fn put_ui_state(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         return err(StatusCode::BAD_REQUEST, "body must be a json object").into_response();
     }
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    let dir = root.join(".thirdc");
+    let dir = root.join(".litmus/local");
     if let Err(e) = std::fs::create_dir_all(&dir) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
@@ -6581,7 +6581,7 @@ const HOST_API_LEVEL: u64 = 1;
 const PLUGIN_TREE_MAX: u64 = 50 * 1024 * 1024;
 
 fn plugins_root(root: &std::path::Path) -> std::path::PathBuf {
-    root.join(".thirdc").join("plugins")
+    root.join(".litmus/local").join("plugins")
 }
 
 fn read_plugin_manifest(dir: &std::path::Path) -> Option<Value> {
@@ -6680,7 +6680,7 @@ async fn plugins_install(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
     let out = match tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent("thirdc-plugin-installer")
+            .user_agent("litmus-plugin-installer")
             .timeout(std::time::Duration::from_secs(60))
             .build().map_err(|e| e.to_string())?;
         let resp = client.get(&api_url).send().map_err(|e| e.to_string())?;
@@ -6691,7 +6691,7 @@ async fn plugins_install(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
         if bytes.len() as u64 > PLUGIN_TARBALL_MAX {
             return Err(format!("仓库压缩包超过 {}MB 上限", PLUGIN_TARBALL_MAX / 1024 / 1024));
         }
-        let tmp = std::env::temp_dir().join(format!("thirdc-plug-{}-{}", std::process::id(), kernel_core::Cas::hash_hex(url.as_bytes())[..8].to_string()));
+        let tmp = std::env::temp_dir().join(format!("litmus-plug-{}-{}", std::process::id(), kernel_core::Cas::hash_hex(url.as_bytes())[..8].to_string()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
         let tgz = tmp.join("repo.tar.gz");
@@ -6749,7 +6749,7 @@ async fn plugins_install(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
             if papi > HOST_API_LEVEL {
                 let _ = std::fs::remove_dir_all(&tmp);
                 let pid = m.get("id").and_then(|x| x.as_str()).unwrap_or("?");
-                return Err(format!("插件 {pid} 需要宿主 API 级别 {papi}，当前宿主支持 {HOST_API_LEVEL}（请升级 ThirdC）"));
+                return Err(format!("插件 {pid} 需要宿主 API 级别 {papi}，当前宿主支持 {HOST_API_LEVEL}（请升级 Litmus）"));
             }
             let dest = dest_root.join(&id);
             if dest.exists() {
@@ -6830,11 +6830,11 @@ const PLUGIN_VIEW_SHIM: &str = r#"<script>
   function rpc(call,args){
     return new Promise(function(res,rej){
       var id=++seq;pending[id]={res:res,rej:rej};
-      parent.postMessage({source:'thirdc-plugin',call:call,id:id,args:args||{}},'*');
+      parent.postMessage({source:'litmus-plugin',call:call,id:id,args:args||{}},'*');
       setTimeout(function(){if(pending[id]){delete pending[id];rej(new Error('host timeout'))}},8000);
     });
   }
-  window.thirdc={
+  window.litmus=window.thirdc={
     getDocument:function(){return rpc('getDocument')},
     insertText:function(t){return rpc('insertText',{text:String(t==null?'':t)})},
     saveDocument:function(md){return rpc('saveDocument',{markdown:String(md==null?'':md)})},
@@ -6843,7 +6843,7 @@ const PLUGIN_VIEW_SHIM: &str = r#"<script>
   };
   addEventListener('message',function(e){
     var d=e.data||{};
-    if(d.source==='thirdc-host'&&pending[d.id]){pending[d.id][d.ok?'res':'rej'](d.ok?d.result:new Error(d.error||'host error'));delete pending[d.id];}
+    if(d.source==='litmus-host'&&pending[d.id]){pending[d.id][d.ok?'res':'rej'](d.ok?d.result:new Error(d.error||'host error'));delete pending[d.id];}
   });
 })();
 </script>"#;
@@ -6907,13 +6907,13 @@ async fn plugins_view_file(
     }
 }
 
-/* ───────── 选区锚定评论（UX-6 v2）：存 .thirdc/comments/<path>.json，随库同步 ───────── */
+/* ───────── 选区锚定评论（UX-6 v2）：存 .litmus/local/comments/<path>.json，随库同步 ───────── */
 
 fn comments_path(root: &std::path::Path, doc: &str) -> Option<std::path::PathBuf> {
     if !is_safe_doc_path(doc) {
         return None;
     }
-    Some(root.join(".thirdc").join("comments").join(format!("{doc}.json")))
+    Some(root.join(".litmus/local").join("comments").join(format!("{doc}.json")))
 }
 
 fn comments_read(root: &std::path::Path, doc: &str) -> Vec<Value> {
@@ -7133,7 +7133,7 @@ async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         let mut k = st.kernel.lock().unwrap();
         let _ = k.sync_all();
     }
-    audit_log(&root.join(".thirdc"), "desktop-import", &json!({
+    audit_log(&root.join(".litmus/local"), "desktop-import", &json!({
         "path": path, "copied": copied, "dup": dup, "extracted": extracted, "pending": pending
     }));
     Json(json!({
@@ -7290,7 +7290,7 @@ async fn desktop_quarantine(State(st): State<Arc<AppState>>, h: HeaderMap, body:
         .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    let qdir = root.join(".thirdc").join("quarantine");
+    let qdir = root.join(".litmus/local").join("quarantine");
     let mut moved: Vec<String> = Vec::new();
     for rel in &paths {
         if !rel.starts_with("Notes/") || rel.contains("..") {
@@ -7309,12 +7309,12 @@ async fn desktop_quarantine(State(st): State<Arc<AppState>>, h: HeaderMap, body:
         let mut k = st.kernel.lock().unwrap();
         let _ = k.sync_all();
     }
-    audit_log(&root.join(".thirdc"), "desktop-quarantine", &json!({"moved": moved}));
-    Json(json!({"moved": moved, "quarantine": ".thirdc/quarantine/"})).into_response()
+    audit_log(&root.join(".litmus/local"), "desktop-quarantine", &json!({"moved": moved}));
+    Json(json!({"moved": moved, "quarantine": ".litmus/local/quarantine/"})).into_response()
 }
 
-/// 客户端内部命令行：白名单只读命令 + thirdc 子命令，cwd 固定为库根。
-/// body: { cmd: "thirdc status" }
+/// 客户端内部命令行：白名单只读命令 + litmus 子命令，cwd 固定为库根。
+/// body: { cmd: "litmus status" }
 async fn desktop_terminal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
@@ -7325,7 +7325,7 @@ async fn desktop_terminal(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
     }
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     let prog = parts[0];
-    let allowed = if prog == "thirdc" {
+    let allowed = if prog == "litmus" {
         true
     } else if matches!(prog, "ls" | "cat" | "grep" | "rg" | "find" | "head" | "tail" | "wc" | "tree" | "du" | "file" | "stat"
         | "mkdir" | "touch" | "echo" | "cp" | "mv" | "python3" | "node" | "sed" | "sort" | "uniq") {
@@ -7339,9 +7339,9 @@ async fn desktop_terminal(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
         return err(StatusCode::FORBIDDEN, format!("命令不在白名单：{prog}")).into_response();
     }
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    // 解析可执行文件：`thirdc` 子命令用 THIRDC_CLI > 自身(若就是 CLI) > 同级 thirdc > PATH。
-    let bin: std::path::PathBuf = if prog == "thirdc" {
-        match std::env::var("THIRDC_CLI") {
+    // 解析可执行文件：`litmus` 子命令用 LITMUS_CLI > 自身(若就是 CLI) > 同级 litmus > PATH。
+    let bin: std::path::PathBuf = if prog == "litmus" {
+        match std::env::var("LITMUS_CLI").or_else(|_| std::env::var("THIRDC_CLI")) {
             Ok(p) if !p.is_empty() => std::path::PathBuf::from(p),
             _ => {
                 let exe = std::env::current_exe().ok();
@@ -7349,14 +7349,14 @@ async fn desktop_terminal(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
                     .as_ref()
                     .and_then(|e| e.file_stem())
                     .and_then(|s| s.to_str())
-                    .map(|s| s.starts_with("thirdc") && s != "thirdc-desktop")
+                    .map(|s| s.starts_with("litmus") && s != "litmus-desktop")
                     .unwrap_or(false);
                 if is_cli {
                     exe.unwrap()
                 } else {
-                    exe.and_then(|e| e.parent().map(|d| d.join("thirdc")))
+                    exe.and_then(|e| e.parent().map(|d| d.join("litmus")))
                         .filter(|p| p.is_file())
-                        .unwrap_or_else(|| std::path::PathBuf::from("thirdc"))
+                        .unwrap_or_else(|| std::path::PathBuf::from("litmus"))
                 }
             }
         }
@@ -7496,7 +7496,7 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         // 带 UA/Accept：部分 WAF（宝塔等）会拦截无 UA 的请求并返回 HTML 挑战页
-        .user_agent("ThirdC/0.1 (+https://nownexts.com/thirdc)")
+        .user_agent("Litmus/0.1 (+https://nownexts.com/litmus)")
         .build()
     {
         Ok(c) => c,
@@ -7526,11 +7526,11 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         }
     }
     // ① 拉文档列表（结构）
-    // 用 x-thirdc-token 而非 Authorization: Bearer——部分宝塔/WAF 会拦截带 Bearer 的请求
+    // 用 x-litmus-token 而非 Authorization: Bearer——部分宝塔/WAF 会拦截带 Bearer 的请求
     // 并返回 200 HTML 挑战页（表现为「解析列表失败」）。服务端两种头都认。
     let list = match client.get(format!("{server}/docs"))
         .header(reqwest::header::ACCEPT, "application/json")
-        .header("x-thirdc-token", &rtoken).send().await
+        .header("x-litmus-token", &rtoken).send().await
     {
         Ok(r) => match r.error_for_status() { Ok(r) => r, Err(e) => return err(StatusCode::BAD_GATEWAY, format!("远端拒绝：{e}")).into_response() },
         Err(e) => return err(StatusCode::BAD_GATEWAY, format!("连接失败：{e}")).into_response(),
@@ -7553,10 +7553,10 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     }
     let dirs = seen.len();
     // 记住账号/服务器，重开可续、设置面板可显示
-    let _ = std::fs::create_dir_all(root.join(".thirdc"));
+    let _ = std::fs::create_dir_all(root.join(".litmus/local"));
     if user.is_empty() { user = "token".into(); }
     let _ = std::fs::write(
-        root.join(".thirdc/remote.json"),
+        root.join(".litmus/local/remote.json"),
         serde_json::to_vec_pretty(&json!({"server": server, "user": user})).unwrap_or_default(),
     );
     // ③ 初始化任务并后台流式拉正文
@@ -7647,7 +7647,7 @@ async fn run_pull(
     }
     let snap = pull_json(&j);
     drop(j);
-    audit_log(&root.join(".thirdc"), "desktop-pull", &snap);
+    audit_log(&root.join(".litmus/local"), "desktop-pull", &snap);
 }
 
 /// 单篇拉取：0=跳过(相同/非 Notes)，1=已写入，2=失败。失败重试一次。
@@ -7661,7 +7661,7 @@ async fn pull_one(
     for attempt in 0..2u8 {
         let resp = client.get(format!("{server}/doc"))
             .query(&[("path", path)])
-            .header("x-thirdc-token", rtoken).send().await;
+            .header("x-litmus-token", rtoken).send().await;
         if let Ok(resp) = resp {
             if let Ok(j) = read_json(resp, path).await {
                 if let Some(src) = j.get("source").and_then(|s| s.as_str()) {
@@ -7745,7 +7745,7 @@ mod tidy_share_tests {
 
     #[test]
     fn vault_images_are_inlined() {
-        let dir = std::env::temp_dir().join(format!("thirdc-inline-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("litmus-inline-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("Assets")).unwrap();
         std::fs::write(dir.join("Assets/a.png"), [137u8, 80, 78, 71]).unwrap();
         let h = inline_vault_assets(r#"<img src="Assets/a.png"><img src="https://x.com/b.png"><img src="/asset-file?path=Assets/a.png">"#, &dir);

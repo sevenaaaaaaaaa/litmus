@@ -65,16 +65,16 @@ fn s3_upload_signs_every_request_and_is_incremental() {
     std::fs::write(site.join("index.html"), "<h1>首页</h1>").unwrap();
     std::fs::write(site.join("Assets/ab/cd/x.png"), b"\x89PNG").unwrap();
 
-    std::env::set_var("THIRDC_TEST_S3_KEY", "AKIDEXAMPLE");
-    std::env::set_var("THIRDC_TEST_S3_SECRET", "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+    std::env::set_var("LITMUS_TEST_S3_KEY", "AKIDEXAMPLE");
+    std::env::set_var("LITMUS_TEST_S3_SECRET", "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
     let target = PublishTarget {
         name: "mock".into(),
         kind: "s3".into(),
         endpoint: Some(format!("http://{addr}")),
         bucket: Some("kb".into()),
         region: Some("us-east-1".into()),
-        access_key_env: Some("THIRDC_TEST_S3_KEY".into()),
-        secret_key_env: Some("THIRDC_TEST_S3_SECRET".into()),
+        access_key_env: Some("LITMUS_TEST_S3_KEY".into()),
+        secret_key_env: Some("LITMUS_TEST_S3_SECRET".into()),
         prefix: Some("site".into()),
         ..Default::default()
     };

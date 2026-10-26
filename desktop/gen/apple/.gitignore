@@ -1,9 +1,9 @@
 xcuserdata/
 build/
 Externals/
-thirdc-release.keystore
+litmus-release.keystore
 .android-env.sh
 sim-verify/
-thirdc-release.keystore
+litmus-release.keystore
 .android-env.sh
 sim-verify/

@@ -1,7 +1,7 @@
-# ThirdC Design System
+# Litmus Design System
 
 契约来源：**OpenFlow 前台设计系统**（`OpenFlow Dev/docs/DESIGN-SYSTEM.md` + `assets/tokens.css`）。
-ThirdC 客户端不是自造一套视觉，而是**沿用同一份契约**，保证两个产品的观感同源。
+Litmus 客户端不是自造一套视觉，而是**沿用同一份契约**，保证两个产品的观感同源。
 
 ## 三层结构（照搬）
 
@@ -22,7 +22,7 @@ server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳�
 | **字体** | Space Grotesk（显示/正文）+ JetBrains Mono（代码/元信息）+ 系统中文字体回退 |
 | **对比度** | `--faint` 亮 51% L / 暗 64% L，正文级小字 ≥4.5:1（WCAG AA） |
 
-## ThirdC 增补 token
+## Litmus 增补 token
 
 画布与对话是新场景，扩展了以下 token（同样遵守零 hex）：
 
@@ -111,7 +111,7 @@ server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳�
 | 用在哪 | 只用于"显色"瞬间：AI 动词、Agent 署名与思考光、Magic 星标、启动环、光晕 | 同左 |
 
 石蕊红**永不表示错误**：与 `--danger`（h≈29）色相相隔 ≥12°，测试强制；报错一律走 `--danger`。
-切换：⌘K「切换强调色」，存 `localStorage.thirdc_accent`，启动脚本在首帧前落定，无闪烁。
+切换：⌘K「切换强调色」，存 `localStorage.litmus_accent`，启动脚本在首帧前落定，无闪烁。
 
 ![强调色 A/B 对照](../img/craft/accent-ab.png)
 
@@ -205,7 +205,7 @@ server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳�
 ### 动效可关
 
 系统「减少动态效果」或 ⌘K「减少动效」任一开启：CSS 全部过渡/动画即时完成，JS 侧镜头动画、火花、景深倾斜、落位动画一并跳过。
-偏好存 `localStorage.thirdc_motion`，首帧前落定。
+偏好存 `localStorage.litmus_motion`，首帧前落定。
 
 ## 信息密度与标志性瞬间（2026-10-12 · 工艺品化 PR④）
 
@@ -278,7 +278,7 @@ server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳�
 ## v7.1 · LinKTo 学习批（2026-10-23）
 
 研究对象：LinTo 仓库的设计演进（docs/design/tokens-v2 + style-board.html + global.css v3「荧光签」）。
-它的方法论与工程做法被吸收进 ThirdC，以下按条落了地：
+它的方法论与工程做法被吸收进 Litmus，以下按条落了地：
 
 ### 派生色（relative color）
 

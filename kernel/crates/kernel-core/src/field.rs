@@ -1,7 +1,7 @@
 //! 知识场（Field）：整库的语义平面布局（docs/spec/field.md）。
 //!
 //! 全部是**派生层**（宪法 §1）：输入是库的正文语料，输出是坐标 / 区域 / 关联线，
-//! 随时可以删掉 `.thirdc/field.json` 重建，绝不承载用户内容。
+//! 随时可以删掉 `.litmus/local/field.json` 重建，绝不承载用户内容。
 //!
 //! - 向量：次线性 TF × IDF，标题加权，L2 归一，每篇只留权重最高的 [`TERMS_PER_DOC`] 个词；
 //! - 近邻：倒排表求稀疏余弦，过常见词（df 过高）不进候选生成；
@@ -672,7 +672,7 @@ pub fn region_names(v: &Vectors, asg: &[usize], k: usize, titles: &[String]) -> 
 
 /// 标题的主干：去掉破折号/冒号/括号之后的副标题与「Spec」后缀，最长 16 个字。
 pub fn short_title(t: &str) -> String {
-    let t = t.trim().trim_start_matches("ThirdC").trim();
+    let t = t.trim().trim_start_matches("Litmus").trim();
     let cut = t
         .char_indices()
         .find(|(i, ch)| *i > 0 && matches!(ch, '—' | '–' | ':' | '：' | '（' | '(' | '|' | '·' | '，'))
@@ -726,7 +726,7 @@ pub struct Field {
     pub edges: Vec<(usize, usize, f32)>,
 }
 
-/// 构建场。`prev` 来自 `.thirdc/field.json`（可为空）；`full` 强制整体重排。
+/// 构建场。`prev` 来自 `.litmus/local/field.json`（可为空）；`full` 强制整体重排。
 pub fn build(docs: &[(String, String, String)], prev: &HashMap<String, (f32, f32)>, full: bool) -> Field {
     let vectors = Vectors::build(docs);
     let knn = vectors.knn(KNN);
@@ -838,7 +838,7 @@ mod tests {
 
     #[test]
     fn short_title_drops_subtitles() {
-        assert_eq!(short_title("ThirdC 设计宪法 — 一个 AI 时代的知识操作系统"), "设计宪法");
+        assert_eq!(short_title("Litmus 设计宪法 — 一个 AI 时代的知识操作系统"), "设计宪法");
         assert_eq!(short_title("ADR-0002 — 文件为内容真相，op-log 为并发真相"), "文件为内容真相");
         assert_eq!(short_title("竞争定位（替代 Obsidian）"), "竞争定位");
         assert_eq!(short_title("Consistency Spec — 文件真相"), "Consistency");

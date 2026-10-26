@@ -511,7 +511,7 @@ fn globalize_cdecl_symbols(archive: &std::path::Path, package_name: &str) {
             let header = line.trim_end_matches(':').trim_end_matches(')');
             let member = header.rsplit('(').next().unwrap_or(header);
             if let Some(module) = member.strip_suffix(".o") {
-                let _ = norm(module) == pkg; // ThirdC：不再限定成员名
+                let _ = norm(module) == pkg; // Litmus：不再限定成员名
                 continue;
             }
         }
@@ -522,7 +522,7 @@ fn globalize_cdecl_symbols(archive: &std::path::Path, package_name: &str) {
             continue;
         };
         *occurrences.entry(name.to_string()).or_insert(0) += 1;
-        // ThirdC patch：Xcode 27 的 SwiftPM 会把所有成员（Tauri.o 和 SwiftRs.o）
+        // Litmus patch：Xcode 27 的 SwiftPM 会把所有成员（Tauri.o 和 SwiftRs.o）
         // 的 @_cdecl 符号内化为 local，只放宽本成员过滤；occurrences<=1 仍防冲突。
         if kind != "t" || !name.starts_with('_') {
             continue;

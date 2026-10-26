@@ -47,8 +47,8 @@ MCP 设计类 server                                              →  画布节
 
 ## 四、存储与生命周期
 
-- 真相是来源文档（如果它在库里）；解析产物存 `.thirdc/design/<slug>.json`（sidecar，可重建）。
-- `.thirdc/design/active` 记录激活项；删除 sidecar 后按需重新导入。
+- 真相是来源文档（如果它在库里）；解析产物存 `.litmus/local/design/<slug>.json`（sidecar，可重建）。
+- `.litmus/local/design/active` 记录激活项；删除 sidecar 后按需重新导入。
 - 导入是幂等的：同名覆盖。
 
 ## 五、接口
@@ -60,7 +60,7 @@ POST /design/active           {name}
 GET  /design/{name}           单个规范详情
 ```
 
-CLI：`thirdc design list | add <path> [--name N] | use <name>`
+CLI：`litmus design list | add <path> [--name N] | use <name>`
 
 ## 六、里程碑
 
@@ -86,7 +86,7 @@ CLI：`thirdc design list | add <path> [--name N] | use <name>`
 
 ## 八、DG-5 / DG-6 实现记录
 
-**页面消化**：`thirdc design url <vault> <url> [--via auto|ego|render|http] [--activate]`、
+**页面消化**：`litmus design url <vault> <url> [--via auto|ego|render|http] [--activate]`、
 `POST /design/import-url`、MCP 工具 `import_page_design`（agent 可自己"学页面"）。
 
 踩坑：
@@ -95,5 +95,5 @@ CLI：`thirdc design list | add <path> [--name N] | use <name>`
 - `ego lite.app` 的二进制在 `--dump-dom` 下会挂起，headless 要用 Playwright 的 `chrome-headless-shell`；
 - headless 启动要带独立 `--user-data-dir`（避免 profile 锁）与 `--no-sandbox`。
 
-**作用域优先级**：`doc:<路径>` → `publish` → `vault`，存于 `.thirdc/design/scopes.json`。
+**作用域优先级**：`doc:<路径>` → `publish` → `vault`，存于 `.litmus/local/design/scopes.json`。
 实测：manifesto.md 走文档级规范，其它文档回退库级规范，互不干扰。

@@ -53,7 +53,7 @@ new_fn = '''function renderTree(docs){
       row.ondragleave=()=>row.classList.remove('drop-hot');
       row.ondrop=async e=>{
         e.preventDefault();row.classList.remove('drop-hot');
-        const from=e.dataTransfer.getData('text/thirdc-path');if(!from)return;
+        const from=e.dataTransfer.getData('text/litmus-path');if(!from)return;
         const fname=from.split('/').pop();
         const to=`Notes/${child.path}/${fname}`;
         if(to===from)return;
@@ -86,7 +86,7 @@ new_fn = '''function renderTree(docs){
     leaf.innerHTML=`<span class="nm"></span>${tags}`;
     leaf.querySelector('.nm').textContent=d.title||d.path.split('/').pop();
     leaf.onclick=()=>openDoc(d.path);
-    leaf.ondragstart=e=>{e.dataTransfer.setData('text/thirdc-path',d.path);e.dataTransfer.effectAllowed='move'};
+    leaf.ondragstart=e=>{e.dataTransfer.setData('text/litmus-path',d.path);e.dataTransfer.effectAllowed='move'};
     return leaf;
   }
   function countDocs(node){

@@ -30,13 +30,13 @@
 		730C73632EA68750F3C6B6EE /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		7E9FAEA9234157D678722FBF /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		864A8ACE7422B3FFC6B82D60 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		9CDDBA2094A7CF8276B6734F /* thirdc-desktop_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "thirdc-desktop_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9CDDBA2094A7CF8276B6734F /* litmus-desktop_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "litmus-desktop_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A688A77FB80798F356C3445A /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		ACD6DA5ACBC23BBF9FC00811 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		AF9E617E0E43516719E9224D /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		B2E4B52990AA7A7D8347244F /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		B6CC3325908D84015B1143E6 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
-		C6860AB4120C510774BADA11 /* thirdc-desktop_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "thirdc-desktop_iOS.entitlements"; sourceTree = "<group>"; };
+		C6860AB4120C510774BADA11 /* litmus-desktop_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "litmus-desktop_iOS.entitlements"; sourceTree = "<group>"; };
 		E17A87F0E44273C884142219 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		FE8938E60AB2EBCA66D272DF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -69,7 +69,7 @@
 				31AFCEECEBFDEE0A5A8D7A47 /* Externals */,
 				920342C0D174F577A0205C9A /* Sources */,
 				430715C4A761E288876034B8 /* src */,
-				CA56277EFD066CFB158E0507 /* thirdc-desktop_iOS */,
+				CA56277EFD066CFB158E0507 /* litmus-desktop_iOS */,
 				8877B2C982EEFE2F7FB06CC3 /* Frameworks */,
 				2EB98D8F7CD852BC83056DEC /* Products */,
 			);
@@ -78,7 +78,7 @@
 		2EB98D8F7CD852BC83056DEC /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9CDDBA2094A7CF8276B6734F /* thirdc-desktop_iOS.app */,
+				9CDDBA2094A7CF8276B6734F /* litmus-desktop_iOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,13 +90,13 @@
 			path = Externals;
 			sourceTree = "<group>";
 		};
-		395630C9166B2843DAD1747F /* thirdc-desktop */ = {
+		395630C9166B2843DAD1747F /* litmus-desktop */ = {
 			isa = PBXGroup;
 			children = (
 				B2E4B52990AA7A7D8347244F /* main.mm */,
 				8E30DE57ECA77EBA72CF8F64 /* bindings */,
 			);
-			path = "thirdc-desktop";
+			path = "litmus-desktop";
 			sourceTree = "<group>";
 		};
 		430715C4A761E288876034B8 /* src */ = {
@@ -134,26 +134,26 @@
 		920342C0D174F577A0205C9A /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				395630C9166B2843DAD1747F /* thirdc-desktop */,
+				395630C9166B2843DAD1747F /* litmus-desktop */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
 		};
-		CA56277EFD066CFB158E0507 /* thirdc-desktop_iOS */ = {
+		CA56277EFD066CFB158E0507 /* litmus-desktop_iOS */ = {
 			isa = PBXGroup;
 			children = (
 				FE8938E60AB2EBCA66D272DF /* Info.plist */,
-				C6860AB4120C510774BADA11 /* thirdc-desktop_iOS.entitlements */,
+				C6860AB4120C510774BADA11 /* litmus-desktop_iOS.entitlements */,
 			);
-			path = "thirdc-desktop_iOS";
+			path = "litmus-desktop_iOS";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7DB244FD074481D6EF4612FC /* thirdc-desktop_iOS */ = {
+		7DB244FD074481D6EF4612FC /* litmus-desktop_iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B846A3E4684AE2F60B33C262 /* Build configuration list for PBXNativeTarget "thirdc-desktop_iOS" */;
+			buildConfigurationList = B846A3E4684AE2F60B33C262 /* Build configuration list for PBXNativeTarget "litmus-desktop_iOS" */;
 			buildPhases = (
 				FFEA5825932DBCAB9145440B /* Build Rust Code */,
 				AB9A55B55BCE8C0E1409A28C /* Sources */,
@@ -164,11 +164,11 @@
 			);
 			dependencies = (
 			);
-			name = "thirdc-desktop_iOS";
+			name = "litmus-desktop_iOS";
 			packageProductDependencies = (
 			);
-			productName = "thirdc-desktop_iOS";
-			productReference = 9CDDBA2094A7CF8276B6734F /* thirdc-desktop_iOS.app */;
+			productName = "litmus-desktop_iOS";
+			productReference = 9CDDBA2094A7CF8276B6734F /* litmus-desktop_iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -182,7 +182,7 @@
 				TargetAttributes = {
 				};
 			};
-			buildConfigurationList = 4BCB3DBE9178ED4B98C61CEB /* Build configuration list for PBXProject "thirdc-desktop" */;
+			buildConfigurationList = 4BCB3DBE9178ED4B98C61CEB /* Build configuration list for PBXProject "litmus-desktop" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -196,7 +196,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7DB244FD074481D6EF4612FC /* thirdc-desktop_iOS */,
+				7DB244FD074481D6EF4612FC /* litmus-desktop_iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -258,7 +258,7 @@
 					arm64,
 				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "thirdc-desktop_iOS/thirdc-desktop_iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "litmus-desktop_iOS/litmus-desktop_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -266,15 +266,15 @@
 					"$(inherited)",
 					"\".\"",
 				);
-				INFOPLIST_FILE = "thirdc-desktop_iOS/Info.plist";
+				INFOPLIST_FILE = "litmus-desktop_iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nownexts.thirdc;
-				PRODUCT_NAME = "ThirdC Studio";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nownexts.litmus;
+				PRODUCT_NAME = "Litmus Studio";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -408,7 +408,7 @@
 					arm64,
 				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "thirdc-desktop_iOS/thirdc-desktop_iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "litmus-desktop_iOS/litmus-desktop_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -416,15 +416,15 @@
 					"$(inherited)",
 					"\".\"",
 				);
-				INFOPLIST_FILE = "thirdc-desktop_iOS/Info.plist";
+				INFOPLIST_FILE = "litmus-desktop_iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.nownexts.thirdc;
-				PRODUCT_NAME = "ThirdC Studio";
+				PRODUCT_BUNDLE_IDENTIFIER = com.nownexts.litmus;
+				PRODUCT_NAME = "Litmus Studio";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -434,7 +434,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4BCB3DBE9178ED4B98C61CEB /* Build configuration list for PBXProject "thirdc-desktop" */ = {
+		4BCB3DBE9178ED4B98C61CEB /* Build configuration list for PBXProject "litmus-desktop" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8D96753CD9B87264599D476F /* debug */,
@@ -443,7 +443,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = debug;
 		};
-		B846A3E4684AE2F60B33C262 /* Build configuration list for PBXNativeTarget "thirdc-desktop_iOS" */ = {
+		B846A3E4684AE2F60B33C262 /* Build configuration list for PBXNativeTarget "litmus-desktop_iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				C8D1C41B4C9619DB42FCCA7B /* debug */,

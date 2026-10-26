@@ -55,7 +55,7 @@ pub async fn learn(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
             format!("文档《{title}》的一节「{section}」：\n{text}"),
         )
     };
-    match thirdc_mcp::agent::complete(&cfg, system, &user).await {
+    match litmus_mcp::agent::complete(&cfg, system, &user).await {
         Ok(t) => {
             let t = t.trim().to_string();
             let grade = if task == "check" {
@@ -165,7 +165,7 @@ pub async fn ai_suggestions(st: &Arc<AppState>, docs: Vec<(String, String, Strin
         标题过短或说不清内容的，给一个 8 到 20 字、说清内容的新标题，标题本来就好就不要给。\
         只输出 JSON：{\"items\":[{\"path\":\"…\",\"tags\":[\"…\"],\"title\":\"…或省略\"}]}，不要别的文字。";
     let user = format!("已有标签：{}\n\n文档：\n{}", if vocab.is_empty() { "（还没有）".into() } else { vocab.join("、") }, list.join("\n"));
-    let out = match thirdc_mcp::agent::complete(&cfg, system, &user).await {
+    let out = match litmus_mcp::agent::complete(&cfg, system, &user).await {
         Ok(t) => t,
         Err(e) => return (Vec::new(), Vec::new(), Some(format!("这次没有连上模型（{e}），只给了按场结构算出的建议。"))),
     };

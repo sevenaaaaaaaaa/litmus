@@ -6,7 +6,7 @@
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY   R2 API Token 的 Access Key / Secret
 #   R2_ENDPOINT   https://<account_id>.r2.cloudflarestorage.com
 #   R2_BUCKET     bucket 名
-#   可选 R2_PREFIX  对象前缀，默认 thirdc/releases
+#   可选 R2_PREFIX  对象前缀，默认 litmus/releases
 #
 # 前置：runner/本机有 aws CLI（GitHub Ubuntu runner 预装；本地 brew install awscli）。
 # 用法：deploy/r2-sync.sh [要同步的目录，默认 dist]
@@ -19,7 +19,7 @@ DIR="${1:-dist}"
 : "${R2_BUCKET:?需要 R2_BUCKET}"
 
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}"
-PREFIX="${R2_PREFIX:-thirdc/releases}"
+PREFIX="${R2_PREFIX:-litmus/releases}"
 
 if [ ! -d "$DIR" ]; then
   echo "目录不存在：$DIR" >&2

@@ -64,7 +64,7 @@ pub struct TargetReport {
     pub error: String,
 }
 
-/// 备份状态（.thirdc/backup-state.json，跨次运行持久）。
+/// 备份状态（.litmus/local/backup-state.json，跨次运行持久）。
 #[derive(Debug, Clone, Serialize, serde::Deserialize, Default)]
 pub struct BackupState {
     #[serde(default)]
@@ -89,11 +89,11 @@ pub struct TargetState {
 
 /// 默认排除：可重建的索引 / 机器本地凭据 / 自身状态 / 垃圾文件。
 const DEFAULT_EXCLUDE_PARTS: &[&str] = &[
-    ".thirdc/index",
-    ".thirdc/machine.toml",
-    ".thirdc/backup-state.json",
-    ".thirdc/deploy",
-    ".thirdc/tmp",
+    ".litmus/local/index",
+    ".litmus/local/machine.toml",
+    ".litmus/local/backup-state.json",
+    ".litmus/local/deploy",
+    ".litmus/local/tmp",
     ".git",
     "target",
 ];
@@ -105,7 +105,7 @@ fn excluded(rel: &str, include_ops: bool) -> bool {
             return true;
         }
     }
-    if !include_ops && (rel == ".thirdc/ops" || rel.starts_with(".thirdc/ops/")) {
+    if !include_ops && (rel == ".litmus/local/ops" || rel.starts_with(".litmus/local/ops/")) {
         return true;
     }
     let name = rel.rsplit('/').next().unwrap_or(&rel);
@@ -143,13 +143,13 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 
 fn resolve_passphrase(cfg: &BackupConfig) -> Result<String, BackupError> {
     let p = if cfg.passphrase.is_empty() {
-        std::env::var("THIRDC_BACKUP_PASSPHRASE").unwrap_or_default()
+        std::env::var("LITMUS_BACKUP_PASSPHRASE").or_else(|_| std::env::var("THIRDC_BACKUP_PASSPHRASE")).unwrap_or_default()
     } else {
         cfg.passphrase.clone()
     };
     if p.is_empty() {
         return Err(BackupError::Config(
-            "未配置备份口令：thirdc.toml [backup] passphrase 或环境变量 THIRDC_BACKUP_PASSPHRASE".into(),
+            "未配置备份口令：litmus.toml [backup] passphrase 或环境变量 LITMUS_BACKUP_PASSPHRASE".into(),
         ));
     }
     Ok(p)
@@ -167,7 +167,7 @@ pub fn create_snapshot(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let host = std::env::var("THIRDC_HOST").unwrap_or_else(|_| hostname());
+    let host = std::env::var("LITMUS_HOST").or_else(|_| std::env::var("THIRDC_HOST")).unwrap_or_else(|_| hostname());
 
     // 收集文件清单（先统计，供元数据与进度）
     let mut files: Vec<(String, PathBuf, u64)> = Vec::new();
@@ -230,7 +230,7 @@ pub fn create_snapshot(
 }
 
 fn read_vault_name(vault_root: &Path) -> String {
-    std::fs::read_to_string(vault_root.join("thirdc.toml"))
+    std::fs::read_to_string(vault_root.join("litmus.toml"))
         .ok()
         .and_then(|s| {
             s.lines()
@@ -271,14 +271,14 @@ fn dav_auth(t: &BackupTarget) -> Result<(String, String), BackupError> {
         .username
         .clone()
         .filter(|s| !s.is_empty())
-        .or_else(|| std::env::var("THIRDC_WEBDAV_USER").ok())
-        .ok_or_else(|| BackupError::Config("webdav 缺用户名（target.username 或 THIRDC_WEBDAV_USER）".into()))?;
+        .or_else(|| std::env::var("LITMUS_WEBDAV_USER").or_else(|_| std::env::var("THIRDC_WEBDAV_USER")).ok())
+        .ok_or_else(|| BackupError::Config("webdav 缺用户名（target.username 或 LITMUS_WEBDAV_USER）".into()))?;
     let pass = t
         .password
         .clone()
         .filter(|s| !s.is_empty())
-        .or_else(|| std::env::var("THIRDC_WEBDAV_PASS").ok())
-        .ok_or_else(|| BackupError::Config("webdav 缺密码（target.password 或 THIRDC_WEBDAV_PASS）".into()))?;
+        .or_else(|| std::env::var("LITMUS_WEBDAV_PASS").or_else(|_| std::env::var("THIRDC_WEBDAV_PASS")).ok())
+        .ok_or_else(|| BackupError::Config("webdav 缺密码（target.password 或 LITMUS_WEBDAV_PASS）".into()))?;
     Ok((user, pass))
 }
 
@@ -662,7 +662,7 @@ pub fn run_backup(
 ) -> Result<(Vec<TargetReport>, BackupState), BackupError> {
     if cfg.targets.is_empty() {
         return Err(BackupError::Config(
-            "未配置备份目标：thirdc.toml [[backup.targets]]（kind: webdav / local / rclone）".into(),
+            "未配置备份目标：litmus.toml [[backup.targets]]（kind: webdav / local / rclone）".into(),
         ));
     }
     let (meta, age_file) = create_snapshot(vault_root, cfg)?;
@@ -723,7 +723,7 @@ pub fn run_backup(
 }
 
 pub fn state_path(vault_root: &Path) -> PathBuf {
-    vault_root.join(".thirdc").join("backup-state.json")
+    vault_root.join(".litmus/local").join("backup-state.json")
 }
 
 pub fn load_state(vault_root: &Path) -> BackupState {
@@ -842,12 +842,12 @@ mod tests {
     fn vault_fixture() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(d.path().join("Notes/子目录")).unwrap();
-        std::fs::create_dir_all(d.path().join(".thirdc/index")).unwrap();
-        std::fs::write(d.path().join("thirdc.toml"), "[vault]\nname = \"测试库\"\n[auth]\n".to_string()).unwrap();
+        std::fs::create_dir_all(d.path().join(".litmus/local/index")).unwrap();
+        std::fs::write(d.path().join("litmus.toml"), "[vault]\nname = \"测试库\"\n[auth]\n".to_string()).unwrap();
         std::fs::write(d.path().join("Notes/中文 文档.md"), "# 你好\n\n正文内容。".to_string()).unwrap();
         std::fs::write(d.path().join("Notes/子目录/nested.json"), "{\"a\":1}".to_string()).unwrap();
-        std::fs::write(d.path().join(".thirdc/index/index.db"), "SHOULD-NOT-BACKUP".to_string()).unwrap();
-        std::fs::write(d.path().join(".thirdc/machine.toml"), "token = \"x\"".to_string()).unwrap();
+        std::fs::write(d.path().join(".litmus/local/index/index.db"), "SHOULD-NOT-BACKUP".to_string()).unwrap();
+        std::fs::write(d.path().join(".litmus/local/machine.toml"), "token = \"x\"".to_string()).unwrap();
         std::fs::write(d.path().join(".DS_Store"), "junk".to_string()).unwrap();
         d
     }
@@ -908,8 +908,8 @@ mod tests {
             "# 你好\n\n正文内容。"
         );
         assert_eq!(std::fs::read_to_string(out.path().join("Notes/子目录/nested.json")).unwrap(), "{\"a\":1}");
-        assert!(!out.path().join(".thirdc/index/index.db").exists(), "排除项不得入包");
-        assert!(!out.path().join(".thirdc/machine.toml").exists(), "机器凭据不得入包");
+        assert!(!out.path().join(".litmus/local/index/index.db").exists(), "排除项不得入包");
+        assert!(!out.path().join(".litmus/local/machine.toml").exists(), "机器凭据不得入包");
         assert!(!out.path().join(".DS_Store").exists());
         // 状态与合规
         assert!(state.targets.contains_key("本地"));
@@ -959,13 +959,13 @@ mod tests {
 
     #[test]
     fn excluded_rules() {
-        assert!(excluded(".thirdc/index/index.db", false));
-        assert!(excluded(".thirdc/ops/abc.am", false));
-        assert!(!excluded(".thirdc/ops/abc.am", true));
-        assert!(excluded(".thirdc/machine.toml", false));
+        assert!(excluded(".litmus/local/index/index.db", false));
+        assert!(excluded(".litmus/local/ops/abc.am", false));
+        assert!(!excluded(".litmus/local/ops/abc.am", true));
+        assert!(excluded(".litmus/local/machine.toml", false));
         assert!(excluded(".DS_Store", false));
         assert!(excluded("Notes/._foo.md", false));
         assert!(!excluded("Notes/中文.md", false));
-        assert!(!excluded(".thirdc/secrets.json", false), "凭证库属于用户数据，E2EE 后入包");
+        assert!(!excluded(".litmus/local/secrets.json", false), "凭证库属于用户数据，E2EE 后入包");
     }
 }

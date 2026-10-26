@@ -1,16 +1,16 @@
 [package]
-name = "thirdc-desktop"
+name = "litmus-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "thirdc-desktop"
+name = "litmus-desktop"
 path = "src/main.rs"
 
 # 移动端（Android/iOS）构建需要库目标：cdylib 进 APK、staticlib 进 Xcode 工程
 [lib]
-name = "thirdc_desktop_lib"
+name = "litmus_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 path = "src/lib.rs"
 
@@ -25,7 +25,7 @@ tauri-plugin-notification = "2"
 axum.workspace = true
 tower.workspace = true
 kernel-core = { path = "../kernel/crates/kernel-core" }
-thirdc-server = { path = "../server" }
+litmus-server = { path = "../server" }
 tokio.workspace = true
 anyhow.workspace = true
 serde.workspace = true

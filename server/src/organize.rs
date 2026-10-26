@@ -366,7 +366,7 @@ pub async fn merge(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
                 let ctx = srcs.iter().enumerate().map(|(i, (_, t, b, _))| format!("[{}] 《{}》\n{}", i + 1, t, b.chars().take(1200).collect::<String>())).collect::<Vec<_>>().join("\n\n");
                 let system = "把用户知识库里的几条零散笔记合成一篇条理清楚的文档。保留所有事实、数字、结论和不同意见，不编造；按主题分 2 到 5 个二级标题（## ），\
                     每条论断后用 [编号] 标出来自哪条笔记。不要写开场白和总结套话。只输出正文（不要一级标题）。";
-                match thirdc_mcp::agent::complete(cfg, system, &format!("标题：{title}\n\n笔记：\n{ctx}")).await {
+                match litmus_mcp::agent::complete(cfg, system, &format!("标题：{title}\n\n笔记：\n{ctx}")).await {
                     Ok(t) if t.trim().len() > 20 => t.trim().to_string(),
                     Ok(_) | Err(_) => {
                         note = Some("模型这次没给出合成稿，先按原文拼在一起了，之后可以再让 AI 改写。".to_string());
@@ -465,7 +465,7 @@ pub async fn refresh(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         保留原有结构和仍然正确的内容；过时的计划、日期、结论改掉或注明已变化；不知道的不要编。\
         先输出改好的完整 Markdown（保留 frontmatter 和一级标题），然后单独一行 ===CHANGES===，再用 2 到 6 条短句列出改了什么。";
     let user = format!("今天是 {now}。\n\n要更新的文档（{path}）：\n{}\n\n更新的资料：\n{}", raw.chars().take(6000).collect::<String>(), if ctx.is_empty() { "（没有更新的同主题文档，只按今天的日期判断时间相关的表述）".into() } else { ctx });
-    match thirdc_mcp::agent::complete(&cfg, system, &user).await {
+    match litmus_mcp::agent::complete(&cfg, system, &user).await {
         Ok(t) => {
             let (md, changes) = match t.split_once("===CHANGES===") {
                 Some((a, b)) => (a.trim().to_string(), b.trim().to_string()),
@@ -506,7 +506,7 @@ fn patrols() -> &'static Mutex<HashMap<std::path::PathBuf, Patrol>> {
 }
 
 fn patrol_file(root: &std::path::Path) -> std::path::PathBuf {
-    root.join(".thirdc").join("patrol.json")
+    root.join(".litmus/local").join("patrol.json")
 }
 
 fn now_secs() -> u64 {
@@ -632,7 +632,7 @@ pub async fn patrol_start(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
             let system = "判断用户知识库里这几篇是否真的过时。今天是 TODAY。对每篇：outdated=true 表示其中有已经不成立或需要更新的内容；\
                 what 用一句中文说清哪里过时（不过时就说明为什么仍然成立）。只输出 JSON：{\"items\":[{\"path\":\"…\",\"outdated\":true,\"what\":\"…\"}]}"
                 .replace("TODAY", &today());
-            let out = thirdc_mcp::agent::complete(&cfg, &system, &items.join("\n\n")).await;
+            let out = litmus_mcp::agent::complete(&cfg, &system, &items.join("\n\n")).await;
             let verified: Vec<Value> = match out.ok().and_then(|t| super::field_tools::json_in(&t)) {
                 Some(v) => v.get("items").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().filter(|it| chunk.iter().any(|s| s["path"] == it["path"])).collect(),
                 None => Vec::new(),

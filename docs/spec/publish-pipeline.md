@@ -39,4 +39,4 @@
 
 ## 构建缓存
 
-`.thirdc/publish/` 保存上次发布的 hash 清单；资产 hash 命名，CDN 永久缓存安全。
+`.litmus/local/publish/` 保存上次发布的 hash 清单；资产 hash 命名，CDN 永久缓存安全。

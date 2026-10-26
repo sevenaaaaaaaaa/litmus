@@ -44,13 +44,13 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | 端点 | 用途 |
 |---|---|
 | `GET /field` | 新壳页面（`server/web/field.html`，tokens.css 内联） |
-| `GET /field/data[?rebuild=1]` | `{epoch, regions[{name,count}], docs[{p,t,k,d,ex,x,y,r,m,g}], edges[[i,j,w]]}`；按 `data_epoch` 缓存序列化好的 Bytes；坐标写 `.thirdc/field.json` |
+| `GET /field/data[?rebuild=1]` | `{epoch, regions[{name,count}], docs[{p,t,k,d,ex,x,y,r,m,g}], edges[[i,j,w]]}`；按 `data_epoch` 缓存序列化好的 Bytes；坐标写 `.litmus/local/field.json` |
 | `GET /field/react?q=` | 全库相关分：场向量余弦 × 0.65 + FTS 排名 × 0.35 + 标题包含整句 0.3，按最大值归一，最多 400 条 |
 | `GET /field/react?near=路径` | 以一篇文档自己的向量显色（阅读时让近邻亮起） |
 | `POST /field/place {text}` | 一段文字该落在哪：前 3 近邻质心 + 区域 + 近邻 |
 | `POST /field/crystal {q, paths}` | 读来源原文，挑与问题最相关的 ≤3 段（≤900 字），无工具补全写出带 `[n]` 的答案；没配模型 / 模型失败时退化为每篇最相关的一句，并在 `note` 里说明 |
 | `POST /field/note {task, text, title}` | 划选后「解释给我听」「考考我」；没配模型返回 409 与可执行的提示 |
-| `GET/POST /field/ai`、`POST /field/ai/test` | 模型设置：读（不回明文密钥）/ 写 thirdc.toml 的 [ai]（toml_edit 原地改，保留注释；密钥留空表示不改）/ 测连通 |
+| `GET/POST /field/ai`、`POST /field/ai/test` | 模型设置：读（不回明文密钥）/ 写 litmus.toml 的 [ai]（toml_edit 原地改，保留注释；密钥留空表示不改）/ 测连通 |
 | `POST /field/agent {message, context}` | Agent：SSE 推送每一步工具调用（参数只留路径 / 查询等短字段）与最终回复 |
 | `GET /assets/reading-styles.js` | 62 款阅读风格（与经典壳同一份风格表的拷贝） |
 
@@ -65,7 +65,7 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 - 显色：输入 110ms 防抖请求 `/field/react`，上一个请求作废；最相关节点变化时，其余节点按与它的距离延迟显色（0.55ms / 世界单位），纸上色斑用 canvas 径向渐变（亮色 multiply，暗色 lighter）。
 - 标签：场坐标横向 ×2.0、纵向 ×1.15 后，≤300 篇做标题避让；更大的库按「此刻相关度 → 关联数」网格查重，压住别人的只留点。>1500 篇远景改用 canvas 点阵。区域名同样避让。
 - 随手记：写入前先取落位预告（库未变，走缓存），写入后立即放临时节点从输入行飞过去，后台刷新由内核坐标接管。
-- 主题沿用 `thirdc_theme`；桌面端 `html.desktop` 留出红绿灯、顶部 44px 拖拽区、IPC 桥兜底与原生明暗同步。
+- 主题沿用 `litmus_theme`；桌面端 `html.desktop` 留出红绿灯、顶部 44px 拖拽区、IPC 桥兜底与原生明暗同步。
 - 渲染只在动画期跑（PERF 纪律），视口外节点不写样式。
 
 ### 3.4 唯一的界面（0.14 起）
@@ -78,8 +78,8 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 ## 4. 测试
 
 - `cargo test -p kernel-core field`：切词、确定性、语义邻近、增量不挪旧点、区域名、落位、空库。
-- `cargo test -p thirdc-server --lib field`：页面免令牌、接口要令牌、data → react → near → place → crystal → note 端到端、新增文档不挪旧坐标。
-- `cargo test -p thirdc-server --test field --test craft --test palette`：壳的字号走 token、零 hex、无 emoji、毛玻璃两档、圆角走 token、纸与墨及石蕊蓝 / 红在两种明暗下 ≥ 4.5:1；分享页同一套。
+- `cargo test -p litmus-server --lib field`：页面免令牌、接口要令牌、data → react → near → place → crystal → note 端到端、新增文档不挪旧坐标。
+- `cargo test -p litmus-server --test field --test craft --test palette`：壳的字号走 token、零 hex、无 emoji、毛玻璃两档、圆角走 token、纸与墨及石蕊蓝 / 红在两种明暗下 ≥ 4.5:1；分享页同一套。
 - `node --test server/tests/field.mjs`：壳里的纯函数（意图判断、切节、frontmatter、逐行对比、标签主干）。
 - `scripts/perf-check.sh` 新增 4 条预算（见 `PERF.md`）。
 
@@ -87,22 +87,22 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 
 | 批次 | 内容 | 状态 |
 |---|---|---|
-| F2-1 文档基本功 | /新建；阅读页「⋯」重命名或移动（链接随之改写）、复制路径、导出 Markdown / Word / HTML / 打印 PDF、删除进回收站并可撤销；页头「目录」；底部「链出 / 链入」；场上写下的链接画实线、意思相近画点线；/最近、/回收站、/同步；粘贴网址收录、拖入文件导入、/采集 主题、/导入；/设置 模型（`GET/POST /field/ai` 只改 thirdc.toml 的 [ai]，`POST /field/ai/test` 测连通） | 已完成 2026-10-26 |
+| F2-1 文档基本功 | /新建；阅读页「⋯」重命名或移动（链接随之改写）、复制路径、导出 Markdown / Word / HTML / 打印 PDF、删除进回收站并可撤销；页头「目录」；底部「链出 / 链入」；场上写下的链接画实线、意思相近画点线；/最近、/回收站、/同步；粘贴网址收录、拖入文件导入、/采集 主题、/导入；/设置 模型（`GET/POST /field/ai` 只改 litmus.toml 的 [ai]，`POST /field/ai/test` 测连通） | 已完成 2026-10-26 |
 | F2-2 写作与整理 | 「⋯」魔法排版 / AI 排版（`POST /doc/tidy` → PUT，可撤销）；离开编辑时自动命名（`POST /doc/autoname`，跳转到新路径）；「⋯」分栏（编辑框 + 每次保存后的渲染）；「⋯」阅读风格（`/assets/reading-styles.js`，沙箱 iframe srcdoc，双链经 postMessage 回到壳，选择存 `localStorage.litmus_style`）；编辑时粘贴 / 拖入附件（`POST /asset`，正文里 `Assets/` 图片改走 `/asset-file`）；标签（`/field/data` 每篇带 `g`，`#标签` 意图、阅读页标签条、/标签） | 已完成 2026-10-27 |
 | F2-3 发布与分享 | 「⋯」发布为公开网页（`POST /publish`）；/发布：目标、构建（`/publish/site`）、部署（`/publish/deploy`）、已发布列表；/展示（`/presentation`）。加密分享链接仍在经典界面 | 已完成 2026-10-27 |
 | F2-4 Agent | 意图「办」（帮我 / 请你 / 替我 / ! 开头，或 /做）→ `POST /field/agent`（SSE：start / step{tool,args,ok,summary} / reply / done / error；配了模型走带工具循环，否则离线命令模式；写进会话记录）。步骤卡逐条显示；读写的文档点亮并连成轨迹，当前那篇画呼吸环，镜头跟随；搜索按查询淡显色；写出的文档刷新后以石蕊红出现；结束给出产物与找回按钮 | 已完成 2026-10-27 |
 | F2-5 系统 | /插件（安装、启停、删除；命令与视图进 / 指令；视图沙箱 + 与经典壳同一 postMessage 协议）、/设计、/连接、/存档（git）、/备份、/视图 描述、`/ws` 在线数 | 已完成 2026-10-27 |
-| F3-1 流式与手感 | 结晶 `POST /field/crystal {stream:true}` 与 Agent 都走 SSE 逐字（`thirdc_mcp::agent::chat_stream`：`stream:true`，正文增量回调，工具调用按 index 拼回；服务商回整块 JSON 也兼容）；区域改名（`POST /field/region {auto,name}`，按自动名记在 `.thirdc/field-names.json`，中心文档换了就回到自动名）；桌面菜单 / 托盘事件（`menu:*`、`tray-*`）由知识场接住，/更新；双指捏合同时平移、松手惯性、空白双击放大、WebKit gesture 事件、手机下拉收起阅读页 | 已完成 |
+| F3-1 流式与手感 | 结晶 `POST /field/crystal {stream:true}` 与 Agent 都走 SSE 逐字（`litmus_mcp::agent::chat_stream`：`stream:true`，正文增量回调，工具调用按 index 拼回；服务商回整块 JSON 也兼容）；区域改名（`POST /field/region {auto,name}`，按自动名记在 `.litmus/local/field-names.json`，中心文档换了就回到自动名）；桌面菜单 / 托盘事件（`menu:*`、`tray-*`）由知识场接住，/更新；双指捏合同时平移、松手惯性、空白双击放大、WebKit gesture 事件、手机下拉收起阅读页 | 已完成 |
 | F3-2 批量整理 | `POST /field/organize` 只给建议：根目录散文档 → 所在区域成员最多的文件夹（≥3 篇且占区域三分之一）、占位文件名 → 正文 H1、近邻相似度 ≥ 0.86 → 可能重复（只提示）。执行逐条调 `/doc/move`（现在会改 `[[路径]]`、`[[文件名]]`、`](路径)` 三种链接）与 `/doc/autoname`，记录反向操作供撤销 | 已完成 |
-| F3-3 加密分享 | `server/src/share.rs`：`POST /share` 存密文到 `.thirdc/shares/`；`GET /s/{id}` 免令牌返回内嵌密文的查看页（`share.html`，CSP 禁外连，正文在无脚本沙箱 iframe）；有公开目标时同一页写到站点 `e/{id}.html` 并部署；`GET /shares` 列表、`DELETE /share/{id}` 撤回（公开副本以空页覆盖）。密钥：随机 256 位放 `#k2=`，或密码经 PBKDF2-SHA256 21 万轮；兼容经典壳的 `#k=` | 已完成 |
-| F3-4 视角 | `GET/PUT /field/views`（`.thirdc/field-views.json`）：名字、排布、镜头（世界坐标中心 + 缩放）、文档路径、可选查询。存下 = 此刻显色的文档，没有显色就取镜头里的；切回 = 换排布、点亮这组、镜头回位 | 已完成 |
-| F4-1 账户与库 | /凭证（`/secrets`，默认遮住）、/库（桌面 `desktop_vaults` / `desktop_switch_vault` / `desktop_create_vault`；网页 `localStorage.thirdc_workspaces`）、/退出登录、/记忆（`/agent/memory`，按行「忘掉」= 改 `Notes/Agent/memory.md`）、/记住 | 已完成 |
+| F3-3 加密分享 | `server/src/share.rs`：`POST /share` 存密文到 `.litmus/local/shares/`；`GET /s/{id}` 免令牌返回内嵌密文的查看页（`share.html`，CSP 禁外连，正文在无脚本沙箱 iframe）；有公开目标时同一页写到站点 `e/{id}.html` 并部署；`GET /shares` 列表、`DELETE /share/{id}` 撤回（公开副本以空页覆盖）。密钥：随机 256 位放 `#k2=`，或密码经 PBKDF2-SHA256 21 万轮；兼容经典壳的 `#k=` | 已完成 |
+| F3-4 视角 | `GET/PUT /field/views`（`.litmus/local/field-views.json`）：名字、排布、镜头（世界坐标中心 + 缩放）、文档路径、可选查询。存下 = 此刻显色的文档，没有显色就取镜头里的；切回 = 换排布、点亮这组、镜头回位 | 已完成 |
+| F4-1 账户与库 | /凭证（`/secrets`，默认遮住）、/库（桌面 `desktop_vaults` / `desktop_switch_vault` / `desktop_create_vault`；网页 `localStorage.litmus_workspaces`）、/退出登录、/记忆（`/agent/memory`，按行「忘掉」= 改 `Notes/Agent/memory.md`）、/记住 | 已完成 |
 | F4-2 学习与日历 | 学这一篇：按 `##`（或 `###`，没有就按段落凑 500 字）切节，原文模糊，复述 → `POST /field/learn {task:question|check}` → 自评；`POST /field/learn/grade` 简化 SM-2 排下次；`GET /field/learn/state`；/复习、打开时每日提醒一次；/日历 按文档日期的月历 + 到期复习 | 已完成 |
-| F4-3 同步与 AI 整理 | 视角、区域名、复习进度存库根 `.litmus/{views,regions,learn}.json`（git 同步只排除 `.thirdc/`，又不在 `Notes/` 下，不会变成文档）；读不到时回落 0.12 的 `.thirdc/` 旧文件。`POST /field/organize {ai:true}` 追加 `tags`（优先已有标签，丢掉带空白的）与 `titles`，执行改 frontmatter / 一级标题 + autoname，可撤销 | 已完成 |
+| F4-3 同步与 AI 整理 | 视角、区域名、复习进度存库根 `.litmus/{views,regions,learn}.json`（git 同步只排除 `.litmus/local/`，又不在 `Notes/` 下，不会变成文档）；读不到时回落 0.12 的 `.litmus/local/` 旧文件。`POST /field/organize {ai:true}` 追加 `tags`（优先已有标签，丢掉带空白的）与 `titles`，执行改 frontmatter / 一级标题 + autoname，可撤销 | 已完成 |
 | F4-4 插件索引与网页本地化 | /插件 内嵌 `/plugin-index` 一键装；`POST /field/localize {url, html?}`：取 `<article>`/`<main>`/`<body>`，去导航页眉页脚侧栏表单，kernel-convert 转 Markdown，图片 `kc-img://` 占位后下载入 Assets（单张 10MB、合计 60MB、最多 40 张），失败的留原地址；桌面先 `desktop_render_page` | 已完成 |
 | G1 大库提速 | 见 `PERF.md`「知识场大库纪律」 | 已完成 |
-| G2 全库整理 | `server/src/organize.rs`。场构建时算信号（正文字数、TODO、计划日期）；`POST /field/organize {scope}` 增加 `fragments`（< 280 字的文档按近邻 ≥ 0.3 连通，3–12 篇一组，按跨越时间排序）、`stale`（superseded / expired / todo / aging）、`options`（区域与日期范围）；`POST /field/merge`（plain / ai，原文 keep / archive，返回撤销说明）；`POST /field/refresh`（参照更新版起草，不写盘）；`/field/patrol`（估算 / 开始 / 进度 / 停下，每批 30 篇补标签起标题、每批 6 篇核实过时，结果存 `.thirdc/patrol.json`） | 已完成 |
-| G3 数据源 | `server/src/sources.rs`。配置 `.thirdc/sources.json`，索引 `.thirdc/sources/index.json`，抽出的文字 `.thirdc/sources/text/<hash>.txt`（设备本地）。种类 folder / agent / mcp / google / rest；`/sources`（列表、增改、`onboarded`）、`/sources/detect`（只数个数）、`/sources/{id}/scan`（后台增量：路径 + 大小 + 修改时间不变就沿用）、`/sources/connection`（写 thirdc.toml 的 [[connections]]）、`/sources/google/start|callback`（OAuth 本机回环，refresh token 存凭证库）。知识场把条目当 `ext:<源>/<条目>` 节点铺进场（`k=ext`、`s`=来源名），缓存键加 `sources::REV`；`/field/ext` 只读、`/field/ext/import`（move / copy）；结晶能读库外原文；整理排除库外。截图 OCR：macOS Vision（首次编译一个 Swift 小程序到临时目录）→ tesseract | 已完成 |
+| G2 全库整理 | `server/src/organize.rs`。场构建时算信号（正文字数、TODO、计划日期）；`POST /field/organize {scope}` 增加 `fragments`（< 280 字的文档按近邻 ≥ 0.3 连通，3–12 篇一组，按跨越时间排序）、`stale`（superseded / expired / todo / aging）、`options`（区域与日期范围）；`POST /field/merge`（plain / ai，原文 keep / archive，返回撤销说明）；`POST /field/refresh`（参照更新版起草，不写盘）；`/field/patrol`（估算 / 开始 / 进度 / 停下，每批 30 篇补标签起标题、每批 6 篇核实过时，结果存 `.litmus/local/patrol.json`） | 已完成 |
+| G3 数据源 | `server/src/sources.rs`。配置 `.litmus/local/sources.json`，索引 `.litmus/local/sources/index.json`，抽出的文字 `.litmus/local/sources/text/<hash>.txt`（设备本地）。种类 folder / agent / mcp / google / rest；`/sources`（列表、增改、`onboarded`）、`/sources/detect`（只数个数）、`/sources/{id}/scan`（后台增量：路径 + 大小 + 修改时间不变就沿用）、`/sources/connection`（写 litmus.toml 的 [[connections]]）、`/sources/google/start|callback`（OAuth 本机回环，refresh token 存凭证库）。知识场把条目当 `ext:<源>/<条目>` 节点铺进场（`k=ext`、`s`=来源名），缓存键加 `sources::REV`；`/field/ext` 只读、`/field/ext/import`（move / copy）；结晶能读库外原文；整理排除库外。截图 OCR：macOS Vision（首次编译一个 Swift 小程序到临时目录）→ tesseract | 已完成 |
 | G4 退役经典界面 | 删 `index.html` 与 `workspace.mjs`；`/` 直接是知识场；登录与 `?doc=` 深链进知识场；工艺测试改查 `field.html`（毛玻璃两档、圆角 token；7px 以内的节点标记允许 1–2px） | 已完成 |
 
 其他未做：学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。

@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! ThirdC 桌面壳：内嵌内核 + 本地 daemon + webview。
+//! Litmus 桌面壳：内嵌内核 + 本地 daemon + webview。
 //!
 //! 启动顺序：后台线程开内核并在 127.0.0.1 随机端口起 daemon → 把 (端口, token)
 //! 回传主线程 → 主线程建窗口指向该端口。内核起不来时不静默崩溃，改为在窗口里
@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 进程内内核状态句柄：IPC 桥（desktop_kernel_api）与全局快捷键快速捕捉共用。
 /// serve 只提供 HTTP 通道；这里让 webview 在 daemon 不可达时仍能直达内核（脱机可用）。
-static KERNEL_STATE: std::sync::OnceLock<std::sync::Arc<thirdc_server::AppState>> = std::sync::OnceLock::new();
+static KERNEL_STATE: std::sync::OnceLock<std::sync::Arc<litmus_server::AppState>> = std::sync::OnceLock::new();
 
 /// ego-lite 内置渲染槽：隐藏 webview 抓取 JS 渲染后的页面 DOM。
 #[derive(Default)]
@@ -53,8 +53,8 @@ fn prefs_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("prefs.json"))
 }
 
-/// 用户偏好（localStorage 的 thirdc_* 键）：跨库（跨 origin）持久化。
-/// 每个 origin 的内核 token 不同，thirdc_token 排除——页面首帧从 URL 写入正确值。
+/// 用户偏好（localStorage 的 litmus_* 键）：跨库（跨 origin）持久化。
+/// 每个 origin 的内核 token 不同，litmus_token 排除——页面首帧从 URL 写入正确值。
 #[tauri::command]
 fn desktop_prefs_save(app: AppHandle, prefs: serde_json::Value) -> Result<(), String> {
     if !prefs.is_object() {
@@ -208,8 +208,8 @@ fn desktop_create_vault(app: AppHandle, name: String) -> Result<String, String> 
         .parent()
         .unwrap_or(Path::new("."))
         .join(&name);
-    if dir.exists() && !dir.join("thirdc.toml").is_file() {
-        return Err(format!("目录已存在且不是 ThirdC 库：{}", dir.display()));
+    if dir.exists() && !kernel_core::is_vault_dir(&dir) {
+        return Err(format!("目录已存在且不是 Litmus 库：{}", dir.display()));
     }
     switch_and_navigate(&app, dir, name)
 }
@@ -224,7 +224,7 @@ fn desktop_switch_vault(app: AppHandle, path: String) -> Result<String, String> 
     switch_and_navigate(&app, p, name)
 }
 
-/// 默认库位置：~/Documents/Litmus（旧安装沿用已注册的库，不受影响），THIRDC_VAULT 可覆盖。
+/// 默认库位置：~/Documents/Litmus（旧安装沿用已注册的库，不受影响），LITMUS_VAULT 可覆盖。
 fn default_vault() -> PathBuf {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -233,13 +233,31 @@ fn default_vault() -> PathBuf {
     home.join("Documents").join("Litmus")
 }
 
+/// 0.15 起 bundle identifier 从 `com.nownexts.thirdc` 换成 `com.nownexts.litmus`，
+/// 系统给的配置 / 数据目录跟着换了名字：新目录还没有时把旧目录整个搬过来（库注册表、偏好、窗口位置）。
+#[cfg(desktop)]
+fn migrate_legacy_app_dirs(app: &AppHandle) {
+    const OLD_ID: &str = "com.nownexts.thirdc";
+    let p = app.path();
+    for dir in [p.app_config_dir(), p.app_data_dir(), p.app_local_data_dir()].into_iter().flatten() {
+        let Some(old) = dir.parent().map(|d| d.join(OLD_ID)) else { continue };
+        if old != dir && old.is_dir() && !dir.exists() {
+            if let Some(parent) = dir.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&old, &dir);
+        }
+    }
+}
+
 fn open_or_init(path: &Path) -> anyhow::Result<kernel_core::Vault> {
-    let cfg = path.join("thirdc.toml");
+    let _ = kernel_core::migrate_legacy_layout(path);
+    let cfg = path.join("litmus.toml");
     if cfg.is_file() {
         match kernel_core::Vault::open(path) {
             Ok(v) => return Ok(v),
             Err(e) => {
-                // 坏配置自愈：进程上次被杀在 init 写盘途中会留下空的 thirdc.toml
+                // 坏配置自愈：进程上次被杀在 init 写盘途中会留下空的 litmus.toml
                 // （目录项已提交、数据丢失——移动端尤其常见）。空文件直接删掉重建；
                 // 非空但解析失败才是真坏了，如实上报，不再盲目回退 open 吞掉原因。
                 let empty = std::fs::metadata(&cfg).map(|m| m.len() == 0).unwrap_or(false);
@@ -264,7 +282,7 @@ fn open_or_init(path: &Path) -> anyhow::Result<kernel_core::Vault> {
 fn boot_kernel(vault_path: PathBuf) -> Result<(u16, String), String> {
     let (tx, rx) = std::sync::mpsc::channel::<Result<(u16, String), String>>();
     std::thread::Builder::new()
-        .name("thirdc-kernel".into())
+        .name("litmus-kernel".into())
         .spawn(move || {
             let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
                 Ok(rt) => rt,
@@ -276,7 +294,7 @@ fn boot_kernel(vault_path: PathBuf) -> Result<(u16, String), String> {
             rt.block_on(async move {
                 let started = async {
                     let vault = open_or_init(&vault_path).map_err(|e| format!("打开库失败：{e}"))?;
-                    let state = thirdc_server::build_state(vault)
+                    let state = litmus_server::build_state(vault)
                         .map_err(|e| format!("构建内核状态失败：{e}"))?;
                     // 优先用固定端口：origin 稳定，localStorage（账号/主题/引导）才能跨启动保留。
                     // 端口被占（例如已开另一个实例）再退回随机端口。
@@ -300,9 +318,9 @@ fn boot_kernel(vault_path: PathBuf) -> Result<(u16, String), String> {
                     }
                     Ok((listener, state, port)) => {
                         let _ = KERNEL_STATE.set(state.clone());
-                        let _ = thirdc_server::spawn_watcher(state.clone());
+                        let _ = litmus_server::spawn_watcher(state.clone());
                         let _ = tx.send(Ok((port, state.token.clone())));
-                        let _ = thirdc_server::serve_listener(listener, state).await;
+                        let _ = litmus_server::serve_listener(listener, state).await;
                     }
                 }
             });
@@ -324,7 +342,7 @@ fn wait_ready(port: u16) {
 }
 
 /// 内核起不来时的兜底页面：桌面写临时文件用 file:// 打开；移动端 Android WebView
-/// 默认禁 file://（net::ERR_ACCESS_DENIED），改走自定义协议 thirdcerror://。
+/// 默认禁 file://（net::ERR_ACCESS_DENIED），改走自定义协议 litmuserror://。
 static BOOT_ERROR_HTML: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 fn error_page(vault: &Path, reason: &str) -> Option<String> {
@@ -356,20 +374,20 @@ ol{{margin:0;padding-left:20px;color:var(--muted)}} li{{margin:6px 0}}
 <pre>{reason}</pre>
 <ol>
 <li>确认该目录存在且当前用户可读写。</li>
-<li>换一个库：设 <code>THIRDC_VAULT=/你的/库路径</code> 后重开。</li>
+<li>换一个库：设 <code>LITMUS_VAULT=/你的/库路径</code> 后重开。</li>
 <li>端口被占时会自动换端口——通常无需处理。</li>
-<li>仍失败：命令行跑 <code>thirdc serve 该路径</code>，终端里能看到完整错误。</li>
+<li>仍失败：命令行跑 <code>litmus serve 该路径</code>，终端里能看到完整错误。</li>
 </ol>
 </div>"#,
         vault = esc(&vault.display().to_string()),
         reason = esc(reason),
     );
-    let path = std::env::temp_dir().join("thirdc-desktop-error.html");
+    let path = std::env::temp_dir().join("litmus-desktop-error.html");
     std::fs::write(&path, html.clone()).ok()?;
     let _ = BOOT_ERROR_HTML.set(html);
     // 移动端：Android WebView 禁 file://，走注册好的自定义协议（http://<scheme>.localhost）
     #[cfg(mobile)]
-    return Some("http://thirdcerror.localhost/".into());
+    return Some("http://litmuserror.localhost/".into());
     #[cfg(desktop)]
     tauri::Url::from_file_path(&path).ok().map(|u| u.to_string())
 }
@@ -388,7 +406,7 @@ struct TrayCtx {
 
 #[cfg(desktop)]
 fn ui_state_recents(vault: &Path) -> Vec<String> {
-    std::fs::read_to_string(vault.join(".thirdc").join("ui-state.json"))
+    std::fs::read_to_string(vault.join(".litmus/local").join("ui-state.json"))
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| {
@@ -1041,7 +1059,7 @@ async fn desktop_kernel_api(
         .get()
         .ok_or_else(|| "内核未就绪".to_string())?
         .clone();
-    let app = thirdc_server::router(state);
+    let app = litmus_server::router(state);
     let m: axum::http::Method = method.parse().map_err(|e| format!("method 非法：{e}"))?;
     let u: axum::http::Uri = uri.parse().map_err(|e| format!("uri 非法：{e}"))?;
     let mut builder = axum::http::Request::builder()
@@ -1220,14 +1238,14 @@ fn desktop_open_path(p: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 告诉内核：这是 App 壳，开启 /desktop/* 独占端点。
-    std::env::set_var("THIRDC_DESKTOP", "1");
-    let vault_override = std::env::var_os("THIRDC_VAULT").map(PathBuf::from);
+    std::env::set_var("LITMUS_DESKTOP", "1");
+    let vault_override = std::env::var_os("LITMUS_VAULT").or_else(|| std::env::var_os("THIRDC_VAULT")).map(PathBuf::from);
 
     let builder = tauri::Builder::default()
         .manage(RenderSlot(StdMutex::new(None)))
-        // 兜底错误页协议：移动端 WebView 禁 file://，错误页经 thirdcerror:// 提供。
+        // 兜底错误页协议：移动端 WebView 禁 file://，错误页经 litmuserror:// 提供。
         // 页面 HTML 在 boot 失败时写入 BOOT_ERROR_HTML，见 error_page()。
-        .register_uri_scheme_protocol("thirdcerror", |_ctx, _req| {
+        .register_uri_scheme_protocol("litmuserror", |_ctx, _req| {
             let html = BOOT_ERROR_HTML.get().cloned().unwrap_or_else(|| {
                 "<!doctype html><meta charset=\"utf-8\"><title>鹿蕊 Litmus</title><p>内核没能启动".into()
             });
@@ -1300,7 +1318,7 @@ pub fn run() {
                             .spawn();
                     }
                 }
-                "m-help" => open_url("https://nownexts.com/thirdc/"),
+                "m-help" => open_url("https://nownexts.com/litmus/"),
                 "m-release-notes" => open_url("https://github.com/sevenaaaaaaaaa/litmus/releases"),
                 "m-report-issue" => open_url("https://github.com/sevenaaaaaaaaa/litmus/issues"),
                 _ => {}
@@ -1346,6 +1364,8 @@ pub fn run() {
 
     builder
         .setup(move |app| {
+            #[cfg(desktop)]
+            migrate_legacy_app_dirs(app.handle());
             let vault_path = vault_override.unwrap_or_else(|| {
                 #[cfg(mobile)]
                 {
@@ -1379,11 +1399,11 @@ pub fn run() {
             format!("http://127.0.0.1:{port}/?token={token}")
         }
             Err(reason) => {
-                eprintln!("[thirdc-desktop] {reason}");
+                eprintln!("[litmus-desktop] {reason}");
                 match error_page(&vault_path, &reason) {
                     Some(u) => u,
                     None => {
-                        eprintln!("[thirdc-desktop] 兜底页面也写不出来");
+                        eprintln!("[litmus-desktop] 兜底页面也写不出来");
                         std::process::exit(1);
                     }
                 }
@@ -1417,7 +1437,7 @@ pub fn run() {
                     .filter(|s| serde_json::from_str::<serde_json::Value>(s).map(|v| v.is_object()).unwrap_or(false))
                     .unwrap_or_else(|| "{}".into());
                 let init = format!(
-                    r#"try{{var __prefs={prefs};Object.keys(__prefs).forEach(function(k){{if(k==='thirdc_token')return;try{{localStorage.setItem(k,__prefs[k])}}catch(e){{}}}})}}catch(e){{}}"#,
+                    r#"try{{var __prefs={prefs};Object.keys(__prefs).forEach(function(k){{var n=k.replace(/^thirdc_/,'litmus_');if(n==='litmus_token')return;try{{localStorage.setItem(n,__prefs[k])}}catch(e){{}}}})}}catch(e){{}}"#,
                     prefs = prefs_txt
                 );
                 builder = builder.initialization_script(&init);
@@ -1538,7 +1558,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("ThirdC Desktop 启动失败")
+        .expect("Litmus Desktop 启动失败")
         .run(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
@@ -1557,7 +1577,7 @@ mod tests {
         let url = error_page(Path::new("/tmp/库 <a>"), "打不开：<script>x</script>")
             .expect("应写出兜底页面");
         assert!(url.starts_with("file://"), "应是 file:// URL，实际 {url}");
-        let path = std::env::temp_dir().join("thirdc-desktop-error.html");
+        let path = std::env::temp_dir().join("litmus-desktop-error.html");
         let html = std::fs::read_to_string(path).unwrap();
         assert!(html.contains("&lt;script&gt;"), "原因需转义");
         assert!(!html.contains("<script>"), "不得注入可执行标签");
@@ -1566,10 +1586,10 @@ mod tests {
 
     #[test]
     fn open_or_init_creates_then_reopens() {
-        let dir = std::env::temp_dir().join(format!("thirdc-desk-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("litmus-desk-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let v1 = open_or_init(&dir).expect("首次应 init");
-        assert!(dir.join("thirdc.toml").is_file());
+        assert!(dir.join("litmus.toml").is_file());
         let v2 = open_or_init(&dir).expect("再次应 open");
         assert_eq!(v1.root, v2.root);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1577,14 +1597,14 @@ mod tests {
 
     #[test]
     fn open_or_init_selfheals_empty_config() {
-        let dir = std::env::temp_dir().join(format!("thirdc-desk-empty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("litmus-desk-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        // 模拟上次被杀在 init 写盘途中：目录结构在、thirdc.toml 是空文件。
+        // 模拟上次被杀在 init 写盘途中：目录结构在、litmus.toml 是空文件。
         std::fs::create_dir_all(dir.join("Notes")).unwrap();
-        std::fs::write(dir.join("thirdc.toml"), "").unwrap();
+        std::fs::write(dir.join("litmus.toml"), "").unwrap();
         let v = open_or_init(&dir).expect("空配置应自愈重建");
         assert_eq!(v.config.name, "Litmus");
-        let raw = std::fs::read_to_string(dir.join("thirdc.toml")).unwrap();
+        let raw = std::fs::read_to_string(dir.join("litmus.toml")).unwrap();
         assert!(raw.contains("name"), "重建后配置应含 name 字段");
         let _ = std::fs::remove_dir_all(&dir);
     }

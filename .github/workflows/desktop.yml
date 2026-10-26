@@ -1,4 +1,4 @@
-# ThirdC 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg，DMG 内置打开助手）
+# Litmus 桌面端多平台打包：Windows（msi/nsis）+ Linux（deb/AppImage/rpm）+ macOS（app/dmg，DMG 内置打开助手）
 # 触发：手动（Actions 页 Run workflow）、推 v* 标签（正式版，附到同名 Release 并成为 Latest）
 #       或推 nightly 标签（scripts/daily-release.sh 每日强制移动；附到唯一的预发布「Nightly」）。
 #
@@ -12,7 +12,7 @@
 # 在线更新：createUpdaterArtifacts=true 会产出 *.sig 与 updater 归档，
 # tauri-action 用 TAURI_SIGNING_PRIVATE_KEY 签名并生成 latest.json（供 App 内自更新）。
 # 必需仓库 Secret：
-#   TAURI_SIGNING_PRIVATE_KEY          私钥全文（~/.tauri/thirdc-updater.key）
+#   TAURI_SIGNING_PRIVATE_KEY          私钥全文（~/.tauri/litmus-updater.key）
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD 私钥口令（本次生成时为空，填空字符串即可）
 name: desktop
 on:
@@ -151,7 +151,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ThirdC-Desktop-${{ matrix.os }}
+          name: Litmus-Desktop-${{ matrix.os }}
           path: dist/*
           if-no-files-found: error
 

@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "ThirdC desktop window",
+  "description": "Litmus desktop window",
   "windows": ["main", "sticky"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]

@@ -7,7 +7,7 @@
 //! - 数据绑定：`BoundValue = {literalString|literalNumber|literalBoolean|literalArray|path}`
 //! - 目录（Catalog）由客户端定义：协议只规定抽象组件，渲染器映射到原生实现
 //!
-//! 本实现把 A2UI 映射到 ThirdC 的 HTML 契约（与 AI-HTML 同一套 token），
+//! 本实现把 A2UI 映射到 Litmus 的 HTML 契约（与 AI-HTML 同一套 token），
 //! 未知组件降级为带标签的占位而不是报错——协议要求渐进渲染。
 
 use serde_json::Value;
@@ -368,7 +368,7 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// 与 ThirdC token 契约一致的 A2UI 渲染样式（零 hex）。
+/// 与 Litmus token 契约一致的 A2UI 渲染样式（零 hex）。
 pub const A2UI_CSS: &str = r#"
 .a2ui{font-family:var(--font-body,system-ui);color:var(--fg,oklch(24% 0 0));margin:0;padding:20px}
 .a2ui-surface{display:block;margin:0 0 18px}

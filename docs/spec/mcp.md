@@ -4,7 +4,7 @@
 
 ## 出口：知识库暴露给 agent（已落地）
 
-`thirdc mcp <vault>` 以 stdio 运行 MCP server，协议 JSON-RPC 2.0。
+`litmus mcp <vault>` 以 stdio 运行 MCP server，协议 JSON-RPC 2.0。
 传输与协议解耦：`McpServer::handle()` 为纯消息处理，后续 HTTP/SSE 复用同一实现。
 
 ### 客户端接入
@@ -14,8 +14,8 @@ Claude Desktop（`claude_desktop_config.json`）/ Cursor（`~/.cursor/mcp.json`�
 ```json
 {
   "mcpServers": {
-    "thirdc": {
-      "command": "/绝对路径/thirdc",
+    "litmus": {
+      "command": "/绝对路径/litmus",
       "args": ["mcp", "/绝对路径/MyVault"]
     }
   }
@@ -59,7 +59,7 @@ Claude Desktop（`claude_desktop_config.json`）/ Cursor（`~/.cursor/mcp.json`�
 
 内核作 MCP **client**，以子进程方式启动第三方 MCP server 并走 stdio 协议。
 
-### 配置（thirdc.toml）
+### 配置（litmus.toml）
 
 ```toml
 [[connections]]
@@ -73,10 +73,10 @@ args = ["/path/to/server.py"]
 
 | 命令 | 说明 |
 |---|---|
-| `thirdc conn list <vault>` | 列出已配置连接 |
-| `thirdc conn probe <vault> <name>` | 握手 + 列出 tools / resources |
-| `thirdc conn pull <vault> <name>` | 采集该连接**全部 resources** 入库 |
-| `thirdc conn call <vault> <name> <tool> --args '{"k":"v"}' [--import]` | 调用 tool；`--import` 把返回文本也入库 |
+| `litmus conn list <vault>` | 列出已配置连接 |
+| `litmus conn probe <vault> <name>` | 握手 + 列出 tools / resources |
+| `litmus conn pull <vault> <name>` | 采集该连接**全部 resources** 入库 |
+| `litmus conn call <vault> <name> <tool> --args '{"k":"v"}' [--import]` | 调用 tool；`--import` 把返回文本也入库 |
 
 ### 采集语义
 

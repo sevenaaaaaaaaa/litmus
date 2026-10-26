@@ -84,22 +84,22 @@ async function shareEncrypted(path){
 $('share-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')shareEncrypted(current)});
 
 /* ───────── 多库工作区 ───────── */
-function loadWorkspaces(){return JSON.parse(localStorage.getItem('thirdc_workspaces')||'[]')}
+function loadWorkspaces(){return JSON.parse(localStorage.getItem('litmus_workspaces')||'[]')}
 function renderWorkspaces(){
   const list=loadWorkspaces();const box=$('ws-list');box.innerHTML='';
-  if(!list.find(w=>w.url===location.origin)){list.unshift({name:vaultName||'当前库',url:location.origin,token:token});localStorage.setItem('thirdc_workspaces',JSON.stringify(list))}
+  if(!list.find(w=>w.url===location.origin)){list.unshift({name:vaultName||'当前库',url:location.origin,token:token});localStorage.setItem('litmus_workspaces',JSON.stringify(list))}
   list.forEach((w,i)=>{
     const b=document.createElement('button');b.className='ws-chip'+(w.url===location.origin?' on':'');b.textContent=w.name;
-    b.onclick=()=>{if(w.url!==location.origin){localStorage.setItem('thirdc_token',w.token||token);location.href=w.url+'/?token='+w.token}};
+    b.onclick=()=>{if(w.url!==location.origin){localStorage.setItem('litmus_token',w.token||token);location.href=w.url+'/?token='+w.token}};
     box.appendChild(b);
   });
 }
 $('ws-add').onclick=async()=>{
-  const url=prompt('另一个 ThirdC 的 URL','http://127.0.0.1:7700');if(!url)return;
+  const url=prompt('另一个 Litmus 的 URL','http://127.0.0.1:7700');if(!url)return;
   const t2=prompt('Token','');if(!t2)return;
   const name=prompt('显示名','新工作区')||url;
   const list=loadWorkspaces();list.push({name,url:url.replace(/\\/+$/,''),token:t2});
-  localStorage.setItem('thirdc_workspaces',JSON.stringify(list));renderWorkspaces();
+  localStorage.setItem('litmus_workspaces',JSON.stringify(list));renderWorkspaces();
 };
 $('ws-close').onclick=()=>$('ws-panel').classList.remove('open');
 let vaultName='';

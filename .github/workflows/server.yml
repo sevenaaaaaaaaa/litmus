@@ -1,5 +1,5 @@
-# ThirdC 服务器端二进制：x86_64 musl 静态链接，glibc 2.17（CentOS 7）及以上直接可跑。
-# 部署从此不碰生产机的 cargo：下载本产物上传换 bin/thirdc 即可（内存窒息的 OOM 教训）。
+# Litmus 服务器端二进制：x86_64 musl 静态链接，glibc 2.17（CentOS 7）及以上直接可跑。
+# 部署从此不碰生产机的 cargo：下载本产物上传换 bin/litmus 即可（内存窒息的 OOM 教训）。
 name: server
 on:
   workflow_dispatch:
@@ -26,24 +26,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: 构建（静态链接）
-        run: cargo build --release -p thirdc --target x86_64-unknown-linux-musl
+        run: cargo build --release -p litmus --target x86_64-unknown-linux-musl
 
       - name: 冒烟（runner 上直接跑，验证静态可执行）
-        run: target/x86_64-unknown-linux-musl/release/thirdc --help > /dev/null
+        run: target/x86_64-unknown-linux-musl/release/litmus --help > /dev/null
 
       - name: 打包
         run: |
-          tar czf thirdc-linux-x86_64-musl.tar.gz -C target/x86_64-unknown-linux-musl/release thirdc
-          sha256sum thirdc-linux-x86_64-musl.tar.gz
+          tar czf litmus-linux-x86_64-musl.tar.gz -C target/x86_64-unknown-linux-musl/release litmus
+          sha256sum litmus-linux-x86_64-musl.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
-          name: thirdc-linux-x86_64-musl
-          path: thirdc-linux-x86_64-musl.tar.gz
+          name: litmus-linux-x86_64-musl
+          path: litmus-linux-x86_64-musl.tar.gz
           if-no-files-found: error
 
       - name: 附到 GitHub Release（仅标签触发）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: thirdc-linux-x86_64-musl.tar.gz
+          files: litmus-linux-x86_64-musl.tar.gz

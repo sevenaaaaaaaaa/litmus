@@ -5,11 +5,11 @@
 
 ## 一、形态与位置
 
-- 插件安装到库内 `kb/.thirdc/plugins/<id>/`，随库走（git / 同步 / 备份都会带上，换设备即插即用）。
+- 插件安装到库内 `kb/.litmus/local/plugins/<id>/`，随库走（git / 同步 / 备份都会带上，换设备即插即用）。
 - 每个插件一个目录：
 
 ```
-.thirdc/plugins/
+.litmus/local/plugins/
   demo-daily-note/
     manifest.json      # 清单（唯一必需）
     ...其余文件        # v0 不执行；预留样式 / 预设 / 资源
@@ -54,7 +54,7 @@
 - `POST /plugins/install {url}`：接受 `https://github.com/<owner>/<repo>[/tree/<branch>[/<subdir>]]`。
   - 服务端经 GitHub API 下载 tarball（≤25MB）→ 系统 `tar` 解包（≤50MB 校验）→
     仓库**根**或**一层子目录**含 `manifest.json` 即认定插件（支持一仓库多插件）→
-    复制进 `.thirdc/plugins/<id>/` 并登记 `installed.json`（默认启用）。
+    复制进 `.litmus/local/plugins/<id>/` 并登记 `installed.json`（默认启用）。
 - 其余端点：`GET /plugins`（列表+状态）、`POST /plugins/toggle {name,enabled}`、`POST /plugins/remove {name}`。
 
 ## 四、UI 挂载（入口唯一家）
@@ -68,8 +68,8 @@
 | 阶段 | 能力 | 边界 |
 |---|---|---|
 | **v0（已上线）** | 声明式命令（snippet / url / http-post） | 插件代码不执行；tarball 25MB、解压 50MB 上限；manifest 字段白名单；`id` 防路径穿越 |
-| **v1（已上线）** | 视图扩展：`contributions.views` 声明 HTML 入口，经 `/plugins/view/{id}/{file}` 服务（宿主注入 RPC 垫片 `window.thirdc.*`），专用沙箱 iframe 渲染（`sandbox` 无同源——父页面与插件互不可达，实测合成点击也无法穿透）。RPC：`getDocument / insertText / saveDocument / toast / setViewTitle`，宿主按 manifest `permissions` 逐项校验（`doc:read` / `doc:write` / `editor:insert`），装前面板展示权限 | RPC 校验失败一律拒绝并回报原因；插件文件静态供给（防路径穿越）；无任意代码执行面 |
-| **v2（已上线）** | Agent 工具贡献：`contributions.tools` 声明工具（`http` 模板化调用外部 API / `kb-search` 库内检索），注册进 agent 工具循环（`plugin_<pid>_<tid>`，仅 AI 对话模式可选）。宿主代执行：SSRF 防护（拒绝内网/回环）、10s 超时、结果 1500 字截断、审计落 `.thirdc/events/plugin-tools.jsonl`；工具级独立启停（面板操作，installed.json `tools` 覆盖表） | 插件代码不执行；http 仅 http(s) 且 `{参数}` 必须全部提供；命令模式（无模型）不加载插件工具 |
+| **v1（已上线）** | 视图扩展：`contributions.views` 声明 HTML 入口，经 `/plugins/view/{id}/{file}` 服务（宿主注入 RPC 垫片 `window.litmus.*`），专用沙箱 iframe 渲染（`sandbox` 无同源——父页面与插件互不可达，实测合成点击也无法穿透）。RPC：`getDocument / insertText / saveDocument / toast / setViewTitle`，宿主按 manifest `permissions` 逐项校验（`doc:read` / `doc:write` / `editor:insert`），装前面板展示权限 | RPC 校验失败一律拒绝并回报原因；插件文件静态供给（防路径穿越）；无任意代码执行面 |
+| **v2（已上线）** | Agent 工具贡献：`contributions.tools` 声明工具（`http` 模板化调用外部 API / `kb-search` 库内检索），注册进 agent 工具循环（`plugin_<pid>_<tid>`，仅 AI 对话模式可选）。宿主代执行：SSRF 防护（拒绝内网/回环）、10s 超时、结果 1500 字截断、审计落 `.litmus/local/events/plugin-tools.jsonl`；工具级独立启停（面板操作，installed.json `tools` 覆盖表） | 插件代码不执行；http 仅 http(s) 且 `{参数}` 必须全部提供；命令模式（无模型）不加载插件工具 |
 | **v3** | 社区索引：官方 JSON 注册表（仓库地址 + 审核标记），插件面板内一键浏览安装（Obsidian 社区插件模式） |
 
 ### 视图 manifest 示例
@@ -86,11 +86,11 @@
 插件页面内直接调用（垫片已注入）：
 
 ```js
-const doc = await thirdc.getDocument();      // 需 doc:read
-await thirdc.insertText('文本');              // 需 editor:insert
-await thirdc.saveDocument(markdown);          // 需 doc:write
-await thirdc.toast('提示');                   // 恒可用
-await thirdc.setViewTitle('新标题');           // 恒可用
+const doc = await litmus.getDocument();      // 需 doc:read
+await litmus.insertText('文本');              // 需 editor:insert
+await litmus.saveDocument(markdown);          // 需 doc:write
+await litmus.toast('提示');                   // 恒可用
+await litmus.setViewTitle('新标题');           // 恒可用
 ```
 
 ### 工具 manifest 示例（v2）

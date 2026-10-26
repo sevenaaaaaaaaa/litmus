@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 function normalizeBase(raw) {
   let base = (raw || "").trim().replace(/\/+$/, "");
   const m = /^(https?:\/\/[^/]+)$/.exec(base);
-  if (m && m[1].includes("nownexts.com")) base = m[1] + "/thirdc";
+  if (m && m[1].includes("nownexts.com")) base = m[1] + "/litmus";
   return base;
 }
 
@@ -39,6 +39,6 @@ $("test").onclick = async () => {
     $("msg").textContent = `✓ 连接成功\n库：${d.vault}\n文档：${d.docs} · 已索引：${d.indexed}`;
   } catch (e) {
     $("msg").className = "err";
-    $("msg").textContent = `✗ ${e.message}\n检查地址是否含 /thirdc`;
+    $("msg").textContent = `✗ ${e.message}\n检查地址是否含 /litmus`;
   }
 };

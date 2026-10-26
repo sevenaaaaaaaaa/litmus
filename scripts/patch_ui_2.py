@@ -4,9 +4,9 @@ s = open(p, encoding='utf-8').read()
 # ═══════════ JS ═══════════
 
 # 1) 主题 + 模式状态初始化
-old = "let themePref=localStorage.getItem('thirdc_theme')||'auto';"
+old = "let themePref=localStorage.getItem('litmus_theme')||'auto';"
 new = old + '''
-let mode=localStorage.getItem('thirdc_mode')||'studio';
+let mode=localStorage.getItem('litmus_mode')||'studio';
 let multiSel=new Set();'''
 assert old in s
 s = s.replace(old, new, 1)
@@ -94,7 +94,7 @@ new = '''async function refreshAll(){await Promise.all([loadGraph(),loadRail(),l
 
 /* ───────── 侧栏树 ───────── */
 function tagColor(t){let h=0;for(const c of t)h=(h*31+c.codePointAt(0))%360;const dark=document.documentElement.dataset.theme==='dark';return `oklch(${dark?'72%':'52%'} .14 ${h})`}
-let treeState=JSON.parse(localStorage.getItem('thirdc_tree')||'{}');
+let treeState=JSON.parse(localStorage.getItem('litmus_tree')||'{}');
 function renderTree(docs){
   const q=($('rail-search').value||'').trim().toLowerCase();
   const box=$('rail-list');box.innerHTML='';
@@ -123,11 +123,11 @@ function renderTree(docs){
       const row=document.createElement('div');row.className='tree-row';row.style.marginLeft=depth*0+'px';
       row.innerHTML=`<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span class="nm"></span><span class="ct">${child.docs.length}</span>`;
       row.querySelector('.nm').textContent=name;
-      row.onclick=e=>{if(e.target.closest('.ct'))return;treeState[child.path]=!(treeState[child.path]!==false);localStorage.setItem('thirdc_tree',JSON.stringify(treeState));f.classList.toggle('open');};
+      row.onclick=e=>{if(e.target.closest('.ct'))return;treeState[child.path]=!(treeState[child.path]!==false);localStorage.setItem('litmus_tree',JSON.stringify(treeState));f.classList.toggle('open');};
       row.ondragover=e=>{e.preventDefault();row.classList.add('drop-hot')};
       row.ondragleave=()=>row.classList.remove('drop-hot');
       row.ondrop=async e=>{e.preventDefault();row.classList.remove('drop-hot');
-        const from=e.dataTransfer.getData('text/thirdc-path');if(!from)return;
+        const from=e.dataTransfer.getData('text/litmus-path');if(!from)return;
         const fname=from.split('/').pop();
         const to=`Notes/${child.path}/${fname}`;
         if(to===from)return;
@@ -148,7 +148,7 @@ function renderTree(docs){
       leaf.querySelector('.nm').textContent=d.title||d.path.split('/').pop();
       leaf.title=d.path;
       leaf.onclick=()=>openDoc(d.path);
-      leaf.ondragstart=e=>{e.dataTransfer.setData('text/thirdc-path',d.path);e.dataTransfer.effectAllowed='move'};
+      leaf.ondragstart=e=>{e.dataTransfer.setData('text/litmus-path',d.path);e.dataTransfer.effectAllowed='move'};
       el.appendChild(leaf);
     }
   }

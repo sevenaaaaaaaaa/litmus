@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ThirdC 线上更新：服务器从 GitHub 拉取 → 构建 → 重启（幂等）
-# 用法（服务器上）：/www/wwwroot/thirdc/update.sh
+# Litmus 线上更新：服务器从 GitHub 拉取 → 构建 → 重启（幂等）
+# 用法（服务器上）：/www/wwwroot/litmus/update.sh
 set -euo pipefail
-APP=/www/wwwroot/thirdc
+APP=/www/wwwroot/litmus
 REPO=https://github.com/sevenaaaaaaaaa/litmus.git
 export PATH="$HOME/.cargo/bin:$PATH"
 
@@ -16,12 +16,12 @@ fi
 echo "   当前版本: $(cd "$APP/src" && git rev-parse --short HEAD)"
 
 echo "② 构建（增量，通常 1-3 分钟）"
-cd "$APP/src" && cargo build --release -p thirdc 2>&1 | tail -2
+cd "$APP/src" && cargo build --release -p litmus 2>&1 | tail -2
 
 echo "③ 替换二进制并重启"
-systemctl stop thirdc || true
-cp "$APP/src/target/release/thirdc" "$APP/bin/thirdc"
-systemctl start thirdc
+systemctl stop litmus || true
+cp "$APP/src/target/release/litmus" "$APP/bin/litmus"
+systemctl start litmus
 sleep 2
 
 echo "④ 验证"

@@ -14,7 +14,7 @@
 
 ## 持久化：真增量日志（M2 已落地）
 
-- 每次本地变更只追加 `save_after(last_heads)` 的增量字节到 `.thirdc/ops/<flat>.am`。
+- 每次本地变更只追加 `save_after(last_heads)` 的增量字节到 `.litmus/local/ops/<flat>.am`。
 - 加载即 `load_incremental` 一次读完拼接的增量流；崩溃安全（读到的必然是完整前缀）。
 - 已覆盖测试：增量文件随编辑追加增长、跨进程恢复、双库经协议收敛、跨文档并发完整合流。
 
@@ -30,7 +30,7 @@
 |---|---|---|
 | 纯本地 | 无 | 无 |
 | 多设备 P2P | LAN 直连（sync protocol over WebSocket/TCP） | 无，同网自动发现 |
-| 自建服务器 | WebSocket + op-log 落盘 | `thirdc-server` Docker 单容器 |
+| 自建服务器 | WebSocket + op-log 落盘 | `litmus-server` Docker 单容器 |
 | 对象存储中转 | S3 兼容桶轮询 | 无服务器，NAS/VPS 免了也行 |
 
 四种拓扑共用同一 Automerge sync protocol（交换状态摘要 → 补发缺失变更）。
@@ -49,6 +49,6 @@
 
 ## server 形态
 
-- `thirdc-server`：单二进制/Docker，无状态可横扩（op-log 放对象存储即可多副本）。
+- `litmus-server`：单二进制/Docker，无状态可横扩（op-log 放对象存储即可多副本）。
 - 认证：设备密钥 + vault 邀请令牌；团队角色权限 Phase 2。
 - 国内部署 profile：同步与发布服务不同端口/存储桶/账号体系，见 publish-pipeline.md。

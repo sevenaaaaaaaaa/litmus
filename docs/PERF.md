@@ -54,11 +54,11 @@
 |---|---|---|
 | TF-IDF 语料 | kernel（内存） | (文档数, 最大 mtime) 变化 |
 | memo 索引（序列化 Bytes） | server AppState | `data_epoch`（内容变更 +1） |
-| 知识场（向量 / 坐标 / 序列化 Bytes） | server `field.rs` 进程内，按库根分 | `data_epoch`；坐标另存 `.thirdc/field.json`（派生层，可删可重建） |
+| 知识场（向量 / 坐标 / 序列化 Bytes） | server `field.rs` 进程内，按库根分 | `data_epoch`；坐标另存 `.litmus/local/field.json`（派生层，可删可重建） |
 | /browse 文件夹 | 前端 Map（30 个槽） | refreshAll 强制绕过 |
 | /docs 全量列表 | 前端内存 | 2 分钟 TTL + refreshAll 绕过 |
 | /tree | 前端 localStorage | refreshAll 覆盖 |
-| SW 壳 | 浏览器 Cache API | 版本号 `thirdc-shell-vN`，**改壳必 bump** |
+| SW 壳 | 浏览器 Cache API | 版本号 `litmus-shell-vN`，**改壳必 bump** |
 
 ## 前端纪律
 
@@ -79,7 +79,7 @@
 ## 跑法
 
 ```bash
-cargo build -p thirdc
+cargo build -p litmus
 scripts/perf-check.sh                 # 默认 ./server-kb
 scripts/perf-check.sh --vault /path   # 任意库
 ```

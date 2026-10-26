@@ -1,16 +1,16 @@
-// ThirdC Clipper · 后台（Chrome/Edge + Firefox 共用）
+// Litmus Clipper · 后台（Chrome/Edge + Firefox 共用）
 // 用 globalThis 兼容 browser.* 与 chrome.*
 const api = globalThis.browser ?? globalThis.chrome;
 
-/** 规范化地址：补 /thirdc 前缀（若用户只填了域名）、去尾斜杠 */
+/** 规范化地址：补 /litmus 前缀（若用户只填了域名）、去尾斜杠 */
 function normalizeBase(raw) {
   let base = (raw || "").trim().replace(/\/+$/, "");
   if (!base) return "";
-  // nownexts.com 这类主域下 ThirdC 挂在 /thirdc；若用户填了裸域名则自动补
+  // nownexts.com 这类主域下 Litmus 挂在 /litmus；若用户填了裸域名则自动补
   try {
     const u = new URL(base);
     if (u.hostname === "nownexts.com" && u.pathname === "") {
-      base = u.origin + "/thirdc";
+      base = u.origin + "/litmus";
     }
   } catch (e) { /* 非法 URL 交给 fetch 报错 */ }
   return base;
@@ -31,12 +31,12 @@ async function clipPage(info, tab) {
   const cfg = await api.storage.local.get(["baseUrl", "token"]);
   const base = normalizeBase(cfg.baseUrl);
   if (!base || !cfg.token) {
-    notify("鹿蕊未配置", "打开已登录的 ThirdC 页面可一键自动授权；或点击扩展图标手动填写");
+    notify("鹿蕊未配置", "打开已登录的 Litmus 页面可一键自动授权；或点击扩展图标手动填写");
     return;
   }
   let html = "";
   try {
-    html = await api.tabs.sendMessage(tab.id, { type: "thirdc:html" });
+    html = await api.tabs.sendMessage(tab.id, { type: "litmus:html" });
   } catch (e) {
     // content script 未注入（如 chrome:// 页面）→ 用 scripting 兜底
     try {
@@ -71,18 +71,18 @@ async function clipPage(info, tab) {
 }
 
 api.runtime.onInstalled.addListener(() => {
-  api.contextMenus.create({ id: "thirdc-clip", title: "采集到鹿蕊", contexts: ["page", "selection"] });
+  api.contextMenus.create({ id: "litmus-clip", title: "采集到鹿蕊", contexts: ["page", "selection"] });
 });
 
 // content.js 自动授权成功 → 气泡告知一次
 api.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === "thirdc:auth-ok") {
-    notify("ThirdC 已自动授权", "地址与令牌已就绪，右键任意网页即可采集");
+  if (msg && msg.type === "litmus:auth-ok") {
+    notify("Litmus 已自动授权", "地址与令牌已就绪，右键任意网页即可采集");
   }
 });
 
 // 用非 async 包装，避免 Firefox "Promised response went out of scope" 警告
 api.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== "thirdc-clip") return;
+  if (info.menuItemId !== "litmus-clip") return;
   clipPage(info, tab);
 });

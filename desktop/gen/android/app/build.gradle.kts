@@ -40,10 +40,10 @@ gradle.taskGraph.whenReady {
 
 android {
     compileSdk = 36
-    namespace = "com.nownexts.thirdc"
+    namespace = "com.nownexts.litmus"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.nownexts.thirdc"
+        applicationId = "com.nownexts.litmus"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
@@ -53,9 +53,9 @@ android {
         // 签名口令不入库：优先读环境变量 TAURI_KEYSTORE_PASSWORD / TAURI_KEY_PASSWORD，
         // 其次读 gitignored 的 desktop/android-signing.properties（storePassword= / keyPassword=）
         create("release") {
-            storeFile = file("../../../thirdc-release.keystore")
+            storeFile = file("../../../litmus-release.keystore")
             storePassword = signingValue("TAURI_KEYSTORE_PASSWORD", "storePassword")
-            keyAlias = "thirdc"
+            keyAlias = "litmus"
             keyPassword = signingValue("TAURI_KEY_PASSWORD", "keyPassword")
         }
     }

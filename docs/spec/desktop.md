@@ -1,4 +1,4 @@
-# ThirdC Studio：桌面客户端独占能力规划
+# Litmus Studio：桌面客户端独占能力规划
 
 > 目标：让桌面客户端不是「浏览器套壳」，而是**本机 AI 知识工作台**——
 > 能吃下本机全部内容、能用本机算力、能做浏览器做不了的事。
@@ -56,20 +56,20 @@
 - **模型常驻**：预热句柄，首 token 延迟 < 500ms；空闲 10 分钟卸载释放内存。
 
 ### T3 · 客户端内部命令行（power user）
-- **内嵌终端**：PTY（`portable-pty`）+ xterm.js，直接跑 `thirdc ...` 与 shell，工作目录自动设为当前库。
+- **内嵌终端**：PTY（`portable-pty`）+ xterm.js，直接跑 `litmus ...` 与 shell，工作目录自动设为当前库。
 - **命令面板即 CLI**：⌘K 支持 `> ` 前缀输入任意 whitelist 命令，结果内联展示。
-- **脚本化**：`.thirdc/tasks/*.sh` 注册为可点按钮；agent 可调用（带权限确认）。
-- **受限白名单**：默认只放 `thirdc` 子命令 + 只读 shell（`ls/grep/rg/find/git status`）；危险命令需显式授权。
+- **脚本化**：`.litmus/local/tasks/*.sh` 注册为可点按钮；agent 可调用（带权限确认）。
+- **受限白名单**：默认只放 `litmus` 子命令 + 只读 shell（`ls/grep/rg/find/git status`）；危险命令需显式授权。
 
 ### T4 · 系统集成（长期）
 - 全局快捷键（⌥Space 快速记录）、系统托盘/menubar、剪贴板历史、屏幕 OCR、分享扩展、自动 Git 快照（每 N 分钟/每次编辑）、原生通知。
 
 ## 3. 架构约束
 
-- **门禁隔离**：所有本机操作挂在 `/desktop/*`，仅当 `state.desktop == true`（桌面壳启动时设 `THIRDC_DESKTOP=1`）才注册路由。线上部署拿不到这些端点。
+- **门禁隔离**：所有本机操作挂在 `/desktop/*`，仅当 `state.desktop == true`（桌面壳启动时设 `LITMUS_DESKTOP=1`）才注册路由。线上部署拿不到这些端点。
 - **库即真相**：任何导入/转码的产物都落盘为普通文件，可被 Obsidian/VSCode/git 直接读写，无私有格式、无锁。
 - **可关可调**：每个后台任务都能在设置里单独关；有全局「省电模式」。
-- **失败可诊断**：队列任务失败写入 `.thirdc/queue.log`，UI 可见原因与重试。
+- **失败可诊断**：队列任务失败写入 `.litmus/local/queue.log`，UI 可见原因与重试。
 - **浏览器降级**：UI 用 `/desktop/info` 探测能力，缺能力时按钮隐藏而非报错。
 
 ### 3.1 远端拉取：结构先行、正文后台
@@ -84,7 +84,7 @@
 - 进度落在状态栏（`#sb-sync`），**不打断**用户操作；完成后提示「打开看看」，可点刷新。
 - 失败可诊断：登录/列表失败在**同步阶段**立刻返回 4xx/5xx 与原因（不再等全量超时）；
   单篇失败计入 `failed`，不阻断其余文件。
-- 账号/服务器落盘 `.thirdc/remote.json`；页面刷新后 `resumeSync()` 接续未完成任务。
+- 账号/服务器落盘 `.litmus/local/remote.json`；页面刷新后 `resumeSync()` 接续未完成任务。
 - **近期更新**：Onboarding 浮层内容由经典壳 `index.html` 的 `WHATS_NEW` 数组驱动（0.14 起经典壳退役，版本说明以 CHANGELOG 为准），
   发版时追加一条（与 `docs/RELEASE.md` 的发布清单同步）。
 
@@ -101,7 +101,7 @@
 
 ## 5. 转码：面向 agent 的 AI 原生表示（不是通用 MD）
 
-**前提**：docx/pdf/epub → Markdown 已经很成熟，第三方工具一堆。ThirdC 的转码价值不在「变成文字」，
+**前提**：docx/pdf/epub → Markdown 已经很成熟，第三方工具一堆。Litmus 的转码价值不在「变成文字」，
 而在**变成 agent 能直接结构化使用的东西**。
 
 库内的 AI 原生表示是 `kernel-md::DocModel`（`Notes/` 下 md 与 html 并存，md 是它的确定性序列化）：
@@ -117,7 +117,7 @@ DocModel {
 
 因此转码流水线的目标产物 = **OKF-DocModel**，而不是一份扁平 md。四件通用 md 不会做的事：
 
-| 维度 | 通用 md 转换 | ThirdC AI 原生转码 |
+| 维度 | 通用 md 转换 | Litmus AI 原生转码 |
 |---|---|---|
 | 结构 | 拍平成 `#`/`-` | 保留 Block 语义（表格仍是表格对象、图注绑定图、脚注成对） |
 | 溯源 | 无 | `meta` 写入 source_path / sha256 / mtime / extractor+版本 / 页码范围 |
@@ -131,7 +131,7 @@ DocModel {
 
 **实现分工**：抽取（重、可外挂）与结构化（轻、必自研）分离。
 - 抽取层：`pdftotext`/`pandoc`/`libreoffice --headless`/`tesseract` 等外部程序，或 Rust crate；产出「带版式的中间文本」。
-- 结构化层（ThirdC 内核）：中间文本 → DocModel（分块、语义识别、锚点、meta、资产抽取、outline/摘要）。
+- 结构化层（Litmus 内核）：中间文本 → DocModel（分块、语义识别、锚点、meta、资产抽取、outline/摘要）。
 
 ## 6. 去重与去噪（最严苛标准，可逆）
 
@@ -148,14 +148,14 @@ DocModel {
 - 被取代：同 `source_path` 血缘里有更新版本，旧版标记 superseded。
 - 低信息：高噪声/OCR 乱码（字符熵异常、词典命中率低）。
 
-**动作**：输出 `去噪报告`（路径 + 命中信号 + 建议），一键把候选移入 `.thirdc/quarantine/`（可还原），
+**动作**：输出 `去噪报告`（路径 + 命中信号 + 建议），一键把候选移入 `.litmus/local/quarantine/`（可还原），
 从索引中摘除。**绝不自动硬删**；默认只报告，用户确认才隔离。
 
 ## 7. 客户端内部脚本与终端
 
-- 内嵌终端（xterm.js + PTY）：跑 `thirdc` 与白名单只读 shell，cwd=库根。
-- 脚本任务：`.thirdc/tasks/*.sh` 注册为可点按钮；agent 可调用（危险步骤需确认）。
-- Git：**待定**——取决于 ThirdC 是否定位为开发工具；暂只读（`status/log/diff`），不做自动提交。
+- 内嵌终端（xterm.js + PTY）：跑 `litmus` 与白名单只读 shell，cwd=库根。
+- 脚本任务：`.litmus/local/tasks/*.sh` 注册为可点按钮；agent 可调用（危险步骤需确认）。
+- Git：**待定**——取决于 Litmus 是否定位为开发工具；暂只读（`status/log/diff`），不做自动提交。
 
 ## 8. 本地模型的范围（收敛）
 

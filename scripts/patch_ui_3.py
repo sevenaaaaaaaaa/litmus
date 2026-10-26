@@ -6,7 +6,7 @@ s = open(p, encoding='utf-8').read()
 old = '''/* ───────── 启动 ───────── */'''
 new = '''/* ───────── 模式框架 ───────── */
 function setMode(m){
-  mode=m;localStorage.setItem('thirdc_mode',m);
+  mode=m;localStorage.setItem('litmus_mode',m);
   document.body.dataset.mode=m;
   document.querySelectorAll('#mode-seg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
   if(m==='organize'){
@@ -25,7 +25,7 @@ function setMode(m){
   if(m==='studio'){$('d-body').classList.remove('view');}
 }
 document.querySelectorAll('#mode-seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-setMode(localStorage.getItem('thirdc_mode')||'studio');
+setMode(localStorage.getItem('litmus_mode')||'studio');
 
 /* ───────── 展示模式 ───────── */
 let pIdx=0;

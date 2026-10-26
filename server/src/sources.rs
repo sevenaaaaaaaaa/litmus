@@ -1,7 +1,7 @@
 //! 数据源（G3）：库外的内容原处索引，导入才进库。
 //!
-//! - 配置在 `.thirdc/sources.json`（路径与凭证都是这台设备的，不同步）。
-//! - 扫描结果在 `.thirdc/sources/index.json`，正文抽出来的文字缓存在 `.thirdc/sources/text/<hash>.txt`；
+//! - 配置在 `.litmus/local/sources.json`（路径与凭证都是这台设备的，不同步）。
+//! - 扫描结果在 `.litmus/local/sources/index.json`，正文抽出来的文字缓存在 `.litmus/local/sources/text/<hash>.txt`；
 //!   原文件不动、不复制。知识场把它们当「库外」节点一起铺开、一起显色。
 //! - 种类：folder（本地文件夹：md / txt / html / docx / pdf / 截图……）、agent（Claude Code / Codex 会话）、
 //!   mcp（连接器的资源，比如 LinkTo）、google（Drive / Gmail / Calendar）、rest（任意 JSON 接口）。
@@ -50,7 +50,7 @@ pub struct Source {
     /// agent：claude | codex
     #[serde(default)]
     pub agent: Option<String>,
-    /// mcp：thirdc.toml 里 [[connections]] 的名字
+    /// mcp：litmus.toml 里 [[connections]] 的名字
     #[serde(default)]
     pub connection: Option<String>,
     /// google：drive / gmail / calendar 任选
@@ -97,17 +97,17 @@ struct Index {
 }
 
 fn dir(root: &Path) -> PathBuf {
-    root.join(".thirdc").join("sources")
+    root.join(".litmus/local").join("sources")
 }
 fn cfg_path(root: &Path) -> PathBuf {
-    root.join(".thirdc").join("sources.json")
+    root.join(".litmus/local").join("sources.json")
 }
 
 pub fn load_sources(root: &Path) -> Vec<Source> {
     std::fs::read_to_string(cfg_path(root)).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).and_then(|v| v.get("sources").cloned()).and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
 }
 fn save_sources(root: &Path, list: &[Source]) -> std::io::Result<()> {
-    std::fs::create_dir_all(root.join(".thirdc"))?;
+    std::fs::create_dir_all(root.join(".litmus/local"))?;
     std::fs::write(cfg_path(root), serde_json::to_vec_pretty(&json!({ "sources": list })).unwrap_or_default())
 }
 fn load_index(root: &Path) -> Index {
@@ -190,7 +190,7 @@ fn has(cmd: &str) -> bool {
     v
 }
 
-/// macOS 自带的文字识别（Vision）：第一次用时把一个小 Swift 程序编译进 `.thirdc/sources/ocr`（需要 Xcode 命令行工具，
+/// macOS 自带的文字识别（Vision）：第一次用时把一个小 Swift 程序编译进 `.litmus/local/sources/ocr`（需要 Xcode 命令行工具，
 /// 能编 Rust 的机器都有），之后每张图调一次。中文、英文都认。
 #[cfg(target_os = "macos")]
 fn ocr_macos(path: &Path) -> Option<String> {
@@ -452,14 +452,14 @@ pub fn parse_session(raw: &str) -> (Vec<(String, String)>, Option<String>) {
 
 fn scan_mcp(root: &Path, st: &Arc<AppState>, s: &Source) -> Result<Vec<Item>, String> {
     let name = s.connection.clone().unwrap_or_default();
-    let cfg = st.kernel.lock().unwrap().vault.config.connections.iter().find(|c| c.name == name).cloned().ok_or_else(|| format!("thirdc.toml 里没有名为 {name} 的连接"))?;
-    let mut c = thirdc_mcp::client::McpClient::connect(&cfg).map_err(|e| format!("连不上 {name}：{e}"))?;
+    let cfg = st.kernel.lock().unwrap().vault.config.connections.iter().find(|c| c.name == name).cloned().ok_or_else(|| format!("litmus.toml 里没有名为 {name} 的连接"))?;
+    let mut c = litmus_mcp::client::McpClient::connect(&cfg).map_err(|e| format!("连不上 {name}：{e}"))?;
     let list = c.list_resources().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for r in list.into_iter().take(800) {
         let Some(uri) = r.get("uri").and_then(|u| u.as_str()) else { continue };
         let Ok(v) = c.read_resource(uri) else { continue };
-        let Some(text) = thirdc_mcp::client::extract_text(&v) else { continue };
+        let Some(text) = litmus_mcp::client::extract_text(&v) else { continue };
         let title = r.get("name").or_else(|| r.get("title")).and_then(|t| t.as_str()).unwrap_or(uri).to_string();
         let hash = put_text(root, &format!("# {title}\n\n{}", text.chars().take(MAX_TEXT).collect::<String>()));
         let id = kernel_core::Cas::hash_hex(uri.as_bytes())[..16].to_string();
@@ -531,7 +531,7 @@ fn scan_rest(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
 // ───────── Google（OAuth 本机回环 + Drive / Gmail / Calendar） ─────────
 
 fn google_base(kind: &str) -> String {
-    std::env::var(format!("THIRDC_GOOGLE_{}", kind.to_uppercase())).unwrap_or_else(|_| match kind {
+    std::env::var(format!("LITMUS_GOOGLE_{}", kind.to_uppercase())).unwrap_or_else(|_| match kind {
         "oauth" => "https://oauth2.googleapis.com".into(),
         "auth" => "https://accounts.google.com".into(),
         "drive" => "https://www.googleapis.com/drive/v3".into(),
@@ -768,7 +768,7 @@ pub async fn list(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             v
         })
         .collect();
-    let dismissed = root.join(".thirdc").join("sources-onboarded").exists();
+    let dismissed = root.join(".litmus/local").join("sources-onboarded").exists();
     Json(json!({ "sources": rows, "onboarded": dismissed || !rows.is_empty(), "tools": { "pdftotext": has("pdftotext"), "tesseract": has("tesseract") } })).into_response()
 }
 
@@ -780,8 +780,8 @@ pub async fn upsert(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
     let root = st.kernel.lock().unwrap().vault.root.clone();
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     if req.get("onboarded").and_then(|v| v.as_bool()) == Some(true) {
-        let _ = std::fs::create_dir_all(root.join(".thirdc"));
-        let _ = std::fs::write(root.join(".thirdc").join("sources-onboarded"), b"1");
+        let _ = std::fs::create_dir_all(root.join(".litmus/local"));
+        let _ = std::fs::write(root.join(".litmus/local").join("sources-onboarded"), b"1");
         return Json(json!({ "ok": true })).into_response();
     }
     let Ok(mut s) = serde_json::from_value::<Source>(req.get("source").cloned().unwrap_or(json!({}))) else { return err(StatusCode::BAD_REQUEST, "来源格式不对").into_response() };
@@ -794,7 +794,7 @@ pub async fn upsert(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
             return err(StatusCode::BAD_REQUEST, format!("找不到文件夹 {}", p.display())).into_response();
         }
         // 不许把库自己当来源（会重复）
-        if p.starts_with(&root) || root.starts_with(&p) && p.join("thirdc.toml").exists() {
+        if p.starts_with(&root) || root.starts_with(&p) && (p.join("litmus.toml").exists() || p.join("thirdc.toml").exists()) {
             return err(StatusCode::BAD_REQUEST, "这是知识库自己的文件夹，不用再当数据源").into_response();
         }
     }
@@ -979,7 +979,7 @@ pub async fn detect(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
     Json(out).into_response()
 }
 
-/// POST /sources/connection {name, command, args[]}：往 thirdc.toml 加（或更新）一个 [[connections]]，原有内容与注释保留。
+/// POST /sources/connection {name, command, args[]}：往 litmus.toml 加（或更新）一个 [[connections]]，原有内容与注释保留。
 /// 比如 LinkTo 的 MCP：name = "linkto"，command = 它的启动命令。
 pub async fn add_connection(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
@@ -993,14 +993,14 @@ pub async fn add_connection(State(st): State<Arc<AppState>>, h: HeaderMap, body:
         return err(StatusCode::BAD_REQUEST, "要连接名（字母数字、- 或 _）和启动命令").into_response();
     }
     let root = st.kernel.lock().unwrap().vault.root.clone();
-    let cfg_path = root.join("thirdc.toml");
+    let cfg_path = root.join("litmus.toml");
     let r = (|| -> Result<(), String> {
-        let raw = std::fs::read_to_string(&cfg_path).map_err(|e| format!("读不到 thirdc.toml：{e}"))?;
-        let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("thirdc.toml 格式有误：{e}"))?;
+        let raw = std::fs::read_to_string(&cfg_path).map_err(|e| format!("读不到 litmus.toml：{e}"))?;
+        let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("litmus.toml 格式有误：{e}"))?;
         if !doc.contains_key("connections") {
             doc["connections"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
         }
-        let arr = doc["connections"].as_array_of_tables_mut().ok_or("thirdc.toml 里的 connections 不是 [[connections]] 表数组")?;
+        let arr = doc["connections"].as_array_of_tables_mut().ok_or("litmus.toml 里的 connections 不是 [[connections]] 表数组")?;
         let mut t = toml_edit::Table::new();
         t["name"] = toml_edit::value(name.as_str());
         t["command"] = toml_edit::value(command.as_str());
@@ -1126,7 +1126,7 @@ pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         save_index(&root, &ix);
         REV.fetch_add(1, Ordering::SeqCst);
     }
-    audit_log(&root.join(".thirdc"), "ext-import", &json!({ "key": key, "to": target, "mode": mode, "moved": removed_original }));
+    audit_log(&root.join(".litmus/local"), "ext-import", &json!({ "key": key, "to": target, "mode": mode, "moved": removed_original }));
     Json(json!({ "path": target, "asset": moved_to.filter(|a| !a.is_empty()), "moved": removed_original, "original": it.loc })).into_response()
 }
 

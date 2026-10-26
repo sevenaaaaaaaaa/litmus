@@ -1,6 +1,6 @@
 # Canvas + Chat —— 交互范式
 
-状态：v1 已落地。这是 ThirdC 与"笔记软件"分道扬镳的地方。
+状态：v1 已落地。这是 Litmus 与"笔记软件"分道扬镳的地方。
 
 ## 判断
 
@@ -15,19 +15,19 @@
 | 能力 | 实现 |
 |---|---|
 | 平移 / 缩放 | 拖拽空白平移；⌘/Ctrl+滚轮以光标为锚缩放；滚轮平移 |
-| 节点拖拽 | 直接拖，位置持久化到 `.thirdc/boards/main.json`（sidecar，非真相，可删可重建） |
+| 节点拖拽 | 直接拖，位置持久化到 `.litmus/local/boards/main.json`（sidecar，非真相，可删可重建） |
 | 关系连线 | `[[wiki 链接]]`（虚线）与文档→附件引用（实线），由 `/graph` 实时计算 |
 | 镜头 | 全部 / 文档 / 采集 / 附件 四个透镜；`适配` 自动取景，`整理` 重排 |
 | 数据来源 | `/graph`：文档、采集（`Notes/Sources/**`）、附件三类节点 + 链接/附件两类边 |
 
 节点即真相的投影：双击打开抽屉，正文仍是磁盘上的 Markdown（文件真相），
-画布只是视图——**删掉 `.thirdc/` 不会丢任何知识**。
+画布只是视图——**删掉 `.litmus/local/` 不会丢任何知识**。
 
 ## 对话
 
 - 输入即自然语言或命令；回复附带**工具调用 chips**（用了哪个工具、成功与否），可追溯。
 - 两种模式：
-  - **AI 模式**：`thirdc.toml` 配 `[ai]`（OpenAI 兼容：OpenAI / DeepSeek / Ollama / vLLM），
+  - **AI 模式**：`litmus.toml` 配 `[ai]`（OpenAI 兼容：OpenAI / DeepSeek / Ollama / vLLM），
     模型走 function calling 选择内核工具（与 MCP 完全同一套工具），最多 `max_steps` 步。
   - **命令模式**（无模型配置时的降级，不是占位）：`搜索 X` / `列出` / `同步` / `状态`，
     确定性执行，离线可用。
@@ -37,7 +37,7 @@
 [ai]
 base_url = "https://api.deepseek.com/v1"   # 或 http://localhost:11434/v1 (Ollama)
 model    = "deepseek-chat"
-# api_key 留空则读环境变量 THIRDC_AI_API_KEY（推荐，避免落盘）
+# api_key 留空则读环境变量 LITMUS_AI_API_KEY（推荐，避免落盘）
 ```
 
 ## 为什么不是"聊天侧栏 + 编辑器"

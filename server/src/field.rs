@@ -7,7 +7,7 @@
 //! - `POST /field/crystal`  依据指定来源结晶答案（带 [n] 引用；没配模型时退化为原文摘录）
 //! - `POST /field/note`     划选后的「解释给我听 / 考考我」
 //!
-//! 坐标是派生层：缓存在 `.thirdc/field.json`，删掉即可重建；增量更新时旧坐标不动。
+//! 坐标是派生层：缓存在 `.litmus/local/field.json`，删掉即可重建；增量更新时旧坐标不动。
 
 use super::{AppState, SseEvent, check_token, err, extract_memo_tags};
 use axum::body::Bytes;
@@ -203,7 +203,7 @@ fn excerpt_of(text: &str) -> String {
 }
 
 fn field_json_path(root: &std::path::Path) -> PathBuf {
-    root.join(".thirdc").join("field.json")
+    root.join(".litmus/local").join("field.json")
 }
 
 fn load_prev(root: &std::path::Path) -> HashMap<String, (f32, f32)> {
@@ -246,7 +246,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             }
         }
     }
-    let trace = std::env::var("THIRDC_FIELD_TRACE").is_ok();
+    let trace = std::env::var("LITMUS_FIELD_TRACE").or_else(|_| std::env::var("THIRDC_FIELD_TRACE")).is_ok();
     let t0 = std::time::Instant::now();
     let (corpus, stats) = {
         let k = st.kernel.lock().unwrap();
@@ -306,7 +306,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .zip(f.pos.iter())
             .map(|(p, (x, y))| (p.clone(), json!([round1(*x), round1(*y)])))
             .collect();
-        let _ = std::fs::create_dir_all(root2.join(".thirdc"));
+        let _ = std::fs::create_dir_all(root2.join(".litmus/local"));
         let _ = std::fs::write(field_json_path(&root2), serde_json::to_vec(&json!({"v": 1, "pos": pos})).unwrap_or_default());
         let mut count = vec![0usize; f.region_names.len()];
         for &r in &f.region {
@@ -339,15 +339,15 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
 
 // ───────── 区域改名：用户起的名字按自动名记住（自动名 = 区域中心文档的短标题） ─────────
 
-/// 随库同步的界面状态放在库根的 `.litmus/`：git 同步会带上它（只排除 `.thirdc/`），
+/// 随库同步的界面状态放在库根的 `.litmus/`：git 同步会带上它（只排除 `.litmus/local/`），
 /// 又不在 `Notes/` 下，所以不会被当成文档、不进搜索与文档列表。
 pub fn synced_path(root: &std::path::Path, name: &str) -> PathBuf {
     root.join(".litmus").join(name)
 }
 
-/// 读随库状态；新位置没有时读旧位置（0.12 写在 `.thirdc/`，只在本机）。
+/// 读随库状态；新位置没有时读旧位置（0.12 写在 `.litmus/local/`，只在本机）。
 pub fn read_synced(root: &std::path::Path, name: &str, legacy: &str) -> Option<String> {
-    std::fs::read_to_string(synced_path(root, name)).ok().or_else(|| std::fs::read_to_string(root.join(".thirdc").join(legacy)).ok())
+    std::fs::read_to_string(synced_path(root, name)).ok().or_else(|| std::fs::read_to_string(root.join(".litmus/local").join(legacy)).ok())
 }
 
 pub fn write_synced(root: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
@@ -674,16 +674,16 @@ pub async fn agent(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
             Some(cfg) if !cfg.base_url.is_empty() => {
                 let tx_step = tx.clone();
                 let tx_delta = tx.clone();
-                let mut on_step = move |s: &thirdc_mcp::agent::Step| {
+                let mut on_step = move |s: &litmus_mcp::agent::Step| {
                     let _ = tx_step.send(ev("step", json!({ "tool": s.tool, "args": step_args(&s.args), "ok": s.ok, "summary": s.summary.chars().take(300).collect::<String>() })));
                 };
                 let mut on_delta = move |t: &str| {
                     let _ = tx_delta.send(ev("delta", json!({ "t": t })));
                 };
-                thirdc_mcp::agent::run_ai_streaming(&server, &cfg, &full, &mut on_step, &mut on_delta).await
+                litmus_mcp::agent::run_ai_streaming(&server, &cfg, &full, &mut on_step, &mut on_delta).await
             }
             _ => {
-                let out = thirdc_mcp::agent::command_mode(&server, &full);
+                let out = litmus_mcp::agent::command_mode(&server, &full);
                 for s in &out.steps {
                     let _ = tx.send(ev("step", json!({ "tool": s.tool, "args": step_args(&s.args), "ok": s.ok, "summary": s.summary.chars().take(300).collect::<String>() })));
                 }
@@ -714,7 +714,7 @@ pub async fn agent(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
     Sse::new(out).into_response()
 }
 
-// ───────── 模型设置：只改 thirdc.toml 的 [ai] 表 ─────────
+// ───────── 模型设置：只改 litmus.toml 的 [ai] 表 ─────────
 
 /// 当前模型配置（密钥只回是否已设，不回明文）。
 pub async fn ai_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
@@ -727,20 +727,20 @@ pub async fn ai_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
         "base_url": ai.base_url,
         "model": ai.model,
         "has_key": !ai.api_key.is_empty(),
-        "key_from_env": ai.api_key.is_empty() && std::env::var("THIRDC_AI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false),
+        "key_from_env": ai.api_key.is_empty() && std::env::var("LITMUS_AI_API_KEY").or_else(|_| std::env::var("THIRDC_AI_API_KEY")).map(|v| !v.is_empty()).unwrap_or(false),
     }))
     .into_response()
 }
 
-/// 把 [ai] 的 base_url / model / api_key 写回 thirdc.toml。
+/// 把 [ai] 的 base_url / model / api_key 写回 litmus.toml。
 /// 用 toml_edit 原地改：用户手写的注释、其他表与排版都保留；api_key 传空串表示「不改」。
 pub fn write_ai_config(cfg_path: &std::path::Path, base_url: &str, model: &str, api_key: Option<&str>) -> Result<(), String> {
-    let raw = std::fs::read_to_string(cfg_path).map_err(|e| format!("读不到 thirdc.toml：{e}"))?;
-    let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("thirdc.toml 格式有误：{e}"))?;
+    let raw = std::fs::read_to_string(cfg_path).map_err(|e| format!("读不到 litmus.toml：{e}"))?;
+    let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("litmus.toml 格式有误：{e}"))?;
     if !doc.contains_key("ai") {
         doc["ai"] = toml_edit::table();
     }
-    let t = doc["ai"].as_table_mut().ok_or("thirdc.toml 里的 ai 不是一个表")?;
+    let t = doc["ai"].as_table_mut().ok_or("litmus.toml 里的 ai 不是一个表")?;
     t["base_url"] = toml_edit::value(base_url);
     t["model"] = toml_edit::value(model);
     if let Some(k) = api_key {
@@ -768,7 +768,7 @@ pub async fn ai_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
         return err(StatusCode::BAD_REQUEST, "请填写模型名，例如 deepseek-chat").into_response();
     }
     let mut k = st.kernel.lock().unwrap();
-    let cfg_path = k.vault.root.join("thirdc.toml");
+    let cfg_path = k.vault.root.join("litmus.toml");
     if let Err(e) = write_ai_config(&cfg_path, &base_url, &model, key.as_deref()) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
@@ -792,7 +792,7 @@ pub async fn ai_test(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl Into
         return err(StatusCode::CONFLICT, "还没有配置模型").into_response();
     };
     let t0 = std::time::Instant::now();
-    match thirdc_mcp::agent::complete(&cfg, "只回复两个字：好的", "测试").await {
+    match litmus_mcp::agent::complete(&cfg, "只回复两个字：好的", "测试").await {
         Ok(t) => Json(json!({ "ok": true, "reply": t.chars().take(40).collect::<String>(), "ms": t0.elapsed().as_millis() as u64 })).into_response(),
         Err(e) => err(StatusCode::BAD_GATEWAY, format!("连不上：{e}")).into_response(),
     }
@@ -1015,7 +1015,7 @@ pub async fn crystal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
             if req.get("stream").and_then(|v| v.as_bool()).unwrap_or(false) {
                 return crystal_stream(cfg, system, user, q, sources, refs).into_response();
             }
-            match thirdc_mcp::agent::complete(&cfg, system, &user).await {
+            match litmus_mcp::agent::complete(&cfg, system, &user).await {
                 Ok(text) if !text.trim().is_empty() => Json(json!({ "mode": "ai", "text": text.trim(), "sources": refs })).into_response(),
                 Ok(_) => Json(json!({ "mode": "extract", "note": "模型返回了空答案，下面是原文里最相关的句子。", "text": extract(&sources, &q), "sources": refs })).into_response(),
                 Err(e) => Json(json!({ "mode": "extract", "note": format!("这次没有连上模型（{e}），下面是原文里最相关的句子。"), "text": extract(&sources, &q), "sources": refs })).into_response(),
@@ -1051,7 +1051,7 @@ fn crystal_stream(
         let mut on_delta = move |t: &str| {
             let _ = txd.send(ev("delta", json!({ "t": t })));
         };
-        let done = match thirdc_mcp::agent::complete_stream(&cfg, system, &user, &mut on_delta).await {
+        let done = match litmus_mcp::agent::complete_stream(&cfg, system, &user, &mut on_delta).await {
             Ok(text) if !text.trim().is_empty() => json!({ "mode": "ai", "text": text.trim(), "sources": refs }),
             Ok(_) => json!({ "mode": "extract", "note": "模型返回了空答案，下面是原文里最相关的句子。", "text": extract(&sources, &q), "sources": refs }),
             Err(e) => json!({ "mode": "extract", "note": format!("这次没有连上模型（{e}），下面是原文里最相关的句子。"), "text": extract(&sources, &q), "sources": refs }),
@@ -1097,7 +1097,7 @@ pub async fn note(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
             format!("文档《{title}》里的段落：\n{text}"),
         )
     };
-    match thirdc_mcp::agent::complete(&cfg, system, &user).await {
+    match litmus_mcp::agent::complete(&cfg, system, &user).await {
         Ok(t) => Json(json!({ "text": t.trim() })).into_response(),
         Err(e) => err(StatusCode::BAD_GATEWAY, format!("这次没有连上模型：{e}")).into_response(),
     }
@@ -1172,7 +1172,7 @@ mod api_tests {
         let docs = data["docs"].as_array().unwrap();
         assert_eq!(docs.len(), 6);
         assert!(!data["regions"].as_array().unwrap().is_empty());
-        assert!(dir.path().join(".thirdc/field.json").exists(), "坐标应落到派生层文件");
+        assert!(dir.path().join(".litmus/local/field.json").exists(), "坐标应落到派生层文件");
         let idx = |p: &str| docs.iter().position(|d| d["p"] == p).unwrap();
 
         // 显色：问同步，同步三篇排在发布三篇前面
@@ -1241,8 +1241,8 @@ mod api_tests {
         }
         assert!(docs[0]["m"].as_i64().unwrap() > 0);
 
-        // 模型设置：写回 thirdc.toml 只动 [ai]，原有内容与注释保留
-        let cfg = dir.path().join("thirdc.toml");
+        // 模型设置：写回 litmus.toml 只动 [ai]，原有内容与注释保留
+        let cfg = dir.path().join("litmus.toml");
         let before = std::fs::read_to_string(&cfg).unwrap();
         std::fs::write(&cfg, format!("# 我的注释\n{before}")).unwrap();
         let (st, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"ftp://x","model":"m"}"#).await;
@@ -1481,8 +1481,8 @@ mod api_tests {
         assert!(g["cards"]["Notes/同步/协议.md"]["reps"].as_u64().unwrap() == 3);
         let (_, docs) = call(&app, &token, "GET", "/field/data", "").await;
         assert!(!docs["docs"].as_array().unwrap().iter().any(|d| d["p"].as_str().unwrap().contains("learn")));
-        // 视角也搬到 .litmus/；旧位置（.thirdc/field-views.json）能读回
-        std::fs::write(dir.path().join(".thirdc/field-views.json"), r#"{"views":[{"name":"旧的","layout":"sem","cam":{"x":0,"y":0,"s":1},"paths":[]}]}"#).unwrap();
+        // 视角也搬到 .litmus/；旧位置（.litmus/local/field-views.json）能读回
+        std::fs::write(dir.path().join(".litmus/local/field-views.json"), r#"{"views":[{"name":"旧的","layout":"sem","cam":{"x":0,"y":0,"s":1},"paths":[]}]}"#).unwrap();
         let (_, v) = call(&app, &token, "GET", "/field/views", "").await;
         assert_eq!(v["views"][0]["name"], "旧的");
         let (_, _) = call(&app, &token, "PUT", "/field/views", r#"{"views":[{"name":"新的","layout":"sem","cam":{"x":0,"y":0,"s":1},"paths":[]}]}"#).await;
@@ -1665,7 +1665,7 @@ mod api_tests {
         assert_eq!(p["done"], p["total"]);
         assert!(p["tags"].as_array().unwrap().len() >= 70, "全部范围都看到了，不再只看前 40 篇：{}", p["tags"].as_array().unwrap().len());
         assert!(p["verified"].as_array().unwrap().iter().any(|v| v["path"] == "Notes/资料/旧计划.md" && v["outdated"] == true), "{p}");
-        assert!(root.join(".thirdc/patrol.json").is_file());
+        assert!(root.join(".litmus/local/patrol.json").is_file());
         let (st, rf) = call(&app, &token, "POST", "/field/refresh", r#"{"path":"Notes/资料/旧计划.md"}"#).await;
         assert_eq!(st, 200, "{rf}");
         assert!(rf["markdown"].as_str().unwrap().contains("2025-04") && rf["changes"].as_str().unwrap().contains("发布日期"));
@@ -1786,9 +1786,9 @@ mod api_tests {
         let (_, _) = call(&app, &token, "POST", "/secrets", r#"{"name":"demo_token","value":"tk-123"}"#).await;
         let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "rest", "name": "我的接口", "rest": {"url": format!("{base}/notes"), "headers": {"Authorization": "Bearer {{secret:demo_token}}"}, "items": "/data/items", "title": "name", "body": "content", "date": "updated_at"}}}).to_string()).await;
         let rid = r["source"]["id"].as_str().unwrap().to_string();
-        std::env::set_var("THIRDC_GOOGLE_OAUTH", &base);
-        std::env::set_var("THIRDC_GOOGLE_DRIVE", &base);
-        std::env::set_var("THIRDC_GOOGLE_GMAIL", &base);
+        std::env::set_var("LITMUS_GOOGLE_OAUTH", &base);
+        std::env::set_var("LITMUS_GOOGLE_DRIVE", &base);
+        std::env::set_var("LITMUS_GOOGLE_GMAIL", &base);
         let (_, r) = call(&app, &token, "POST", "/sources", r#"{"source":{"kind":"google","name":"Google","services":["drive","gmail"]}}"#).await;
         let gid = r["source"]["id"].as_str().unwrap().to_string();
         // 没存 client id：授权给出可执行的提示
@@ -1835,7 +1835,7 @@ mod api_tests {
     #[tokio::test]
     async fn connection_is_written_to_toml_and_mcp_source_reports_errors() {
         let (app, token, dir) = app();
-        let cfg = dir.path().join("thirdc.toml");
+        let cfg = dir.path().join("litmus.toml");
         let before = std::fs::read_to_string(&cfg).unwrap();
         std::fs::write(&cfg, format!("# 我的注释\n{before}")).unwrap();
         let (st, _) = call(&app, &token, "POST", "/sources/connection", r#"{"name":"bad name","command":"x"}"#).await;

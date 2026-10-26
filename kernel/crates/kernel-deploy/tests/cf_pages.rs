@@ -45,13 +45,13 @@ fn cf_pages_upload_and_fingerprint_skip() {
     std::fs::write(site.join("a.html"), "<p>A</p>").unwrap();
     std::fs::write(site.join("b.html"), "<p>A</p>").unwrap(); // 与 a 同内容：应按 hash 去重只传一次
 
-    std::env::set_var("THIRDC_TEST_CF_TOKEN", "tok-123");
+    std::env::set_var("LITMUS_TEST_CF_TOKEN", "tok-123");
     let target = PublishTarget {
         name: "cf".into(),
         kind: "cf-pages".into(),
         account_id: Some("acct".into()),
         project: Some("kb".into()),
-        token_env: Some("THIRDC_TEST_CF_TOKEN".into()),
+        token_env: Some("LITMUS_TEST_CF_TOKEN".into()),
         api_base: Some(format!("http://{addr}")),
         public_base_url: Some("https://kb.pages.dev".into()),
         ..Default::default()

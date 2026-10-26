@@ -9,7 +9,7 @@ login_js = '''
 function showLogin(){
   document.body.innerHTML='<div style="position:fixed;inset:0;z-index:999;display:grid;place-items:center;background:var(--bg)">'
     +'<div style="text-align:center;padding:40px;border-radius:26px;border:1px solid var(--border);background:var(--surface);backdrop-filter:blur(18px);box-shadow:var(--shadow)">'
-    +'<div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin-bottom:6px">ThirdC Studio</div>'
+    +'<div style="font-family:var(--font-display);font-size:22px;font-weight:700;margin-bottom:6px">Litmus Studio</div>'
     +'<div style="color:var(--faint);font-size:13px;margin-bottom:18px">输入访问令牌以继续</div>'
     +'<input id="login-token" placeholder="API Token" style="width:280px;padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg-soft);color:var(--fg);outline:none;font:14px var(--font-mono)">'
     +'<br><br><button onclick="doLogin()" style="padding:10px 28px;border-radius:12px;border:none;background:var(--accent);color:var(--on-accent);font:600 14px var(--font-body);cursor:pointer">进入</button>'
@@ -18,13 +18,13 @@ function showLogin(){
 function doLogin(){
   const t=document.getElementById('login-token').value.trim();
   if(!t)return;
-  localStorage.setItem('thirdc_token',t);
+  localStorage.setItem('litmus_token',t);
   location.reload();
 }
 // 无 token → 登录页
 if(!token){
   // token 可能在 URL ?token= 里但 localStorage 为空：上面已存。否则弹登录
-  if(!localStorage.getItem('thirdc_token')){
+  if(!localStorage.getItem('litmus_token')){
     showLogin();
     // 阻止后续初始化
     window.__login_gate=true;

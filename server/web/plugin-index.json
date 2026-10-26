@@ -5,11 +5,11 @@
   "plugins": [
     {
       "repo": "sevenaaaaaaaaa/litmus",
-      "path": "examples/plugins/hello-thirdc",
-      "id": "hello-thirdc",
-      "name": "Hello ThirdC",
+      "path": "examples/plugins/hello-litmus",
+      "id": "hello-litmus",
+      "name": "Hello Litmus",
       "description": "官方最小示例：一条插入命令 + 一个沙箱视图（RPC 自动握手演示）",
-      "author": "ThirdC",
+      "author": "Litmus",
       "verified": true,
       "tags": ["示例", "官方"]
     },
@@ -19,7 +19,7 @@
       "id": "demo-daily-note",
       "name": "每日速记",
       "description": "速记模板插入 + 沙箱视图 + agent 工具（库内检索 / 世界时间）",
-      "author": "ThirdC",
+      "author": "Litmus",
       "verified": true,
       "tags": ["效率", "官方"]
     }

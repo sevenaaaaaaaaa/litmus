@@ -4,9 +4,9 @@
 
 **林下 Understory 出品 · AI 时代的知识操作系统——浏览器、MCP、CLI、远端 AI 与本地小模型，共享同一份文件真相。**
 
-> **命名体系**：**林下 Understory** 是品牌与产品矩阵之名——地衣本就长在林下；**鹿蕊 Litmus** 是这款知识 OS 之名——人类最早的"真相指示剂"（石蕊试纸）提取自鹿蕊这种共生地衣，寓意人与 AI 共生、显色见真；**松萝 Liana** 对应输入法 **InputFlow**——垂丝连接万物的林间之藤，字与字之间那根青丝。开发代号 `thirdc` 保留为内部 codename。
+> **命名体系**：**林下 Understory** 是品牌与产品矩阵之名——地衣本就长在林下；**鹿蕊 Litmus** 是这款知识 OS 之名——人类最早的"真相指示剂"（石蕊试纸）提取自鹿蕊这种共生地衣，寓意人与 AI 共生、显色见真；**松萝 Liana** 对应输入法 **InputFlow**——垂丝连接万物的林间之藤，字与字之间那根青丝。开发代号 `litmus` 保留为内部 codename。
 
-不是又一个笔记软件：鹿蕊按**操作系统**的思路生长——内核（Rust crates）管存储与索引，`thirdc serve` 是守护进程，五模式 UI 是它的桌面，HTTP API + MCP 是系统调用 ABI，插件生态是它的 App 世界。0 门槛、自然组织的知识库，是它最先做好的那件事。
+不是又一个笔记软件：鹿蕊按**操作系统**的思路生长——内核（Rust crates）管存储与索引，`litmus serve` 是守护进程，五模式 UI 是它的桌面，HTTP API + MCP 是系统调用 ABI，插件生态是它的 App 世界。0 门槛、自然组织的知识库，是它最先做好的那件事。
 
 不做 Obsidian、Notion 的替代品——它们为你组织知识，鹿蕊让知识自己长成样子：**人随手记、AI 帮你建，一切落在磁盘上一堆普通的 Markdown 上，人和 agent 共享同一个真相。**
 
@@ -80,12 +80,12 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 - **快速成 PPT**：展示模式 50 款预设风格一键换装，`整库 PPT` 一键生成全库幻灯
 - **生态体验**：通过 MCP 连接器接入 OpenFlow（图表）、Conflow / WebsFlow / PayFlow / InFlow 等矩阵产品（规划中，见[路线图](#-路线图)）
 
-> AI 对话**无 API key 也能用**：内置命令模式（离线规则引擎，工具调用照常可见）；在 `thirdc.toml` 的 `[ai]` 配置任意 OpenAI 兼容模型后，解锁改写 / 扩写 / 翻译等 AI 动词与 token 计量。
+> AI 对话**无 API key 也能用**：内置命令模式（离线规则引擎，工具调用照常可见）；在 `litmus.toml` 的 `[ai]` 配置任意 OpenAI 兼容模型后，解锁改写 / 扩写 / 翻译等 AI 动词与 token 计量。
 
 ## 📖 开源开放
 
 - **核心功能永久开源**（AGPL-3.0）：画布、编辑器、检索、发布、MCP，全部在这仓库里
-- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 连接器**接入，鹿蕊也可作为 MCP server 被其他 agent 调用（`thirdc mcp`）
+- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 连接器**接入，鹿蕊也可作为 MCP server 被其他 agent 调用（`litmus mcp`）
 - **插件友好**：浏览器扩展（Chrome / Firefox / Safari）源码在库；文件真相 = Open Knowledge Format（Markdown 语义 + YAML 元数据 + 块锚点 + JSON-LD），开发者可按[规范](docs/spec/okf.md)直接读写
 
 ## 快速上手
@@ -95,17 +95,17 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 从 [Releases](https://github.com/sevenaaaaaaaaa/litmus/releases) 下载 `Litmus_x.x.x_aarch64.dmg`(Apple Silicon,macOS 12+)。
 未做公证,首次打开:**右键 → 打开**,或 `xattr -cr "/Applications/Litmus.app"`。
 
-默认库 `~/Documents/ThirdC`，首次启动自动创建；应用内库选择器可切换，`THIRDC_VAULT` 环境变量亦可。Windows（msi/nsis）与 Linux（deb/AppImage）由 CI 构建见 Releases，Android / iOS 客户端初版已可自[源码](desktop/)构建。
+默认库 `~/Documents/Litmus`，首次启动自动创建；应用内库选择器可切换，`LITMUS_VAULT` 环境变量亦可。Windows（msi/nsis）与 Linux（deb/AppImage）由 CI 构建见 Releases，Android / iOS 客户端初版已可自[源码](desktop/)构建。
 
 ### CLI + Web
 
 ```bash
-cargo build --release -p thirdc
-./target/release/thirdc init ./kb MyKnowledge
-./target/release/thirdc serve ./kb --addr 127.0.0.1:7700
+cargo build --release -p litmus
+./target/release/litmus init ./kb MyKnowledge
+./target/release/litmus serve ./kb --addr 127.0.0.1:7700
 ```
 
-打开 `http://127.0.0.1:7700` → 登录(`admin` / token,见 `kb/.thirdc/machine.toml`;可在 `thirdc.toml` 的 `[auth]` 自定义)。
+打开 `http://127.0.0.1:7700` → 登录(`admin` / token,见 `kb/.litmus/local/machine.toml`;可在 `litmus.toml` 的 `[auth]` 自定义)。
 
 ### 服务端部署
 
@@ -155,7 +155,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 - [ ] 桌面独占：全盘索引 · 本地小模型（[规划](docs/spec/desktop.md)）
 - [ ] 多端：Windows / Linux / Android / iOS 持续跟进（[规划](docs/spec/platform.md)）
 - [ ] 发布目标：GitHub Pages · 对象存储直传
-- [ ] 远期：独立设备——无头 Linux 主机已是雏形（`thirdc serve` + systemd），最终形态可能在 Linux 或微内核上（见设计宪法 §9）
+- [ ] 远期：独立设备——无头 Linux 主机已是雏形（`litmus serve` + systemd），最终形态可能在 Linux 或微内核上（见设计宪法 §9）
 
 ---
 
@@ -348,7 +348,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 ![连接器](docs/img/appendix/connectors.png)
 
 **是什么**：外部 MCP server 的管理面板——每个连接可**探测**（列出 tools / resources）与**采集**（把资源拉入库）；面板徽章显示 AI 配置状态。
-**怎么用**：`thirdc.toml` 里加 `[[connections]]`（name + command + args）→ `⌘K` → `连接器管理`（`c`）→ 逐个探测 / 采集。反向：`thirdc mcp` 把鹿蕊自己作为 MCP server 给别的 agent 用。
+**怎么用**：`litmus.toml` 里加 `[[connections]]`（name + command + args）→ `⌘K` → `连接器管理`（`c`）→ 逐个探测 / 采集。反向：`litmus mcp` 把鹿蕊自己作为 MCP server 给别的 agent 用。
 
 ---
 

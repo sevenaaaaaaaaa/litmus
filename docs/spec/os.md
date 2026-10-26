@@ -1,8 +1,8 @@
-# ThirdC 设计宪法 — 一个 AI 时代的知识操作系统
+# Litmus 设计宪法 — 一个 AI 时代的知识操作系统
 
 状态：v1（2026-10-04 定调）。本文是**最高层设计约束**：所有新功能在实现前按 §10 的清单过一遍，与宪法冲突的实现要么改，要么先改宪法并写明理由。
 
-ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
+Litmus 不是"又一个笔记软件"。它按操作系统的思路生长：
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -10,16 +10,16 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 ├────────────────────────────────────────────────────────┤
 │ 壳（合成器）五模式 UI · 底栏 dock · ⌘K Spotlight · 抽屉    │
 ├────────────────────────────────────────────────────────┤
-│ 守护进程  thirdc serve（HTTP API + watcher + MCP server） │
+│ 守护进程  litmus serve（HTTP API + watcher + MCP server） │
 ├────────────────────────────────────────────────────────┤
 │ 内核      kernel-core / store / sync / md / design / …   │
 ├────────────────────────────────────────────────────────┤
-│ 真相      Notes/ · Assets/ · .thirdc/（普通文件 + SQLite） │
+│ 真相      Notes/ · Assets/ · .litmus/local/（普通文件 + SQLite） │
 └────────────────────────────────────────────────────────┘
 ```
 
 - **内核**：库 = 文件系统（Markdown/HTML/附件即普通文件）；块模型 + CRDT op-log 是日志型文件系统；index.db 是 VFS 索引。
-- **守护进程**：`thirdc serve` 单进程持有 Kernel，watcher 实时合入外部改动；systemd 单元已是标准的 init 集成。
+- **守护进程**：`litmus serve` 单进程持有 Kernel，watcher 实时合入外部改动；systemd 单元已是标准的 init 集成。
 - **壳**：UI 是合成器，不是产品本体。模式 = 虚拟桌面（studio/learn/present），底栏 = dock，⌘K = Spotlight，抽屉 = 文档窗口。壳可以整个换掉（web/桌面/移动共用同一内核），因此壳改动**永远不构成破坏性变更**。
 - **算力分层**：远端 AI（OpenAI 兼容）、本地小模型（规划）、内嵌渲染器（ego-lite）是不同 tier 的计算单元；token 计量是记账系统。
 
@@ -29,7 +29,7 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 
 1. **任何能力先有文件形态与 CLI 形态，再有 UI 形态。** UI 删掉了，CLI 和文件还在，功能就没丢。
 2. 用户可见的一切内容必须是磁盘上可直接打开的文件（Markdown / HTML / 附件 / JSON 画布）。**禁止**把用户内容锁进私有二进制或向量库——向量召回（规划中）只能作为索引旁路，可随时重建。
-3. 配置一律 `thirdc.toml` / `vaults.json` / `ui-state.json`；运行日志与审计事件落 `.thirdc/`。
+3. 配置一律 `litmus.toml` / `vaults.json` / `ui-state.json`；运行日志与审计事件落 `.litmus/local/`。
 4. 新端点若产生持久数据，必须回答：数据落在哪个文件？外部工具能否直接读它？
 
 ## §2 微内核纪律（crate 边界）
@@ -48,7 +48,7 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 |---|---|---|---|
 | **Stable** | 承诺向后兼容 | `/health` `/status` `/doc`(GET/PUT/DELETE) `/search` `/tree` `/browse` `/asset`(POST) `/sync` `/trash*` `/board(s)` `/memo/docs` `/graph`、MCP 工具、CLI 动词 | 只增不破：可以加字段/加端点；改语义、删字段、改路径必须走弃用流程 |
 | **Beta** | 尽力兼容，破坏前公告 | `/ingest/*` `/organize/*` `/conflow/*` `/view/resolve` `/publish*` `/design*` `/chat*` `/agent/*` `/plugin*` `/desktop/*`（desktop 端点仅本机桌面壳使用，天然私有） | 破坏性变更在 Release notes 标注 `⚠ ABI`，并尽量保留一个过渡版本 |
-| **Internal** | 无兼容承诺 | `/sw.js` `/assets/*` `/a2ui/*`、任何 `.thirdc/` 内部文件布局 | 随版本自由演进 |
+| **Internal** | 无兼容承诺 | `/sw.js` `/assets/*` `/a2ui/*`、任何 `.litmus/local/` 内部文件布局 | 随版本自由演进 |
 
 ### 版本化机制
 
@@ -59,9 +59,9 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 
 ## §4 能力模型与安全
 
-1. 一切访问经 token（`Authorization: Bearer` / `x-thirdc-token`）；**凭据不进 URL**（登录捕获后立即从地址栏剥离，不进浏览器历史 / Referer / 分享链接）。
+1. 一切访问经 token（`Authorization: Bearer` / `x-litmus-token`）；**凭据不进 URL**（登录捕获后立即从地址栏剥离，不进浏览器历史 / Referer / 分享链接）。
 2. 权限是**能力**，不是身份：`doc:read` / `doc:write` / `editor:insert`… 插件与视图按需申请最小集；未来的远端协作按同一能力语言授权。
-3. 插件视图跑在沙箱 iframe（RPC 白名单 + 权限声明 + 审计落 `.thirdc/events/plugin-tools.jsonl`）；agent 工具贡献必须过 SSRF 防守。
+3. 插件视图跑在沙箱 iframe（RPC 白名单 + 权限声明 + 审计落 `.litmus/local/events/plugin-tools.jsonl`）；agent 工具贡献必须过 SSRF 防守。
 4. 桌面终端是**白名单命令**执行，不是任意 shell。
 5. 路径校验（`Notes/` 前缀、拒 `..`）是内核职责，所有写入路径共用同一守卫。
 
@@ -86,13 +86,13 @@ ThirdC 不是"又一个笔记软件"。它按操作系统的思路生长：
 
 ## §8 凭据与发布纪律
 
-1. 凭据只进 `thirdc.toml` / `.thirdc/machine.toml`，**永不进 git**（仓库公开）。
+1. 凭据只进 `litmus.toml` / `.litmus/local/machine.toml`，**永不进 git**（仓库公开）。
 2. 三件套（GitHub / 服务器 / 安装包）完成后 `git status` 必须清零；Release dmg 必须 sha256 回读校验。
 3. 素材审计结论长期有效：外部素材与第三方品牌字样不得写入 tracked 文件。
 
 ## §9 设备路线（远期）
 
-1. **第一步已经发生**：无头 Linux 主机（`thirdc serve` + systemd + 单静态二进制）就是 ThirdC 主机的雏形。
+1. **第一步已经发生**：无头 Linux 主机（`litmus serve` + systemd + 单静态二进制）就是 Litmus 主机的雏形。
 2. 独立设备 = 同一个二进制 + kiosk webview 壳 + ARM 小板；CI 已在交叉编译全平台。
 3. 微内核是方向不是承诺：crate 边界（§2）是朝那个方向存的弹药，不提前设计、不提前实现。
 

@@ -1,13 +1,13 @@
 {
-  "id": "hello-thirdc",
-  "name": "Hello ThirdC",
+  "id": "hello-litmus",
+  "name": "Hello Litmus",
   "version": "1.0.0",
   "description": "官方最小示例：一条插入命令 + 一个沙箱视图（演示三种贡献点）",
-  "author": "ThirdC",
+  "author": "Litmus",
   "permissions": ["doc:read"],
   "contributions": {
     "commands": [
-      { "id": "greet", "title": "插入问候", "type": "insert-snippet", "payload": "> Hello, ThirdC！由插件插入于 {TIME}\n" }
+      { "id": "greet", "title": "插入问候", "type": "insert-snippet", "payload": "> Hello, Litmus！由插件插入于 {TIME}\n" }
     ],
     "views": [
       { "id": "panel", "title": "问候面板", "entry": "view.html", "permissions": ["doc:read"] }

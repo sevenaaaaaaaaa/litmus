@@ -15,7 +15,7 @@
 # 关键教训（勿重蹈）：
 #   1. 发版必须产出 latest.json，否则 App 内"检查更新"报
 #      "Could not fetch a valid release JSON from the remote"。推 tag 让 CI 生成（tauri-action includeUpdaterJson）。
-#   2. CI 依赖仓库 Secret TAURI_SIGNING_PRIVATE_KEY（minisign 私钥，本地在 ~/.tauri/thirdc-updater.key）。
+#   2. CI 依赖仓库 Secret TAURI_SIGNING_PRIVATE_KEY（minisign 私钥，本地在 ~/.tauri/litmus-updater.key）。
 #      Secret 丢失/损坏时 CI 报 "Missing comment in secret key"，用 gh api PUT secrets/... 重写。
 #   3. 重发时先删 Release 上同名资产（gh release delete-asset <tag> <name> --yes），否则 tauri-action 上传撞名失败。
 #   4. 本机 DNS 拦 uploads.github.com（NXDOMAIN）：上传走 DoH 解析 + curl --resolve（scripts/lib/gh-upload.sh）。
@@ -55,7 +55,7 @@ if [[ "$UPDATER_ONLY" == 1 ]]; then
   git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "✗ tag $TAG 不存在"; exit 1; }
   [[ "$(cargo_version)" == "$VER" ]] || { echo "✗ Cargo.toml 版本 $(cargo_version) ≠ $VER"; exit 1; }
   log "本地签名打包（createUpdaterArtifacts=true）..."
-  (cd desktop && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/thirdc-updater.key)" \
+  (cd desktop && TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/litmus-updater.key 2>/dev/null || cat ~/.tauri/thirdc-updater.key)" \
     TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
     cargo tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":true}}')
   ARCHIVE="target/release/bundle/macos/${APP_NAME}.app.tar.gz"

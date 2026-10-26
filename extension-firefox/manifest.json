@@ -26,7 +26,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "thirdc@nownexts.com",
+      "id": "litmus@nownexts.com",
       "strict_min_version": "115.0"
     }
   },

@@ -1,4 +1,4 @@
-# ThirdC 内核门禁：kernel 全家测试 + 纯逻辑 crate 的 wasm32 可移植性检查。
+# Litmus 内核门禁：kernel 全家测试 + 纯逻辑 crate 的 wasm32 可移植性检查。
 # wasm32 是通往原生/微内核的路由（宪法 §2：crate 边界 = 未来进程边界）：
 # kernel-md / kernel-a2ui 零 IO 依赖必须保持可移植，新增依赖别把它们锁死在桌面平台。
 name: kernel

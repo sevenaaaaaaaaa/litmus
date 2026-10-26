@@ -1,4 +1,4 @@
-package com.nownexts.thirdc
+package com.nownexts.litmus
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

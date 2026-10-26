@@ -5,7 +5,7 @@
 ## 不变量
 
 1. `Notes/` 与 `Assets/` 下的文件是**内容真相**。任何工具（Obsidian/VSCode/vim）可直接编辑，内核必须无损跟随。
-2. `.thirdc/ops/` 内的 Automerge 文档是**并发真相**。多端并发编辑在此合流。
+2. `.litmus/local/ops/` 内的 Automerge 文档是**并发真相**。多端并发编辑在此合流。
 3. 两个真相通过确定性序列化（kernel-md `to_markdown`）互译。同一块模型永远产出字节相同的 MD。
 4. 崩溃安全：所有落盘先写 `.tmp` 再 `rename`，无半写状态。
 5. 无变化不写 op：导入时与现有模型比对，相同则跳过，防止 op 膨胀。
@@ -13,7 +13,7 @@
 ## 状态机
 
 ```
-外部改文件 ──parse──▶ 块模型 ──diff──▶ ops 追加 ──▶ 持久化 .thirdc/ops/
+外部改文件 ──parse──▶ 块模型 ──diff──▶ ops 追加 ──▶ 持久化 .litmus/local/ops/
 远端 ops 到达 ──▶ op-log 合并 ──物化──▶ 确定性 MD ──▶ 覆写文件
 两侧同时变 ──▶ CRDT 字段级合并 ──▶ 物化（文件收敛到合并结果）
 ```

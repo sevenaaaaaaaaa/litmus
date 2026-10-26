@@ -1,17 +1,22 @@
 [package]
-name = "thirdc"
+name = "litmus"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "litmus"
+path = "src/main.rs"
+
+# 旧名字（开发代号 ThirdC）：外部配置里还写着 `thirdc mcp` / `thirdc serve` 的照样能用。0.16 移除。
 [[bin]]
 name = "thirdc"
 path = "src/main.rs"
 
 [dependencies]
 kernel-core = { path = "../kernel/crates/kernel-core" }
-thirdc-server = { path = "../server" }
-thirdc-mcp = { path = "../mcp" }
+litmus-server = { path = "../server" }
+litmus-mcp = { path = "../mcp" }
 kernel-deploy = { path = "../kernel/crates/kernel-deploy" }
 kernel-backup = { path = "../kernel/crates/kernel-backup" }
 anyhow.workspace = true

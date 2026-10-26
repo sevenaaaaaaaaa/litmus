@@ -1,4 +1,4 @@
-//! thirdc-mcp::client — MCP 入口侧：把任意 MCP server 变成数据源。
+//! litmus-mcp::client — MCP 入口侧：把任意 MCP server 变成数据源。
 //!
 //! 以子进程方式启动 MCP server（stdio 传输），完成 initialize 握手后，
 //! 可列举/调用其 tools、列举/读取其 resources，抽成内容进入采集管道。
@@ -124,7 +124,7 @@ impl McpClient {
             json!({
                 "protocolVersion": LATEST_PROTOCOL,
                 "capabilities": {},
-                "clientInfo": { "name": "thirdc", "version": env!("CARGO_PKG_VERSION") }
+                "clientInfo": { "name": "litmus", "version": env!("CARGO_PKG_VERSION") }
             }),
         )?;
         self.protocol_version = result

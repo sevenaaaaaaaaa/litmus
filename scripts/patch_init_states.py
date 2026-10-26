@@ -40,7 +40,7 @@ s = s.replace('<div id="crumb"></div>', '''<div id="crumb"></div>
 <div id="canvas-state"></div>
 <div id="hintbar"></div>
 <div id="onboard"><div class="ob-card">
-  <h2>欢迎来到 ThirdC Studio</h2>
+  <h2>欢迎来到 Litmus Studio</h2>
   <div class="sub">你的知识是文件，是画布，也是 agent 的工具。选一个起点开始：</div>
   <div class="ob-grid">
     <div class="ob-item" data-ob="topic"><div class="t">⚡ 采集主题</div><div class="d">输入一个主题，自动从维基/HN/arXiv 建库</div></div>
@@ -91,9 +91,9 @@ function setCanvasState(kind,info={}){
 /* 画布提示条：首次显示，可关（记住选择） */
 function showHint(){
   const bar=$('hintbar');
-  if(localStorage.getItem('thirdc_hint_off')==='1'){bar.innerHTML='';return}
+  if(localStorage.getItem('litmus_hint_off')==='1'){bar.innerHTML='';return}
   bar.innerHTML=`<b>双击</b>文件夹进入 · <b>拖空白</b>平移 · <b>⌘滚轮</b>缩放 · <b>⌘K</b>检索 <span class="x" title="不再显示">✕</span>`;
-  bar.querySelector('.x').onclick=()=>{localStorage.setItem('thirdc_hint_off','1');bar.innerHTML='';};
+  bar.querySelector('.x').onclick=()=>{localStorage.setItem('litmus_hint_off','1');bar.innerHTML='';};
 }
 
 async function loadGraph(){
@@ -122,12 +122,12 @@ s = s.replace('''  graph={nodes,edges:[]};
 # 首屏引导（只显示一次）
 s = s.replace('''(async function init(){''','''/* 首屏引导：仅首次访问 */
 function maybeOnboard(){
-  if(localStorage.getItem('thirdc_onboarded')==='1')return;
+  if(localStorage.getItem('litmus_onboarded')==='1')return;
   const el=$('onboard');
   if(!el)return;
   el.classList.add('on');
   el.querySelectorAll('[data-ob]').forEach(b=>b.onclick=()=>{
-    localStorage.setItem('thirdc_onboarded','1');
+    localStorage.setItem('litmus_onboarded','1');
     el.classList.remove('on');
     const k=b.dataset.ob;
     if(k==='new')newDoc();
@@ -135,7 +135,7 @@ function maybeOnboard(){
     if(k==='conn')$('board-pill').dispatchEvent(new MouseEvent('dblclick'));
   });
   el.addEventListener('click',e=>{
-    if(e.target===el){localStorage.setItem('thirdc_onboarded','1');el.classList.remove('on');}
+    if(e.target===el){localStorage.setItem('litmus_onboarded','1');el.classList.remove('on');}
   });
 }
 

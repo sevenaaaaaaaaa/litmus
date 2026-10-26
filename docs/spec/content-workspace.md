@@ -51,7 +51,7 @@ Dock 同一位置显式切换搜索 / Agent，各自保留当前页草稿。⌘J
 
 ## 验证
 
-自动检查：`cargo test -p thirdc-server --test craft --test palette`、`cargo test -p thirdc-server --lib browse_`、`node --test server/tests/workspace.mjs`。
+自动检查：`cargo test -p litmus-server --test craft --test palette`、`cargo test -p litmus-server --lib browse_`、`node --test server/tests/workspace.mjs`。
 
 交互验收：画布默认启动 → Dock 记录 → 接着想 → 连接另一张卡 → 拖动 → 刷新保持位置；搜索 / Agent 草稿分离；搜索不调用模型；纯画布下仍能 ⌥右键执行魔法动作；辅助栏临时唤出镜头不变、固定偏好刷新保留；文档模式的打开文件夹、新建、编辑、关闭、再打开；同名文档保护；重复导入；最近打开；四种内容视图；工作记录展开与关闭；筛选无结果。视觉验收覆盖桌面、窄屏和浅深色。性能检查使用独立示例库，不能以小库结果代替大型真实库基准。
 

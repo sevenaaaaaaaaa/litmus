@@ -57,7 +57,7 @@ pub fn target_dir(target: &PublishTarget, default_site_dir: &str) -> PathBuf {
         return PathBuf::from(d);
     }
     match target.kind.as_str() {
-        "git" => PathBuf::from(format!(".thirdc/deploy/{}", target.name)),
+        "git" => PathBuf::from(format!(".litmus/local/deploy/{}", target.name)),
         _ => PathBuf::from(default_site_dir),
     }
 }
@@ -235,9 +235,9 @@ fn deploy_git(site_dir: &Path, target: &PublishTarget) -> Result<DeployReport, D
             site_dir,
             &[
                 "-c",
-                "user.name=thirdc",
+                "user.name=litmus",
                 "-c",
-                "user.email=thirdc@localhost",
+                "user.email=litmus@localhost",
                 "commit",
                 "-q",
                 "-m",
@@ -307,19 +307,19 @@ mod tests {
     fn gitops_never_tracks_sidecar() {
         let dir = tempfile::tempdir().unwrap();
         let v = dir.path();
-        std::fs::create_dir_all(v.join(".thirdc")).unwrap();
-        std::fs::write(v.join(".thirdc/machine.toml"), "key = 1").unwrap();
+        std::fs::create_dir_all(v.join(".litmus/local")).unwrap();
+        std::fs::write(v.join(".litmus/local/machine.toml"), "key = 1").unwrap();
         std::fs::create_dir_all(v.join("Notes")).unwrap();
         std::fs::write(v.join("Notes/a.md"), "# a").unwrap();
         gitops::ensure_repo(v).unwrap();
         gitops::ensure_repo(v).unwrap(); // idempotent
         let gi = std::fs::read_to_string(v.join(".gitignore")).unwrap();
-        assert_eq!(gi.lines().filter(|l| *l == ".thirdc/").count(), 1);
+        assert_eq!(gi.lines().filter(|l| *l == ".litmus/local/").count(), 1);
         Command::new("git").current_dir(v).args(["add", "-A"]).output().unwrap();
         let out = Command::new("git").current_dir(v).args(["ls-files", "--cached"]).output().unwrap();
         let tracked = String::from_utf8_lossy(&out.stdout);
         assert!(tracked.contains("Notes/a.md"));
-        assert!(!tracked.contains(".thirdc"));
+        assert!(!tracked.contains(".litmus/local"));
     }
 
     #[test]
@@ -406,9 +406,10 @@ mod tests {
 pub mod gitops {
     use super::{DeployError, git as _git};
 
-    /// Paths that must never leave the device: `.thirdc/` holds the op-log, index
+    /// Paths that must never leave the device: `.litmus/local/` holds the op-log, index
     /// and machine.toml (device key / per-vault E2EE key); it is rebuilt from files.
-    const VAULT_GITIGNORE: &[&str] = &[".thirdc/", ".DS_Store"];
+    // `.thirdc/` 是 0.14 及以前的本机目录名：还没升级的设备同步时也不能把它带上。
+    const VAULT_GITIGNORE: &[&str] = &[".litmus/local/", ".thirdc/", ".DS_Store"];
 
     pub fn ensure_repo(dir: &std::path::Path) -> Result<(), DeployError> {
         if !dir.join(".git").is_dir() {
@@ -445,7 +446,7 @@ pub mod gitops {
         // Untrack anything already committed under ignored paths (keeps local files).
         let _ = std::process::Command::new("git")
             .current_dir(dir)
-            .args(["rm", "-r", "--cached", "-q", "--ignore-unmatch", ".thirdc"])
+            .args(["rm", "-r", "--cached", "-q", "--ignore-unmatch", ".litmus/local", ".thirdc"])
             .output();
         Ok(())
     }
@@ -475,7 +476,7 @@ pub mod gitops {
         }
         _git(
             dir,
-            &["-c", "user.name=thirdc", "-c", "user.email=thirdc@localhost", "commit", "-q", "-m", msg],
+            &["-c", "user.name=litmus", "-c", "user.email=litmus@localhost", "commit", "-q", "-m", msg],
         )?;
         Ok(st.lines().count())
     }
@@ -540,7 +541,7 @@ pub mod gitops {
 /// - 机密性：AES-256-GCM（ring）
 /// - 抗爆破：PBKDF2-HMAC-SHA256（随机 16B 盐，60 万次迭代）
 /// - 完整性：AEAD tag + 每文件 SHA-256 清单（root 哈希）
-/// - 来源真实性：Ed25519 设备密钥签名（私钥只在本机 `.thirdc/`）
+/// - 来源真实性：Ed25519 设备密钥签名（私钥只在本机 `.litmus/local/`）
 ///
 /// 容器：MAGIC("3CBK") ver kdf iters salt nonce pubkey | sig | ct_len ciphertext
 /// 兼容：v1（旧 SHA256-CTR 格式）仍可解密；v1 无清单，不能直接还原文件。
@@ -560,7 +561,7 @@ pub mod encrypted_backup {
     const NONCE_LEN: usize = 12;
     const ED25519_PUB: usize = 32;
     const ED25519_SIG: usize = 64;
-    const KEY_REL: &str = ".thirdc/backup-signing.key";
+    const KEY_REL: &str = ".litmus/local/backup-signing.key";
 
     fn crypto<E: std::fmt::Display>(e: E) -> DeployError {
         DeployError::Crypto(format!("{e}"))
@@ -577,10 +578,10 @@ pub mod encrypted_backup {
 
     /// 绝不进备份包的机密/可再生成内容。
     fn excluded(rel: &str) -> bool {
-        rel == ".thirdc/machine.toml"
+        rel == ".litmus/local/machine.toml"
             || rel == KEY_REL
-            || rel == ".thirdc/backup-signing.pub"
-            || rel.starts_with(".thirdc/backups/")
+            || rel == ".litmus/local/backup-signing.pub"
+            || rel.starts_with(".litmus/local/backups/")
     }
 
     struct Entry {
@@ -712,7 +713,7 @@ pub mod encrypted_backup {
         Ok(Body { manifest, payloads })
     }
 
-    /// 设备签名密钥：读 `.thirdc/backup-signing.key`，没有就现场生成（0600）。
+    /// 设备签名密钥：读 `.litmus/local/backup-signing.key`，没有就现场生成（0600）。
     fn signing_key(root: &std::path::Path) -> Result<signature::Ed25519KeyPair, DeployError> {
         let path = root.join(KEY_REL);
         if let Ok(bytes) = std::fs::read(&path) {
@@ -730,7 +731,7 @@ pub mod encrypted_backup {
             let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         }
         let kp = signature::Ed25519KeyPair::from_pkcs8(doc.as_ref()).map_err(crypto)?;
-        let _ = std::fs::write(root.join(".thirdc/backup-signing.pub"), kp.public_key().as_ref());
+        let _ = std::fs::write(root.join(".litmus/local/backup-signing.pub"), kp.public_key().as_ref());
         Ok(kp)
     }
 
@@ -870,8 +871,8 @@ pub mod encrypted_backup {
             // 安全护栏：不覆盖本机机密，不越界写盘
             if path.contains("..")
                 || path.starts_with('/')
-                || path == ".thirdc/machine.toml"
-                || path.starts_with(".thirdc/backup-signing")
+                || path == ".litmus/local/machine.toml"
+                || path.starts_with(".litmus/local/backup-signing")
             {
                 continue;
             }

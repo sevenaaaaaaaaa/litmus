@@ -3243,6 +3243,83 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
+name = "litmus"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "kernel-backup",
+ "kernel-core",
+ "kernel-deploy",
+ "litmus-mcp",
+ "litmus-server",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "litmus-desktop"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "cocoa",
+ "kernel-core",
+ "litmus-server",
+ "objc",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-notification",
+ "tauri-plugin-updater",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "litmus-mcp"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "kernel-core",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "litmus-server"
+version = "0.14.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "futures-util",
+ "hex",
+ "kernel-a2ui",
+ "kernel-backup",
+ "kernel-convert",
+ "kernel-core",
+ "kernel-deploy",
+ "litmus-mcp",
+ "notify",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "toml_edit 0.22.27",
+ "tower",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5874,83 +5951,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fed54709c5b3a53d09bb1c113ea4f5ceafd1e772ddcb0030a82e1d56c087b08"
 dependencies = [
  "new_debug_unreachable",
-]
-
-[[package]]
-name = "thirdc"
-version = "0.14.0"
-dependencies = [
- "anyhow",
- "clap",
- "kernel-backup",
- "kernel-core",
- "kernel-deploy",
- "serde_json",
- "thirdc-mcp",
- "thirdc-server",
- "tokio",
-]
-
-[[package]]
-name = "thirdc-desktop"
-version = "0.14.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "cocoa",
- "kernel-core",
- "objc",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-notification",
- "tauri-plugin-updater",
- "thirdc-server",
- "tokio",
- "tower",
-]
-
-[[package]]
-name = "thirdc-mcp"
-version = "0.14.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "kernel-core",
- "reqwest 0.12.28",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "thirdc-server"
-version = "0.14.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "futures-util",
- "hex",
- "kernel-a2ui",
- "kernel-backup",
- "kernel-convert",
- "kernel-core",
- "kernel-deploy",
- "notify",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thirdc-mcp",
- "tokio",
- "toml_edit 0.22.27",
- "tower",
 ]
 
 [[package]]

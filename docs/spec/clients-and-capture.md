@@ -10,14 +10,14 @@
 
 ## 1. 内核交付接口（daemon）
 
-- `thirdc serve`：本地 loopback 上的 HTTP + WebSocket（JSON-RPC），令牌认证（machine.toml）。
+- `litmus serve`：本地 loopback 上的 HTTP + WebSocket（JSON-RPC），令牌认证（machine.toml）。
 - **MCP 双向**：
   - 出口：内核作为 MCP server（stdio 给本地 agent，HTTP/SSE 给远程 agent），把库暴露成 tools/resources。
   - 入口：内核作为 MCP client，把任意 MCP server 变成数据源（"对接所有"）。
 - 三种内核形态、同一份代码：
   - 内嵌（桌面/移动 App 进程内）
-  - 独立守护进程（`thirdc serve`，可被多客户端共享）
-  - Server（`thirdc-server` Docker，自建同步/发布主机）
+  - 独立守护进程（`litmus serve`，可被多客户端共享）
+  - Server（`litmus-server` Docker，自建同步/发布主机）
 
 ## 2. 全平台客户端矩阵
 
@@ -77,9 +77,9 @@ MV3，Chrome / Edge / Firefox / Safari：
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| M4 | daemon + HTTP API（`thirdc serve`）+ 块级 CRDT 合并 | 已落地 |
+| M4 | daemon + HTTP API（`litmus serve`）+ 块级 CRDT 合并 | 已落地 |
 | M5 | 浏览器扩展 MV3 采集 + native messaging | 待办 |
 | M6 | Tauri 桌面客户端 | 待办 |
 | M7 | Web（PWA + WASM 内核） | 待办 |
 | M8 | browser 模块（CDP + ego-lite）、computer-use 能力分级 | 待办 |
-| M9 | MCP server（出口，`thirdc mcp`）与 MCP client（入口，`thirdc conn` 采集第三方 server） | 双向已落地 |
+| M9 | MCP server（出口，`litmus mcp`）与 MCP client（入口，`litmus conn` 采集第三方 server） | 双向已落地 |

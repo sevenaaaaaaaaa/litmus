@@ -1,4 +1,4 @@
-# ThirdC 桌面壳命令的 ACL 许可。
+# Litmus 桌面壳命令的 ACL 许可。
 #
 # 桌面 webview 指向内嵌 daemon（http://127.0.0.1:<port>），对 Tauri 而言这是
 # 「远程 origin」——即便命令定义在应用自身，也必须显式授权，否则被 ACL 拒绝：
@@ -7,7 +7,7 @@
 
 [[permission]]
 identifier = "allow-desktop-shell"
-description = "Allow ThirdC desktop shell commands"
+description = "Allow Litmus desktop shell commands"
 commands.allow = [
   "desktop_vaults",
   "desktop_create_vault",

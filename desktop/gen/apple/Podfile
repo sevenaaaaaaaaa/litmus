@@ -1,13 +1,13 @@
 # Uncomment the next line to define a global platform for your project
 
-target 'thirdc-desktop_iOS' do
+target 'litmus-desktop_iOS' do
 platform :ios, '14.0'
-  # Pods for thirdc-desktop_iOS
+  # Pods for litmus-desktop_iOS
 end
 
-target 'thirdc-desktop_macOS' do
+target 'litmus-desktop_macOS' do
 platform :osx, '11.0'
-  # Pods for thirdc-desktop_macOS
+  # Pods for litmus-desktop_macOS
 end
 
 # Delete the deployment target for iOS and macOS, causing it to be inherited from the Podfile

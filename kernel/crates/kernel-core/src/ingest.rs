@@ -24,7 +24,7 @@ pub const SOURCES: &[(&str, &str)] = &[
 fn client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
-        .user_agent("thirdc/0.1 (+topic ingest)")
+        .user_agent("litmus/0.1 (+topic ingest)")
         .build()
         .expect("http client")
 }

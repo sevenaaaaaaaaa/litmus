@@ -3,7 +3,7 @@
   "name": "每日速记",
   "version": "1.2.0",
   "description": "示例插件：速记模板插入 + 沙箱视图（演示 v1 视图扩展与权限）",
-  "author": "ThirdC",
+  "author": "Litmus",
   "permissions": [
     "doc:read",
     "editor:insert"

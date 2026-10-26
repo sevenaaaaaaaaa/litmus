@@ -30,7 +30,7 @@ footer a{color:inherit}
 <footer><span id="hint"></span><a href="#" id="open-app">打开主窗口</a></footer>
 <script>
 const q=new URLSearchParams(location.search);
-const TOKEN=q.get('token')||localStorage.getItem('thirdc_token')||'';
+const TOKEN=q.get('token')||localStorage.getItem('litmus_token')||localStorage.getItem('thirdc_token')||'';
 const BASE=location.origin;
 async function api(path,opts={}){
   const headers=Object.assign({},opts.headers||{});

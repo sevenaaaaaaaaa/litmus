@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-description = "ThirdC E2EE 备份引擎：age 口令加密快照 → WebDAV / 本地文件夹 / rclone 桥"
+description = "Litmus E2EE 备份引擎：age 口令加密快照 → WebDAV / 本地文件夹 / rclone 桥"
 
 [dependencies]
 kernel-store = { path = "../kernel-store" }

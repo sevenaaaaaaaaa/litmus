@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "7DB244FD074481D6EF4612FC"
-               BuildableName = "thirdc-desktop_iOS.app"
-               BlueprintName = "thirdc-desktop_iOS"
-               ReferencedContainer = "container:thirdc-desktop.xcodeproj">
+               BuildableName = "litmus-desktop_iOS.app"
+               BlueprintName = "litmus-desktop_iOS"
+               ReferencedContainer = "container:litmus-desktop.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7DB244FD074481D6EF4612FC"
-            BuildableName = "thirdc-desktop_iOS.app"
-            BlueprintName = "thirdc-desktop_iOS"
-            ReferencedContainer = "container:thirdc-desktop.xcodeproj">
+            BuildableName = "litmus-desktop_iOS.app"
+            BlueprintName = "litmus-desktop_iOS"
+            ReferencedContainer = "container:litmus-desktop.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -70,9 +70,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7DB244FD074481D6EF4612FC"
-            BuildableName = "thirdc-desktop_iOS.app"
-            BlueprintName = "thirdc-desktop_iOS"
-            ReferencedContainer = "container:thirdc-desktop.xcodeproj">
+            BuildableName = "litmus-desktop_iOS.app"
+            BlueprintName = "litmus-desktop_iOS"
+            ReferencedContainer = "container:litmus-desktop.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -101,9 +101,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "7DB244FD074481D6EF4612FC"
-            BuildableName = "thirdc-desktop_iOS.app"
-            BlueprintName = "thirdc-desktop_iOS"
-            ReferencedContainer = "container:thirdc-desktop.xcodeproj">
+            BuildableName = "litmus-desktop_iOS.app"
+            BlueprintName = "litmus-desktop_iOS"
+            ReferencedContainer = "container:litmus-desktop.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>

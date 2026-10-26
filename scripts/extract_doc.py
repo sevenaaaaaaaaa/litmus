@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ThirdC 文档解析器：PDF / DOCX / XLSX / PPTX → 纯文本（供 Rust 内核调用）"""
+"""Litmus 文档解析器：PDF / DOCX / XLSX / PPTX → 纯文本（供 Rust 内核调用）"""
 import sys, json
 
 def extract_pdf(path):

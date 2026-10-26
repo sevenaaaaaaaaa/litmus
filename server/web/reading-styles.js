@@ -658,7 +658,7 @@ const STYLES=[
  +'li::marker{color:#002FA7}'
  +'::selection{background:#002FA7;color:#fff}'
  +'hr{border:none;height:1px;background:#d4d4d2}'],
- /* OpenFlow：ThirdC 姊妹产品的设计语言（全 oklch · 玻璃拟态 · oklch 色斑底 · 渐变 hairline） */
+ /* OpenFlow：Litmus 姊妹产品的设计语言（全 oklch · 玻璃拟态 · oklch 色斑底 · 渐变 hairline） */
  ['openflow','OpenFlow 玻璃','oklch(17% .022 262)','oklch(91% .012 262)','oklch(72% .14 255)','"Inter","SF Pro Display","PingFang SC",sans-serif','none',
   'body{background-image:radial-gradient(38% 32% at 18% 12%,oklch(45% .12 265/.5),transparent 70%),radial-gradient(34% 30% at 82% 8%,oklch(50% .14 300/.38),transparent 70%),radial-gradient(40% 34% at 60% 92%,oklch(50% .1 200/.32),transparent 72%);background-attachment:fixed}'
  +'h1{font-weight:700;letter-spacing:-.02em;position:relative;padding-bottom:14px!important}'

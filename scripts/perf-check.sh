@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# ThirdC 性能门禁：起本地 daemon 实测端点延迟，超预算即失败（退出码 1）。
+# Litmus 性能门禁：起本地 daemon 实测端点延迟，超预算即失败（退出码 1）。
 # 预算依据 docs/PERF.md；改热路径代码前后各跑一次对比。
 # 用法：scripts/perf-check.sh [--vault <库路径>]   # 默认 ./server-kb（无则报错）
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/target/debug/thirdc"
-[ -x "$BIN" ] || BIN="$ROOT/target/release/thirdc"
-[ -x "$BIN" ] || { echo "✗ 先 cargo build -p thirdc"; exit 1; }
+BIN="$ROOT/target/debug/litmus"
+[ -x "$BIN" ] || BIN="$ROOT/target/release/litmus"
+[ -x "$BIN" ] || { echo "✗ 先 cargo build -p litmus"; exit 1; }
 
 VAULT="$ROOT/server-kb"
 if [ "${1:-}" = "--vault" ]; then VAULT="${2:?--vault 需要路径}"; fi
 [ -d "$VAULT/Notes" ] || { echo "✗ 库不存在：${VAULT}（可用 --vault 指定）"; exit 1; }
 
 PORT=7799
-TOKEN=$(grep '^token' "$VAULT/.thirdc/machine.toml" | sed 's/.*= *"//;s/"//')
+TOKEN=$(grep '^token' "$VAULT/.litmus/local/machine.toml" | sed 's/.*= *"//;s/"//')
 ALL_DOCS=$(find "$VAULT/Notes" -name '*.md' -type f -print)
 DOC=${ALL_DOCS%%$'\n'*}
 REL=${DOC#"$VAULT"/}
 ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$REL")
 
-"$BIN" serve "$VAULT" --addr 127.0.0.1:$PORT >/tmp/thirdc-perf.log 2>&1 &
+"$BIN" serve "$VAULT" --addr 127.0.0.1:$PORT >/tmp/litmus-perf.log 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null || true' EXIT
 

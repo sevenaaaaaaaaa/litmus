@@ -1,22 +1,22 @@
-# ThirdC Studio 使用指南
+# Litmus Studio 使用指南
 
-> 核心定位 · Features · 具体用例。写给刚开始用 ThirdC 的研究者、写作者与想要一个本地
+> 核心定位 · Features · 具体用例。写给刚开始用 Litmus 的研究者、写作者与想要一个本地
 > 知识工作台的用户,也是官网素材源之一。桌面客户端:GitHub Releases。
 
 ---
 
 ## 核心定位
 
-你的知识可能正被锁在两个地方:笔记软件的私有格式里,或 agent 框架的向量库里。ThirdC 把方向反过来——**知识库就是磁盘上一堆普通的 Markdown / HTML 文件**:任何编辑器都能打开,随时可以带走;索引、日志这些 sidecar 删了就重建,真相永远在 `Notes/` 和 `Assets/` 里。
+你的知识可能正被锁在两个地方:笔记软件的私有格式里,或 agent 框架的向量库里。Litmus 把方向反过来——**知识库就是磁盘上一堆普通的 Markdown / HTML 文件**:任何编辑器都能打开,随时可以带走;索引、日志这些 sidecar 删了就重建,真相永远在 `Notes/` 和 `Assets/` 里。
 
 同一个真相,人和 agent 共享:你用画布、阅读器、热力图来看和写;agent 通过同一套本地 API 与 MCP 双向读写,写完即索引。谁也不锁定谁——这就是「文件即真相、画布即界面、agent 即同事」。
 
-ThirdC 是林下 Understory 产品矩阵 Studio 层的本地工具:Rust 单二进制,本地优先,没有账号没有云。它与 OpenFlow 松耦合,不依赖矩阵即可完整使用;长期方向是作为矩阵的工作台,接住 Flow 产品产出的报告、素材与文档。
+Litmus 是林下 Understory 产品矩阵 Studio 层的本地工具:Rust 单二进制,本地优先,没有账号没有云。它与 OpenFlow 松耦合,不依赖矩阵即可完整使用;长期方向是作为矩阵的工作台,接住 Flow 产品产出的报告、素材与文档。
 
 ## Features(按你将真实用到的顺序)
 
 ### 1. 第一天:建一个带得走的库
-下载桌面客户端(Releases,Apple Silicon),首次启动自动创建默认库 `~/Documents/ThirdC`;应用内库选择器可切换。不想装客户端,`thirdc serve` 一条命令把内核跑成 Web 服务,浏览器直接访问。
+下载桌面客户端(Releases,Apple Silicon),首次启动自动创建默认库 `~/Documents/Litmus`;应用内库选择器可切换。不想装客户端,`litmus serve` 一条命令把内核跑成 Web 服务,浏览器直接访问。
 
 ### 2. 把资料倒进来:采集与迁移
 主题一键建库(Wikipedia / HN / arXiv)、网页本地化、PDF / DOCX 解析、Obsidian 库导入(设置面板 → 导入)、浏览器扩展随看随存。资料落进库里的那一刻,就是普通文件。
@@ -62,7 +62,7 @@ AI-HTML 静态站(语义标签 + JSON-LD + llms.txt,人和 AI 都能读)→ 本�
 2. 选发布目标:本地预览、Git 仓库、S3 兼容对象存储或 WebDAV;
 3. 需要私下分享的单篇,用 E2EE 加密分享链接;
 4. 对外站点按需开启 ICP 注入,发布前用敏感词与机审 API 过一遍内容;
-5. 团队其他人用浏览器访问发布好的静态站即可,无需安装 ThirdC。
+5. 团队其他人用浏览器访问发布好的静态站即可,无需安装 Litmus。
 **结果**:不用另找建站工具,库里的内容直接变成可访问的站。
 
 ### 用例 D · 从 Obsidian 搬家(老笔记用户)
@@ -73,11 +73,11 @@ AI-HTML 静态站(语义标签 + JSON-LD + llms.txt,人和 AI 都能读)→ 本�
 
 ## 常见问题
 
-**数据会不会被锁在 ThirdC 里?**
+**数据会不会被锁在 Litmus 里?**
 不会。`Notes/` 与 `Assets/` 是普通文件;索引与日志是 sidecar,删了自动重建。
 
 **支持 Windows / Linux 吗?**
-桌面客户端目前仅 macOS(Apple Silicon,未公证,首次打开右键 → 打开);Windows / Linux / 移动端在多端规划中。任何平台可先用 `thirdc serve` + 浏览器。
+桌面客户端目前仅 macOS(Apple Silicon,未公证,首次打开右键 → 打开);Windows / Linux / 移动端在多端规划中。任何平台可先用 `litmus serve` + 浏览器。
 
 **没有 API key 能用吗?**
 能。RAG 检索、画布、写作全部本地可用;Agent 对话的命令模式离线可用,流式对话才需要你自己的 key。
@@ -86,12 +86,12 @@ AI-HTML 静态站(语义标签 + JSON-LD + llms.txt,人和 AI 都能读)→ 本�
 daemon 冷启动首轮全库同步(约 11s 量级)是预期行为,不在延迟预算内;之后热路径文档打开 1ms、检索 23ms(1.2 万篇实测基线)。
 
 **团队怎么共用一个库?**
-两种路:跑 `thirdc serve` 让浏览器直接访问;或用 `deploy/deploy.sh` 部署到服务器(systemd 托管 + Apache 反代),登录用 admin 与 token(见 `kb/.thirdc/machine.toml`)。
+两种路:跑 `litmus serve` 让浏览器直接访问;或用 `deploy/deploy.sh` 部署到服务器(systemd 托管 + Apache 反代),登录用 admin 与 token(见 `kb/.litmus/local/machine.toml`)。
 
 ## 进阶
 
-- ThirdC 是矩阵 Studio 层成员:本地工具 + 引流,未来作为工作台打通所有 Flow 产品;
-- Flow 产品产出的报告、素材、文档,落进 ThirdC 的文件真相里,人和 agent 共同使用;
+- Litmus 是矩阵 Studio 层成员:本地工具 + 引流,未来作为工作台打通所有 Flow 产品;
+- Flow 产品产出的报告、素材、文档,落进 Litmus 的文件真相里,人和 agent 共同使用;
 - 想接自己的 agent?MCP server 与本地 API 已就绪,设计契约见 docs/spec/;
 - 新手路线建议:先用画布与 `⌘K` 检索,再开采集,最后接 agent——七模式不必一次全用。
 

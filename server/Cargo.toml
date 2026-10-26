@@ -1,16 +1,16 @@
 [package]
-name = "thirdc-server"
+name = "litmus-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "thirdc_server"
+name = "litmus_server"
 path = "src/lib.rs"
 
 [dependencies]
 kernel-core = { path = "../kernel/crates/kernel-core" }
-thirdc-mcp = { path = "../mcp" }
+litmus-mcp = { path = "../mcp" }
 kernel-a2ui = { path = "../kernel/crates/kernel-a2ui" }
 kernel-deploy = { path = "../kernel/crates/kernel-deploy" }
 kernel-convert = { path = "../kernel/crates/kernel-convert" }
@@ -26,7 +26,7 @@ base64.workspace = true
 anyhow.workspace = true
 sha2.workspace = true
 hex.workspace = true
-# 知识场「模型设置」只改 thirdc.toml 的 [ai] 表，保留用户的注释与其余排版
+# 知识场「模型设置」只改 litmus.toml 的 [ai] 表，保留用户的注释与其余排版
 toml_edit = "0.22"
 
 [dev-dependencies]

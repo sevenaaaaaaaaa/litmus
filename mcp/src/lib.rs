@@ -1,4 +1,4 @@
-//! thirdc-mcp: 把知识库作为 MCP server 暴露给任意 agent（出口侧）。
+//! litmus-mcp: 把知识库作为 MCP server 暴露给任意 agent（出口侧）。
 //!
 //! 协议：JSON-RPC 2.0，传输与协议解耦——`handle()` 是纯函数式的消息处理，
 //! stdio（本地 agent）与后续 HTTP/SSE（远程 agent）复用同一实现。
@@ -109,8 +109,8 @@ impl McpServer {
                 "tools": { "listChanged": false },
                 "resources": { "subscribe": false, "listChanged": false }
             },
-            "serverInfo": { "name": "thirdc", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "ThirdC 知识库。文档真相在 Notes/ 下的 Markdown；资源以 knowledge://Notes/x.md 暴露，同时提供 text/markdown 与 AI-HTML(text/html) 表示。写入前建议先 search_vault 查看现有内容。"
+            "serverInfo": { "name": "litmus", "version": env!("CARGO_PKG_VERSION") },
+            "instructions": "Litmus 知识库。文档真相在 Notes/ 下的 Markdown；资源以 knowledge://Notes/x.md 暴露，同时提供 text/markdown 与 AI-HTML(text/html) 表示。写入前建议先 search_vault 查看现有内容。"
         }))
     }
 
@@ -753,7 +753,7 @@ mod tests {
 
     /// 在临时库中安装一个带 tools 的示例插件（manifest + installed 登记）。
     fn seed_tool_plugin(dir: &tempfile::TempDir, tool_url: &str, tools_disabled: Value) -> String {
-        let pdir = dir.path().join(".thirdc/plugins/demo-tools");
+        let pdir = dir.path().join(".litmus/local/plugins/demo-tools");
         std::fs::create_dir_all(&pdir).unwrap();
         std::fs::write(
             pdir.join("manifest.json"),
@@ -767,9 +767,9 @@ mod tests {
                 ]}
             }).to_string(),
         ).unwrap();
-        std::fs::create_dir_all(dir.path().join(".thirdc/events")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".litmus/local/events")).unwrap();
         std::fs::write(
-            dir.path().join(".thirdc/plugins/installed.json"),
+            dir.path().join(".litmus/local/plugins/installed.json"),
             json!({ "demo-tools": { "enabled": true, "installedAt": "t", "tools": tools_disabled } }).to_string(),
         ).unwrap();
         "demo-tools".to_string()
@@ -819,7 +819,7 @@ mod tests {
         let r = s.call_tool_public("plugin_demo-tools_find", json!({ "query": "xyzzy" })).unwrap();
         assert_eq!(r["hits"].as_array().unwrap().len(), 1);
         // 审计落盘
-        let audit = std::fs::read_to_string(dir.path().join(".thirdc/events/plugin-tools.jsonl")).unwrap();
+        let audit = std::fs::read_to_string(dir.path().join(".litmus/local/events/plugin-tools.jsonl")).unwrap();
         assert!(audit.contains("plugin_demo-tools_find"));
     }
 
@@ -865,7 +865,7 @@ mod tests {
             json!({ "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name":"t","version":"0"} }),
         );
         assert_eq!(r["result"]["protocolVersion"], "2024-11-05");
-        assert_eq!(r["result"]["serverInfo"]["name"], "thirdc");
+        assert_eq!(r["result"]["serverInfo"]["name"], "litmus");
         assert!(r["result"]["capabilities"]["tools"].is_object());
 
         let r2 = call(&s, "initialize", json!({ "protocolVersion": "9999-01-01" }));
@@ -1196,14 +1196,14 @@ for line in sys.stdin:
    harness 思路：能力即声明，宿主代执行。v2 支持两种声明式工具：
    - http：模板化调用外部 API（{arg} 占位符；SSRF 防护 + 10s 超时 + 1MB 截断）
    - kb-search：库内检索（可限定标签）
-   插件代码不执行；每次执行写审计 .thirdc/events/plugin-tools.jsonl */
+   插件代码不执行；每次执行写审计 .litmus/local/events/plugin-tools.jsonl */
 
 pub const PLUGIN_TOOL_PREFIX: &str = "plugin_";
 
 impl McpServer {
     fn plugins_dir(&self) -> Option<std::path::PathBuf> {
         let k = self.kernel.lock().ok()?;
-        Some(k.vault.root.join(".thirdc").join("plugins"))
+        Some(k.vault.root.join(".litmus/local").join("plugins"))
     }
 
     fn plugin_installed(&self) -> serde_json::Map<String, Value> {
@@ -1397,7 +1397,7 @@ impl McpServer {
         ssrf_guard(&url)?;
         let method = tool.get("method").and_then(|x| x.as_str()).unwrap_or("GET").to_uppercase();
         let client = reqwest::blocking::Client::builder()
-            .user_agent("thirdc-plugin-tool")
+            .user_agent("litmus-plugin-tool")
             .timeout(std::time::Duration::from_secs(10))
             .build().map_err(|e| e.to_string())?;
         let mut req = match method.as_str() {
@@ -1470,7 +1470,7 @@ fn ssrf_guard(url: &str) -> Result<(), String> {
 
 /* ───────── ConFlow 对话流（矩阵产品 · 内置整合）─────────
    独立开发、定期整合：ConFlow 的知识卡逻辑独立成模块，知识卡落在独立命名空间
-   Notes/Conflow/，未来独立部署版经 MCP 连接器替换本模块即可，ThirdC 侧无感。 */
+   Notes/Conflow/，未来独立部署版经 MCP 连接器替换本模块即可，Litmus 侧无感。 */
 pub mod conflow {
     use crate::McpServer;
     use serde_json::{json, Value};
@@ -1696,7 +1696,7 @@ pub mod agent {
                     return Outcome {
                         mode: "command",
                         reply: if names.is_empty() {
-                            "未配置任何连接。在 thirdc.toml 的 [[connections]] 里添加 MCP server。".into()
+                            "未配置任何连接。在 litmus.toml 的 [[connections]] 里添加 MCP server。".into()
                         } else {
                             format!("指定要采集的连接：{}", names.join(" / "))
                         },
@@ -1908,7 +1908,7 @@ pub mod agent {
         let tools = server.tools_for_llm();
         let mut messages = vec![
             json!({ "role": "system", "content":
-                "你是 ThirdC 知识库里的协作者。优先用工具了解库中现有内容再回答；\
+                "你是 Litmus 知识库里的协作者。优先用工具了解库中现有内容再回答；\
                  写文档前先 search_vault 查重。回答简洁，用中文。\
                  当用户要求整理/汇总时，用 write_doc 把结果沉淀成文档。" }),
             json!({ "role": "user", "content": message }),
@@ -1974,7 +1974,7 @@ pub mod agent {
         let tools = server.tools_for_llm();
         let mut messages = vec![
             json!({ "role": "system", "content":
-                "你是 ThirdC 知识库里的协作者。优先用工具了解库中现有内容再回答；\
+                "你是 Litmus 知识库里的协作者。优先用工具了解库中现有内容再回答；\
                  写文档前先 search_vault 查重。回答简洁，用中文。\
                  当用户要求整理/汇总时，用 write_doc 把结果沉淀成文档。" }),
             json!({ "role": "user", "content": message }),

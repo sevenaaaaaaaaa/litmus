@@ -22,24 +22,24 @@
 const $=id=>document.getElementById(id);
 $('insert').onclick=async()=>{
   const t=$('note').value.trim();
-  if(!t){await thirdc.toast('先写点内容');return}
-  await thirdc.insertText('\n〔'+t+'〕\n');
-  await thirdc.toast('已插入到光标处');
+  if(!t){await litmus.toast('先写点内容');return}
+  await litmus.insertText('\n〔'+t+'〕\n');
+  await litmus.toast('已插入到光标处');
   $('note').value='';
 };
 $('load').onclick=async()=>{
   try{
-    const doc=await thirdc.getDocument();
+    const doc=await litmus.getDocument();
     $('doc').textContent='当前文档：'+doc.path+'（'+doc.markdown.length+' 字）';
   }catch(e){$('err').textContent='读取失败：'+e.message}
 };
 /* 加载即自动握手：验证 RPC 通路 + doc:read 权限（真实用户打开面板同样触发） */
 (async()=>{
   try{
-    const doc=await thirdc.getDocument();
+    const doc=await litmus.getDocument();
     $('doc').textContent='✓ RPC 通：当前文档 '+doc.path+'（'+doc.markdown.length+' 字）';
   }catch(e){$('err').textContent='✗ RPC 失败：'+e.message}
 })();
-thirdc.setViewTitle('速记面板');
+litmus.setViewTitle('速记面板');
 </script>
 </body></html>

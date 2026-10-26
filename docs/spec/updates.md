@@ -20,13 +20,13 @@
 
 自更新包用 minisign 私钥签名，客户端内置公钥校验，防止被替换。
 
-- 私钥：`~/.tauri/thirdc-updater.key`（**不要提交进仓库**）
+- 私钥：`~/.tauri/litmus-updater.key`（**不要提交进仓库**）
 - 公钥：已写入 `tauri.conf.json` 的 `plugins.updater.pubkey`
 
 生成（若需重做，会同时更换公钥，旧客户端将无法收到更新）：
 
 ```bash
-cargo tauri signer generate -w ~/.tauri/thirdc-updater.key
+cargo tauri signer generate -w ~/.tauri/litmus-updater.key
 ```
 
 ### CI 必需的仓库 Secret
@@ -35,7 +35,7 @@ cargo tauri signer generate -w ~/.tauri/thirdc-updater.key
 
 | Secret | 值 |
 |---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | `~/.tauri/thirdc-updater.key` 文件全文 |
+| `TAURI_SIGNING_PRIVATE_KEY` | `~/.tauri/litmus-updater.key` 文件全文 |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥口令（本仓库生成时为空，填空字符串） |
 
 未配置这两个 Secret 时，`v*` 标签构建会在签名步骤失败——这是刻意的（不能让未签名包混进更新通道）。

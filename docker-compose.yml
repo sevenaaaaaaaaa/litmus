@@ -1,8 +1,8 @@
 services:
-  thirdc:
+  litmus:
     build: .
     ports: ["7700:7700"]
-    volumes: ["thirdc-data:/data"]
+    volumes: ["litmus-data:/data"]
     restart: unless-stopped
 volumes:
-  thirdc-data:
+  litmus-data:

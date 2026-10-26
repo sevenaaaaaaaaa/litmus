@@ -4,7 +4,7 @@
 
 ## 决策
 
-`Notes/`、`Assets/` 是内容真相，可直接被任何编辑器修改；`.thirdc/ops/`（Automerge）只承担并发合流，可随时删除重建。
+`Notes/`、`Assets/` 是内容真相，可直接被任何编辑器修改；`.litmus/local/ops/`（Automerge）只承担并发合流，可随时删除重建。
 
 ## 理由
 

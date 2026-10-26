@@ -1,0 +1,10 @@
+[Unit]
+Description=Litmus knowledge kernel
+After=network.target
+[Service]
+WorkingDirectory=/www/wwwroot/litmus
+ExecStart=/www/wwwroot/litmus/bin/litmus serve /www/wwwroot/litmus/kb --addr 127.0.0.1:7700
+Restart=always
+Environment=LITMUS_AI_API_KEY=
+[Install]
+WantedBy=multi-user.target

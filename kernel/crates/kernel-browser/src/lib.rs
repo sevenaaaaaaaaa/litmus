@@ -91,7 +91,7 @@ pub const DIGEST_JS: &str = r#"() => {
 pub fn fetch_html(url: &str, timeout: Duration) -> Result<String, BrowserError> {
     let client = reqwest::blocking::Client::builder()
         .timeout(timeout)
-        .user_agent("thirdc/0.1 (+design ingestion)")
+        .user_agent("litmus/0.1 (+design ingestion)")
         .build()
         .map_err(|e| BrowserError::Failed(e.to_string()))?;
     let resp = client
@@ -112,7 +112,7 @@ pub fn find_chrome(configured: Option<&str>) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    if let Ok(p) = std::env::var("THIRDC_CHROME") {
+    if let Ok(p) = std::env::var("LITMUS_CHROME").or_else(|_| std::env::var("THIRDC_CHROME")) {
         let path = PathBuf::from(p);
         if path.is_file() {
             return Some(path);
@@ -198,7 +198,7 @@ pub fn find_ego(configured: Option<&str>) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    if let Ok(p) = std::env::var("THIRDC_EGO") {
+    if let Ok(p) = std::env::var("LITMUS_EGO").or_else(|_| std::env::var("THIRDC_EGO")) {
         let path = PathBuf::from(p);
         if path.is_file() {
             return Some(path);
@@ -262,11 +262,11 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<(String, Stri
 pub fn dump_dom(url: &str, chrome: Option<&str>, timeout: Duration) -> Result<String, BrowserError> {
     let bin = find_chrome(chrome).ok_or_else(|| {
         BrowserError::Unavailable(
-            "未找到 Chromium/Chrome。可用 [browser] chrome = \"…\" 或 THIRDC_CHROME 指定。".into(),
+            "未找到 Chromium/Chrome。可用 [browser] chrome = \"…\" 或 LITMUS_CHROME 指定。".into(),
         )
     })?;
     let profile = std::env::temp_dir().join(format!(
-        "thirdc-chrome-{}-{}",
+        "litmus-chrome-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -303,11 +303,11 @@ pub fn ego_digest(
         )
     })?;
     let script = format!(
-        r#"const task = await taskSpace("thirdc: digest page layout");
+        r#"const task = await taskSpace("litmus: digest page layout");
 const page = task.page("p1");
 await page.goto({url});
 const digest = await page.evaluate({js});
-console.log("__THIRDC_DIGEST__" + JSON.stringify(digest));
+console.log("__LITMUS_DIGEST__" + JSON.stringify(digest));
 "#,
         url = serde_json::to_string(url)?,
         js = DIGEST_JS,
@@ -318,8 +318,8 @@ console.log("__THIRDC_DIGEST__" + JSON.stringify(digest));
     // 注意：ego 的 console 输出走 stderr，两路都要找
     let combined = format!("{out}\n{err}");
     for line in combined.lines().rev() {
-        if let Some(idx) = line.find("__THIRDC_DIGEST__") {
-            let json = &line[idx + "__THIRDC_DIGEST__".len()..];
+        if let Some(idx) = line.find("__LITMUS_DIGEST__") {
+            let json = &line[idx + "__LITMUS_DIGEST__".len()..];
             return Ok(serde_json::from_str(json)?);
         }
     }

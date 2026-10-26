@@ -1,6 +1,6 @@
-//! kernel-store: 库布局、thirdc.toml 配置、内容寻址存储。
+//! kernel-store: 库布局、litmus.toml 配置、内容寻址存储。
 //!
-//! 真相区（Notes/ Assets/ thirdc.toml）用户可直改；sidecar（.thirdc/）可随时删除重建。
+//! 真相区（Notes/ Assets/ litmus.toml）用户可直改；sidecar（.litmus/local/）可随时删除重建。
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,12 +12,56 @@ use thiserror::Error;
 pub mod index;
 pub mod refs;
 
-pub const CONFIG_FILE: &str = "thirdc.toml";
-pub const SIDECAR_DIR: &str = ".thirdc";
+pub const CONFIG_FILE: &str = "litmus.toml";
+pub const SIDECAR_DIR: &str = ".litmus/local";
+/// 0.14 及以前的名字（开发代号 ThirdC）。只用于自动迁移，新代码不要再写这两个路径。
+pub const LEGACY_CONFIG_FILE: &str = "thirdc.toml";
+pub const LEGACY_SIDECAR_DIR: &str = ".thirdc";
+
+/// 把旧布局（`thirdc.toml` + `.thirdc/`）就地改成新布局（`litmus.toml` + `.litmus/local/`）。
+///
+/// - 只在新名字还不存在时搬；两边都有时以新的为准，旧的原样留着不碰。
+/// - `.litmus/local/` 永不出设备：库已经是 git 仓库时，先把它写进 `.gitignore` 再搬，
+///   保证搬完后的第一次同步也不会把令牌、索引带出去。
+/// - 幂等，任何入口（打开库、初始化、桌面启动）都可以先调一次。返回是否搬了东西。
+pub fn migrate_legacy_layout(root: &Path) -> io::Result<bool> {
+    let mut moved = false;
+    let (old_cfg, new_cfg) = (root.join(LEGACY_CONFIG_FILE), root.join(CONFIG_FILE));
+    let (old_side, new_side) = (root.join(LEGACY_SIDECAR_DIR), root.join(SIDECAR_DIR));
+    let need_side = old_side.is_dir() && !new_side.exists();
+    if need_side && (root.join(".git").exists() || root.join(".gitignore").is_file()) {
+        let gi = root.join(".gitignore");
+        let mut text = fs::read_to_string(&gi).unwrap_or_default();
+        if !text.lines().any(|l| l.trim() == ".litmus/local/") {
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str(".litmus/local/\n");
+            fs::write(&gi, text)?;
+        }
+    }
+    if need_side {
+        if let Some(parent) = new_side.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(&old_side, &new_side)?;
+        moved = true;
+    }
+    if old_cfg.is_file() && !new_cfg.exists() {
+        fs::rename(&old_cfg, &new_cfg)?;
+        moved = true;
+    }
+    Ok(moved)
+}
+
+/// 目录是不是一个库（新旧布局都算）。
+pub fn is_vault_dir(root: &Path) -> bool {
+    root.join(CONFIG_FILE).is_file() || root.join(LEGACY_CONFIG_FILE).is_file()
+}
 
 #[derive(Debug, Error)]
 pub enum StoreError {
-    #[error("not a thirdc vault: {0} (missing thirdc.toml)")]
+    #[error("not a litmus vault: {0} (missing litmus.toml)")]
     NotAVault(PathBuf),
     #[error("io: {0}")]
     Io(#[from] io::Error),
@@ -52,7 +96,7 @@ pub struct VaultConfig {
     /// Web 登录凭据覆盖。缺省 admin / machine token；设置了用户名密码则以这里为准。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthConfig>,
-    /// 回收站保留天数：删除的文档先进 `.thirdc/trash/`，到期自动清除。
+    /// 回收站保留天数：删除的文档先进 `.litmus/local/trash/`，到期自动清除。
     /// 缺省 30；`0` = 永久保留（不自动清除）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trash_days: Option<u32>,
@@ -62,7 +106,7 @@ pub struct VaultConfig {
     pub backup: Option<BackupConfig>,
 }
 
-/// E2EE 备份配置。口令不设或留空则读环境变量 THIRDC_BACKUP_PASSPHRASE；
+/// E2EE 备份配置。口令不设或留空则读环境变量 LITMUS_BACKUP_PASSPHRASE；
 /// **口令即恢复的唯一凭证**——丢了 = 快照成废纸（age scrypt，无后门）。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackupConfig {
@@ -74,7 +118,7 @@ pub struct BackupConfig {
     /// 自动备份间隔（小时）；0 = 仅手动。
     #[serde(default)]
     pub auto_hours: u32,
-    /// 把 .thirdc/ops/（CRDT 增量日志）也打进快照。缺省 false——文件真相已含全部内容，
+    /// 把 .litmus/local/ops/（CRDT 增量日志）也打进快照。缺省 false——文件真相已含全部内容，
     /// ops 只是协作历史；打开后单快照显著变大。
     #[serde(default)]
     pub include_ops: bool,
@@ -93,7 +137,7 @@ pub struct BackupTarget {
     /// webdav：集合 URL，如 https://nas.local:5006/home/Litmus/
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    /// webdav 凭据（也可经 THIRDC_WEBDAV_USER/PASS 环境变量）。
+    /// webdav 凭据（也可经 LITMUS_WEBDAV_USER/PASS 环境变量）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -110,7 +154,7 @@ fn default_backup_keep() -> u32 {
     10
 }
 
-/// 登录凭据覆盖（thirdc.toml [auth]）。API token 鉴权不受影响，这里只管 Web 登录表单。
+/// 登录凭据覆盖（litmus.toml [auth]）。API token 鉴权不受影响，这里只管 Web 登录表单。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthConfig {
     #[serde(default)]
@@ -156,7 +200,7 @@ pub struct ChecksConfig {
 }
 
 fn default_site_dir() -> String {
-    ".thirdc/site".into()
+    ".litmus/local/site".into()
 }
 
 /// 一个发布目标。
@@ -165,7 +209,7 @@ pub struct PublishTarget {
     pub name: String,
     /// local | git（GitHub Pages / Cloudflare Pages 的 Git 集成）| s3 | cf-pages
     pub kind: String,
-    /// 部署目录（相对库根）；缺省：git 用 .thirdc/deploy/<name>，local 用 site_dir
+    /// 部署目录（相对库根）；缺省：git 用 .litmus/local/deploy/<name>，local 用 site_dir
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
     // ---- git ----
@@ -229,7 +273,7 @@ pub struct BrowserConfig {
 pub struct AiConfig {
     /// 形如 https://api.openai.com/v1 或 http://localhost:11434/v1
     pub base_url: String,
-    /// 可直接写，也可留空并用环境变量 THIRDC_AI_API_KEY（更安全）
+    /// 可直接写，也可留空并用环境变量 LITMUS_AI_API_KEY（更安全）
     #[serde(default)]
     pub api_key: String,
     pub model: String,
@@ -258,7 +302,7 @@ impl AiConfig {
         if !self.api_key.is_empty() {
             return self.api_key.clone();
         }
-        std::env::var("THIRDC_AI_API_KEY").unwrap_or_default()
+        std::env::var("LITMUS_AI_API_KEY").or_else(|_| std::env::var("THIRDC_AI_API_KEY")).unwrap_or_default()
     }
 }
 
@@ -323,6 +367,7 @@ impl Vault {
     /// 打开已有库；无配置则报 NotAVault。
     pub fn open(root: impl AsRef<Path>) -> Result<Self, StoreError> {
         let root = root.as_ref().to_path_buf();
+        migrate_legacy_layout(&root)?;
         let cfg_path = root.join(CONFIG_FILE);
         if !cfg_path.is_file() {
             return Err(StoreError::NotAVault(root));
@@ -332,10 +377,11 @@ impl Vault {
         Ok(Vault { root, config })
     }
 
-    /// 初始化新库：thirdc.toml + Notes/ + Assets/ + .thirdc/ 全套布局。
+    /// 初始化新库：litmus.toml + Notes/ + Assets/ + .litmus/local/ 全套布局。
     pub fn init(root: impl AsRef<Path>, name: &str) -> Result<Self, StoreError> {
         let root = root.as_ref();
         fs::create_dir_all(root)?;
+        migrate_legacy_layout(root)?;
         let cfg_path = root.join(CONFIG_FILE);
         if cfg_path.exists() {
             return Err(StoreError::Config(format!(
@@ -382,7 +428,7 @@ impl Vault {
         self.sidecar().join("blobs")
     }
 
-    /// 读取/生成设备身份与本地 API 令牌（.thirdc/machine.toml）。
+    /// 读取/生成设备身份与本地 API 令牌（.litmus/local/machine.toml）。
     pub fn ensure_machine(&self) -> Result<MachineConfig, StoreError> {
         let path = self.sidecar().join("machine.toml");
         if path.is_file() {
@@ -565,6 +611,32 @@ pub fn list_non_doc_files(vault: &Vault) -> Result<Vec<PathBuf>, StoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_thirdc_layout_is_migrated_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = dir.path();
+        fs::write(r.join("thirdc.toml"), "name = \"旧库\"\n").unwrap();
+        fs::create_dir_all(r.join(".thirdc/index")).unwrap();
+        fs::write(r.join(".thirdc/machine.toml"), "token = \"t\"").unwrap();
+        fs::create_dir_all(r.join(".litmus")).unwrap();
+        fs::write(r.join(".litmus/views.json"), "[]").unwrap();
+        fs::create_dir_all(r.join(".git")).unwrap();
+        fs::write(r.join(".gitignore"), ".thirdc/").unwrap();
+        assert!(is_vault_dir(r));
+        let v = Vault::open(r).unwrap();
+        assert_eq!(v.config.name, "旧库");
+        assert!(!r.join("thirdc.toml").exists() && !r.join(".thirdc").exists());
+        assert_eq!(fs::read_to_string(v.sidecar().join("machine.toml")).unwrap(), "token = \"t\"");
+        assert!(r.join(".litmus/views.json").is_file(), "随库同步的状态不受影响");
+        let gi = fs::read_to_string(r.join(".gitignore")).unwrap();
+        assert!(gi.lines().any(|l| l == ".litmus/local/") && gi.contains(".thirdc/"));
+        // 幂等；新旧都在时以新的为准，旧的不碰
+        assert!(!migrate_legacy_layout(r).unwrap());
+        fs::write(r.join("thirdc.toml"), "name = \"别的\"\n").unwrap();
+        assert_eq!(Vault::open(r).unwrap().config.name, "旧库");
+        assert!(r.join("thirdc.toml").is_file());
+    }
 
     #[test]
     fn init_open_cas_roundtrip() {

@@ -34,5 +34,5 @@ kb/
 
 # Local simulator screenshots and locally built extension packages (kept on disk, never on GitHub)
 /sim-verify/
-/thirdc-firefox.xpi
+/litmus-firefox.xpi
 *.xpi

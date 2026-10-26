@@ -46,7 +46,7 @@ pub mod gitops {
         }
         _git(
             dir,
-            &["-c", "user.name=thirdc", "-c", "user.email=thirdc@localhost", "commit", "-q", "-m", msg],
+            &["-c", "user.name=litmus", "-c", "user.email=litmus@localhost", "commit", "-q", "-m", msg],
         )?;
         Ok(st.lines().count())
     }
@@ -349,7 +349,7 @@ transform:scale(min(calc(100vw/1320),calc(100vh/880)));transform-origin:center}}
 .hint{{position:fixed;left:18px;bottom:14px;font-size:12px;color:oklch(60% .01 80)}}
 </style></head><body>
 <div class="stage">
-  <section class="slide on cover"><div><div class="mark">3C</div><h1>{vault_name}</h1><div class="sub">{count} 篇知识 · {today} · ThirdC Studio</div></div></section>
+  <section class="slide on cover"><div><div class="mark">3C</div><h1>{vault_name}</h1><div class="sub">{count} 篇知识 · {today} · Litmus Studio</div></div></section>
   <section class="slide"><div class="toc"><h2 style="margin:0 0 18px">目录</h2><ul style="padding:0;margin:0">{toc_items}</ul></div></section>
   {slides}
 </div>
