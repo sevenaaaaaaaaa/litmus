@@ -293,13 +293,27 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
 
 // ───────── 区域改名：用户起的名字按自动名记住（自动名 = 区域中心文档的短标题） ─────────
 
-fn region_names_path(root: &std::path::Path) -> PathBuf {
-    root.join(".thirdc").join("field-names.json")
+/// 随库同步的界面状态放在库根的 `.litmus/`：git 同步会带上它（只排除 `.thirdc/`），
+/// 又不在 `Notes/` 下，所以不会被当成文档、不进搜索与文档列表。
+pub fn synced_path(root: &std::path::Path, name: &str) -> PathBuf {
+    root.join(".litmus").join(name)
+}
+
+/// 读随库状态；新位置没有时读旧位置（0.12 写在 `.thirdc/`，只在本机）。
+pub fn read_synced(root: &std::path::Path, name: &str, legacy: &str) -> Option<String> {
+    std::fs::read_to_string(synced_path(root, name)).ok().or_else(|| std::fs::read_to_string(root.join(".thirdc").join(legacy)).ok())
+}
+
+pub fn write_synced(root: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let p = synced_path(root, name);
+    std::fs::create_dir_all(p.parent().unwrap())?;
+    let tmp = p.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, &p)
 }
 
 fn load_region_names(root: &std::path::Path) -> HashMap<String, String> {
-    std::fs::read_to_string(region_names_path(root))
-        .ok()
+    read_synced(root, "regions.json", "field-names.json")
         .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
         .unwrap_or_default()
 }
@@ -322,8 +336,7 @@ pub async fn region_rename(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     } else {
         names.insert(auto.clone(), name.clone());
     }
-    let _ = std::fs::create_dir_all(root.join(".thirdc"));
-    if let Err(e) = std::fs::write(region_names_path(&root), serde_json::to_vec_pretty(&names).unwrap_or_default()) {
+    if let Err(e) = write_synced(&root, "regions.json", &serde_json::to_vec_pretty(&names).unwrap_or_default()) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
     cache().lock().unwrap().remove(&root);
@@ -332,16 +345,12 @@ pub async fn region_rename(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
 
 // ───────── 视角：一组文档 + 镜头 + 排布，可命名、切换（替代经典壳的多画布） ─────────
 
-fn views_path(root: &std::path::Path) -> PathBuf {
-    root.join(".thirdc").join("field-views.json")
-}
-
 pub async fn views_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
     let root = st.kernel.lock().unwrap().vault.root.clone();
-    let v: Value = std::fs::read_to_string(views_path(&root)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "views": [] }));
+    let v: Value = read_synced(&root, "views.json", "field-views.json").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "views": [] }));
     Json(v).into_response()
 }
 
@@ -382,8 +391,7 @@ pub async fn views_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byte
         })
         .collect();
     let root = st.kernel.lock().unwrap().vault.root.clone();
-    let _ = std::fs::create_dir_all(root.join(".thirdc"));
-    match std::fs::write(views_path(&root), serde_json::to_vec_pretty(&json!({ "views": clean })).unwrap_or_default()) {
+    match write_synced(&root, "views.json", &serde_json::to_vec_pretty(&json!({ "views": clean })).unwrap_or_default()) {
         Ok(()) => Json(json!({ "views": clean })).into_response(),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
@@ -397,7 +405,7 @@ fn folder_of(p: &str) -> &str {
 }
 
 /// POST /field/organize：只给建议，不改文件。执行由壳逐条调用 /doc/move 与 /doc/autoname（都会改好链接）。
-pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
@@ -490,7 +498,22 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap) -> imp
     }
     dups.sort_by(|x, y| y["sim"].as_f64().partial_cmp(&x["sim"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
     dups.truncate(30);
-    Json(json!({ "moves": moves, "renames": renames, "dups": dups, "considered": n })).into_response()
+    let want_ai = serde_json::from_slice::<Value>(&body).ok().and_then(|v| v.get("ai").and_then(|a| a.as_bool())).unwrap_or(false);
+    let (tags, titles, ai_note) = if want_ai {
+        let mut vocab: HashMap<String, usize> = HashMap::new();
+        for m in &c.meta {
+            for t in &m.tags {
+                *vocab.entry(t.clone()).or_insert(0) += 1;
+            }
+        }
+        let mut vocab: Vec<(String, usize)> = vocab.into_iter().collect();
+        vocab.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let docs = c.meta.iter().map(|m| (m.path.clone(), m.title.clone(), m.excerpt.clone(), m.tags.clone())).collect();
+        super::field_tools::ai_suggestions(&st, docs, vocab.into_iter().take(80).map(|(t, _)| t).collect()).await
+    } else {
+        (Vec::new(), Vec::new(), None)
+    };
+    Json(json!({ "moves": moves, "renames": renames, "dups": dups, "tags": tags, "titles": titles, "ai": want_ai, "ai_note": ai_note, "considered": n })).into_response()
 }
 
 /// 文档之间真实写下的链接：`[[目标]]`（可带 |别名 #标题 ^块）与 `](Notes/...)`。
@@ -1354,6 +1377,123 @@ mod api_tests {
         assert!(i_pre < i_step && i_step < i_ans, "{text}");
         assert!(text.contains(r#""tool":"search_vault""#) && text.contains(r#""query":"同步""#), "{text}");
         assert!(text.contains("event: reply") && text.contains(r#""tokens":42"#), "{text}");
+    }
+
+    /// 非流式的假模型：按 system 提示词决定回答。
+    async fn mock_json_llm(reply: fn(&str, &str) -> String) -> String {
+        use axum::{routing::post, Router};
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(move |body: axum::body::Bytes| async move {
+                let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                let sys = v["messages"][0]["content"].as_str().unwrap_or("").to_string();
+                let user = v["messages"][1]["content"].as_str().unwrap_or("").to_string();
+                axum::Json(serde_json::json!({"choices":[{"message":{"role":"assistant","content": reply(&sys, &user)}}]}))
+            }),
+        );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        format!("http://{addr}/v1")
+    }
+
+    #[tokio::test]
+    async fn learning_schedules_reviews_in_synced_state() {
+        let (app, token, dir) = app();
+        seed(&app, &token).await;
+        // 没配模型：学习接口给 409 与可执行的提示
+        let (st, e) = call(&app, &token, "POST", "/field/learn", r#"{"task":"question","title":"t","section":"s","text":"同步冲突两边都保留"}"#).await;
+        assert_eq!(st, 409, "{e}");
+        let now = 1_800_000_000u64;
+        let (st, r) = call(&app, &token, "POST", "/field/learn/grade", &format!(r#"{{"path":"Notes/同步/协议.md","grade":"good","now":{now}}}"#)).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["card"]["due"], now + 3 * 86_400, "第一次讲清楚：3 天后");
+        let (_, r) = call(&app, &token, "POST", "/field/learn/grade", &format!(r#"{{"path":"Notes/同步/协议.md","grade":"good","now":{}}}"#, now + 3 * 86_400)).await;
+        assert_eq!(r["card"]["interval"], 7.5, "第二次：3 × 2.5");
+        let (_, r) = call(&app, &token, "POST", "/field/learn/grade", &format!(r#"{{"path":"Notes/同步/协议.md","grade":"again","now":{now}}}"#)).await;
+        assert_eq!(r["card"]["due"], now + 86_400, "没讲出来：明天再来");
+        assert!(r["card"]["ease"].as_f64().unwrap() < 2.5);
+        let (st, _) = call(&app, &token, "POST", "/field/learn/grade", r#"{"path":"../x","grade":"good"}"#).await;
+        assert_eq!(st, 400);
+        // 状态在库根 .litmus/（随 git 同步），不在 Notes/ 下、不会变成文档
+        assert!(dir.path().join(".litmus/learn.json").is_file());
+        let (_, g) = call(&app, &token, "GET", "/field/learn/state", "").await;
+        assert!(g["cards"]["Notes/同步/协议.md"]["reps"].as_u64().unwrap() == 3);
+        let (_, docs) = call(&app, &token, "GET", "/field/data", "").await;
+        assert!(!docs["docs"].as_array().unwrap().iter().any(|d| d["p"].as_str().unwrap().contains("learn")));
+        // 视角也搬到 .litmus/；旧位置（.thirdc/field-views.json）能读回
+        std::fs::write(dir.path().join(".thirdc/field-views.json"), r#"{"views":[{"name":"旧的","layout":"sem","cam":{"x":0,"y":0,"s":1},"paths":[]}]}"#).unwrap();
+        let (_, v) = call(&app, &token, "GET", "/field/views", "").await;
+        assert_eq!(v["views"][0]["name"], "旧的");
+        let (_, _) = call(&app, &token, "PUT", "/field/views", r#"{"views":[{"name":"新的","layout":"sem","cam":{"x":0,"y":0,"s":1},"paths":[]}]}"#).await;
+        assert!(std::fs::read_to_string(dir.path().join(".litmus/views.json")).unwrap().contains("新的"));
+    }
+
+    #[tokio::test]
+    async fn learn_and_ai_organize_use_the_model() {
+        let (app, token, _dir) = app();
+        seed(&app, &token).await;
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/发布/x.md")), "---\ntags: [发布]\n---\n# 发布\n\n发布 站点").await;
+        assert_eq!(st, 200);
+        let base = mock_json_llm(|sys, user| {
+            if sys.contains("对照原文") {
+                "讲对了：两边保留\n漏掉了：没有\n讲偏了：没有\n评分：清楚".into()
+            } else if sys.contains("出一道") {
+                "为什么冲突时不直接用新的覆盖旧的？".into()
+            } else if sys.contains("整理个人知识库") {
+                assert!(user.contains("已有标签：发布"), "{user}");
+                r##"好的 ```json {"items":[{"path":"Notes/同步/协议.md","tags":["同步","#新词 有空格","CRDT"],"title":"同步协议：冲突两边保留"},{"path":"Notes/不存在.md","tags":["x"]}]} ```"##.into()
+            } else {
+                "?".into()
+            }
+        })
+        .await;
+        let (st, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        assert_eq!(st, 200);
+        let (st, q) = call(&app, &token, "POST", "/field/learn", r#"{"task":"question","title":"同步协议","section":"冲突","text":"冲突时两边都保留"}"#).await;
+        assert_eq!(st, 200);
+        assert!(q["text"].as_str().unwrap().starts_with("为什么"));
+        let (_, c) = call(&app, &token, "POST", "/field/learn", r#"{"task":"check","title":"同步协议","section":"冲突","text":"冲突时两边都保留","answer":"两边都留着"}"#).await;
+        assert_eq!(c["grade"], "good");
+        assert!(!c["text"].as_str().unwrap().contains("评分"), "评分行不给用户看，换成按钮提示");
+        let (st, plan) = call(&app, &token, "POST", "/field/organize", r#"{"ai":true}"#).await;
+        assert_eq!(st, 200, "{plan}");
+        let tags = plan["tags"].as_array().unwrap();
+        let t = tags.iter().find(|t| t["path"] == "Notes/同步/协议.md").expect("补标签建议");
+        assert_eq!(t["tags"], serde_json::json!(["同步", "CRDT"]), "带空格的新词要丢掉：{plan}");
+        assert!(!tags.iter().any(|t| t["path"] == "Notes/不存在.md"), "库里没有的路径不收");
+        assert!(plan["titles"].as_array().unwrap().iter().any(|t| t["to"] == "同步协议：冲突两边保留"));
+        let (_, plain) = call(&app, &token, "POST", "/field/organize", "{}").await;
+        assert!(plain["tags"].as_array().unwrap().is_empty() && plain["ai"] == false);
+    }
+
+    #[tokio::test]
+    async fn localize_saves_body_and_images() {
+        use axum::{routing::get, Router};
+        let png: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3, 253, 167, 98, 97, 21, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
+        let body = format!(
+            "<html><head><title>网页标题</title></head><body><nav>导航 首页 关于</nav><article><h1>一篇好文章</h1><h2>第一节</h2><p>{}</p><p><img src=\"/img/a.png\" alt=\"图一\"></p><p><img src=\"missing.png\" alt=\"坏图\"></p><ul><li>要点甲</li><li>要点乙</li></ul></article><footer>版权所有</footer></body></html>",
+            "这是正文，讲本地化。".repeat(30)
+        );
+        let site = Router::new()
+            .route("/post/1", get(move || { let b = body.clone(); async move { axum::response::Html(b) } }))
+            .route("/img/a.png", get(move || { let p = png.clone(); async move { ([("content-type", "image/png")], p) } }));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, site).await.unwrap() });
+        let (app, token, dir) = app();
+        let (st, r) = call(&app, &token, "POST", "/field/localize", &serde_json::json!({"url": format!("http://{addr}/post/1")}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["images"], 1);
+        assert_eq!(r["failed"], 1);
+        let rel = r["rel"].as_str().unwrap();
+        let md = std::fs::read_to_string(dir.path().join(rel)).unwrap();
+        assert!(md.contains("一篇好文章") && md.contains("## 第一节") && md.contains("- 要点甲"), "{md}");
+        assert!(!md.contains("导航") && !md.contains("版权所有"), "页面框架要去掉：{md}");
+        assert!(md.contains("](Assets/"), "图片要换成库内地址：{md}");
+        assert!(md.contains(&format!("](http://{addr}/post/missing.png)")), "下不来的图保留原地址：{md}");
+        let (st, _) = call(&app, &token, "POST", "/field/localize", r#"{"url":"ftp://x"}"#).await;
+        assert_eq!(st, 400);
     }
 
     #[tokio::test]

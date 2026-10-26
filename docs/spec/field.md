@@ -96,8 +96,12 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | F3-2 批量整理 | `POST /field/organize` 只给建议：根目录散文档 → 所在区域成员最多的文件夹（≥3 篇且占区域三分之一）、占位文件名 → 正文 H1、近邻相似度 ≥ 0.86 → 可能重复（只提示）。执行逐条调 `/doc/move`（现在会改 `[[路径]]`、`[[文件名]]`、`](路径)` 三种链接）与 `/doc/autoname`，记录反向操作供撤销 | 已完成 |
 | F3-3 加密分享 | `server/src/share.rs`：`POST /share` 存密文到 `.thirdc/shares/`；`GET /s/{id}` 免令牌返回内嵌密文的查看页（`share.html`，CSP 禁外连，正文在无脚本沙箱 iframe）；有公开目标时同一页写到站点 `e/{id}.html` 并部署；`GET /shares` 列表、`DELETE /share/{id}` 撤回（公开副本以空页覆盖）。密钥：随机 256 位放 `#k2=`，或密码经 PBKDF2-SHA256 21 万轮；兼容经典壳的 `#k=` | 已完成 |
 | F3-4 视角 | `GET/PUT /field/views`（`.thirdc/field-views.json`）：名字、排布、镜头（世界坐标中心 + 缩放）、文档路径、可选查询。存下 = 此刻显色的文档，没有显色就取镜头里的；切回 = 换排布、点亮这组、镜头回位 | 已完成 |
+| F4-1 账户与库 | /凭证（`/secrets`，默认遮住）、/库（桌面 `desktop_vaults` / `desktop_switch_vault` / `desktop_create_vault`；网页 `localStorage.thirdc_workspaces`）、/退出登录、/记忆（`/agent/memory`，按行「忘掉」= 改 `Notes/Agent/memory.md`）、/记住 | 已完成 |
+| F4-2 学习与日历 | 学这一篇：按 `##`（或 `###`，没有就按段落凑 500 字）切节，原文模糊，复述 → `POST /field/learn {task:question|check}` → 自评；`POST /field/learn/grade` 简化 SM-2 排下次；`GET /field/learn/state`；/复习、打开时每日提醒一次；/日历 按文档日期的月历 + 到期复习 | 已完成 |
+| F4-3 同步与 AI 整理 | 视角、区域名、复习进度存库根 `.litmus/{views,regions,learn}.json`（git 同步只排除 `.thirdc/`，又不在 `Notes/` 下，不会变成文档）；读不到时回落 0.12 的 `.thirdc/` 旧文件。`POST /field/organize {ai:true}` 追加 `tags`（优先已有标签，丢掉带空白的）与 `titles`，执行改 frontmatter / 一级标题 + autoname，可撤销 | 已完成 |
+| F4-4 插件索引与网页本地化 | /插件 内嵌 `/plugin-index` 一键装；`POST /field/localize {url, html?}`：取 `<article>`/`<main>`/`<body>`，去导航页眉页脚侧栏表单，kernel-convert 转 Markdown，图片 `kc-img://` 占位后下载入 Assets（单张 10MB、合计 60MB、最多 40 张），失败的留原地址；桌面先 `desktop_render_page` | 已完成 |
 
-其他未做：视角与区域名只存在本机（`.thirdc/` 不同步）；整理不做 AI 改写，只按场的结构给建议；密钥管理、多库切换仍在经典界面。
+其他未做：整理的 AI 建议只覆盖没标签或标题过短的前 40 篇；学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密。
 
 ## 6. 风险
 

@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 mod field;
+mod field_tools;
 mod share;
 
 pub struct AppState {
@@ -199,6 +200,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/region", post(field::region_rename))
         .route("/field/organize", post(field::organize_plan))
         .route("/field/views", get(field::views_get).put(field::views_put))
+        .route("/field/learn", post(field_tools::learn))
+        .route("/field/learn/state", get(field_tools::learn_state_get))
+        .route("/field/learn/grade", post(field_tools::learn_grade))
+        .route("/field/localize", post(field_tools::localize))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {
@@ -5235,7 +5240,7 @@ async fn ingest_web(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
     let stripped = strip_all_tags(&text);
     let words: Vec<&str> = stripped.split_whitespace().collect();
     let excerpt = words.iter().take(500).cloned().collect::<Vec<_>>().join(" ");
-    let md = format!("# {}\\n\\n> 来源：{}\\n\\n{}\\n\\n---\\n\\n<!-- 原始 HTML 已归档，见附件 -->\\n", title, url, excerpt);
+    let md = format!("# {}\n\n> 来源：{}\n\n{}\n", title, url, excerpt);
     let mut k = st.kernel.lock().unwrap();
     let uri = format!("web://{}", kernel_core::Cas::hash_hex(url.as_bytes())[..16].to_string());
     match k.import_capture("web", &uri, Some(&title), &md, "text/markdown") {

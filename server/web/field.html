@@ -294,6 +294,29 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 #p-body .row .grow input[type=text]{padding:6px 10px}
 #p-body select.sel{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);padding:9px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule)}
 .rg{pointer-events:auto;cursor:default}
+.agent.learn textarea{width:100%;box-sizing:border-box;min-height:120px;margin-top:8px;border:0;border-radius:var(--r-md);padding:10px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.7 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule);outline:none;resize:vertical}
+.agent.learn textarea:focus{box-shadow:inset 0 0 0 1.5px oklch(var(--litmus-c) / .6)}
+.agent.learn .lh{margin:12px 0 2px;font:600 var(--fs-3)/1.5 var(--f-display);color:var(--ink)}
+.agent.learn .hint{margin:0;font-size:var(--fs-2);color:var(--ink-2)}
+.agent.learn .la,.agent.learn .lg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.agent.learn .lg{border-top:1px solid var(--rule);padding-top:10px}
+.agent.learn .lg span{font-size:var(--fs-2);color:var(--ink-2);margin-right:2px}
+.agent.learn .lg .sug{box-shadow:inset 0 0 0 1.5px var(--litmus)}
+.lprog{display:flex;gap:4px;margin-top:10px}
+.lprog i{flex:1;height:4px;border-radius:2px;background:var(--rule)}
+.lprog i.cur{background:var(--ink-3)}.lprog i.ok{background:var(--litmus)}.lprog i.mid{background:oklch(var(--litmus-c) / .45)}.lprog i.no{background:var(--acid)}
+body.learning #doc .body{filter:blur(7px);opacity:.55;transition:filter var(--dur-4),opacity var(--dur-4);user-select:none}
+body.learning.peek #doc .body{filter:none;opacity:1;user-select:auto}
+.calh{display:flex;align-items:center;gap:8px;margin-bottom:10px}.calh .btn{min-width:36px;text-align:center}.calh b{flex:1;text-align:center;font:600 var(--fs-3) var(--f-display)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal em{font:500 var(--fs-1) var(--f-mono);color:var(--ink-2);text-align:center;font-style:normal;padding-bottom:4px}
+.cal .cd{position:relative;aspect-ratio:1.25;border:0;border-radius:var(--r-sm);background:var(--paper);color:var(--ink-2);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:var(--fs-2)}
+.cal .cd:disabled{cursor:default;opacity:.55}
+.cal .cd small{font:500 var(--fs-1) var(--f-mono)}
+.cal .cd.lv1{background:oklch(var(--litmus-c) / .1)}.cal .cd.lv2{background:oklch(var(--litmus-c) / .22)}.cal .cd.lv3{background:oklch(var(--litmus-c) / .38);color:var(--ink)}.cal .cd.lv4{background:oklch(var(--litmus-c) / .55);color:var(--ink)}
+.cal .cd.today{box-shadow:inset 0 0 0 1.5px var(--ink)}
+.cal .cd.on{box-shadow:inset 0 0 0 2px var(--litmus)}
+.cal .cd i{position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--acid)}
 /* 更多菜单与目录 */
 .pop{position:fixed;z-index:65;min-width:200px;max-width:min(320px,calc(100vw - 24px));max-height:60vh;overflow:auto;background:var(--sheet);border-radius:var(--r-md);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);padding:5px}
 .pop button{display:flex;width:100%;border:0;background:none;text-align:left;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;font-size:var(--fs-3);gap:10px;align-items:baseline}
@@ -481,6 +504,11 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>批量整理</td><td>/整理：放回意思所在的文件夹、占位名换成标题、提示可能重复；执行后可撤销</td></tr>
         <tr><td>加密分享</td><td>「⋯」→ 加密分享（可设密码与有效期）；/分享 查看与撤回</td></tr>
         <tr><td>区域名</td><td>双击场上的区域名，或 /区域</td></tr>
+        <tr><td>学习</td><td>「⋯」→ 学这一篇，或 /学习：合上原文一节一节复述，按讲得清不清楚排复习；/复习</td></tr>
+        <tr><td>内容日历</td><td>/日历：每天写了什么、哪天该复习</td></tr>
+        <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
+        <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
+        <tr><td>社区插件、网页本地化</td><td>/插件 里的社区插件一键装；粘贴网址回车，正文和图片一起存进库</td></tr>
       </tbody>
     </table></div>
 
@@ -1469,6 +1497,14 @@ const CMDS = [
   ['/整理', '场给出整理建议：放回该在的文件夹、占位名换成标题、可能重复', openOrganize],
   ['/区域', '给场上的区域改名（也可以双击区域名）', openRegions],
   ['/分享', '发出过的加密分享，可撤回', openShares],
+  ['/学习', '学正在读的这篇：合上原文，一节一节用自己的话讲', () => startLearn(reading)],
+  ['/复习', '今天该复习的文档，以及接下来的', openReview],
+  ['/日历', '哪天写了什么、哪天该复习', () => openCalendar()],
+  ['/记忆', 'Agent 记住的事：偏好、事实、决定', openMemory],
+  ['/记住', '让 Agent 记住一件事（/记住 周报不超过 300 字）', () => openMemory()],
+  ['/凭证', 'API 密钥等凭证（只在本机）', openSecrets],
+  ['/库', '切换、新建或连接知识库', openVaults],
+  ['/退出登录', '网页版退出登录', logout],
   ['/更新', '检查桌面 App 的新版本', openUpdate],
   ['/发布', '发布目标、构建站点、部署，已发布的网页', openPublish],
   ['/展示', '把整库做成一份可翻页的展示', presentAll],
@@ -1552,8 +1588,8 @@ async function submit(){
   const s = q.value.trim(), v = intentOf(s);
   if (!s){ q.focus(); return; }
   if (v === '令'){
-    const m = s.match(/^[\/、](新建|采集|做|视图|视角)\s+(.+)$/);
-    if (m){ q.value = ''; onInput(); hideCmds(); ({新建:newDoc, 采集:collectTopic, 做:runAgent, 视图:makeView, 视角:v => { loadViews().then(() => { const hit = views.find(x => x.name === v.trim()); hit ? goView(hit) : saveView(v); }); }})[m[1]](m[2]); return; }
+    const m = s.match(/^[\/、](新建|采集|做|视图|视角|记住)\s+(.+)$/);
+    if (m){ q.value = ''; onInput(); hideCmds(); ({新建:newDoc, 采集:collectTopic, 做:runAgent, 视图:makeView, 记住:t => remember(t.trim()), 视角:v => { loadViews().then(() => { const hit = views.find(x => x.name === v.trim()); hit ? goView(hit) : saveView(v); }); }})[m[1]](m[2]); return; }
     runCmd(($('cmds')._list || [])[cmdSel]); return;
   }
   if (v === '记'){ const body = s.replace(/^[+＋]|^记[\s:：]/, '').trim(); q.value = ''; onInput(); capture(body); return; }
@@ -1661,6 +1697,8 @@ $('s-more').onclick = () => {
     '-',
     {label:'发布为公开网页', run:() => publishDoc(n)},
     {label:'加密分享…', run:() => shareDoc(n)},
+    '-',
+    {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
     '-',
     ...(isMd ? [{label:'导出为 Markdown', run:() => exportDoc(n, 'md')}, {label:'导出为 Word（.docx）', run:() => exportDoc(n, 'docx')}] : []),
     {label:'导出为 HTML', run:() => exportDoc(n, 'html')},
@@ -1771,15 +1809,7 @@ async function syncNow(){
 }
 
 /* 收：网页、主题、文件 */
-async function collectUrl(url){
-  toast('正在抓取网页…');
-  try {
-    const r = await api('/ingest/web', {method:'POST', json:{url}});
-    await refreshNow(); const n = byPath.get(r.rel);
-    if (n){ flash(n); focusOn(n.gx, n.gy, Math.max(cam.ts, .7), (vw - sheetW()) / 2, vh * .42); }
-    toastAct('收进来了：<b>' + esc(r.title || r.rel) + '</b>', '打开', () => n && openDoc(n));
-  } catch(e){ toast('<b>没抓下来</b>：' + esc(e.message || e) + '。可以换个网址，或者把正文复制进来用 + 记一笔', true); }
-}
+async function collectUrl(url){ return localizeUrl(url); }
 function collectTopic(topic){
   if (!topic){
     const box = openPanel('按主题采集', '<label for="ct-t">主题</label><input type="text" id="ct-t" placeholder="比如：向量数据库"><p class="hint">从维基、HN、arXiv 等公开来源找几篇相关资料，转成 Markdown 存进库里，并落到场上。</p><div class="acts"><button class="btn pri" id="ct-go">开始采集</button></div>');
@@ -2120,13 +2150,14 @@ async function openPlugins(){
     ((p.views || []).map((v, i) => p.enabled ? '<button class="btn" data-view="' + esc(p.id) + ':' + i + '">' + esc(v.title || '视图') + '</button>' : '').join('')) +
     '<button class="btn" data-toggle="' + esc(p.id) + '">' + (p.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(p.id) + '">删除</button></div>').join('')
     : '<p class="empty">还没有插件。</p>') +
-    '<label for="pl-url">从 GitHub 安装</label><input type="text" id="pl-url" placeholder="https://github.com/作者/仓库"><p class="hint">仓库根或一层子目录里有 manifest.json 就行，一个仓库可以带多个插件。启用后，插件的命令和视图会出现在 / 指令里。</p><div class="acts"><button class="btn pri" id="pl-go">安装</button><span id="pl-msg"></span></div>');
+    '<div id="pl-index"><p class="hint">正在读社区插件索引…</p></div><label for="pl-url">从 GitHub 安装</label><input type="text" id="pl-url" placeholder="https://github.com/作者/仓库"><p class="hint">仓库根或一层子目录里有 manifest.json 就行，一个仓库可以带多个插件。启用后，插件的命令和视图会出现在 / 指令里。</p><div class="acts"><button class="btn pri" id="pl-go">安装</button><span id="pl-msg"></span></div>');
   box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
   box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; }
     await api('/plugins/remove', {method:'POST', json:{name:b.dataset.del}}).catch(e => toast(esc(e.message), true)); openPlugins();
   });
+  wirePluginIndex(box);
   $('pl-go').onclick = async () => { const url = $('pl-url').value.trim(); if (!url) return; const m = $('pl-msg'); m.className = ''; m.textContent = '正在安装…'; try { const r = await api('/plugins/install', {method:'POST', json:{url}}); m.className = 'ok'; m.textContent = '装好了：' + (r.installed || []).join('、'); setTimeout(openPlugins, 600); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
 }
 async function runPluginCommand(p, c){
@@ -2331,49 +2362,91 @@ async function openViews(){
 
 /* ═══════════ F3 批量整理：场给建议，确认后执行，可撤销 ═══════════ */
 let lastOrganize = null;
-async function openOrganize(){
-  const box = openPanel('整理', '<span class="thinking"><i></i><i></i><i></i> 正在看整片场</span>');
+async function openOrganize(ai){
+  const box = openPanel('整理', '<span class="thinking"><i></i><i></i><i></i> ' + (ai ? '正在请 AI 一起看（可能要半分钟）' : '正在看整片场') + '</span>');
   $('panel').querySelector('.pbox').style.width = 'min(780px,100%)';
-  let r; try { r = await api('/field/organize', {method:'POST', json:{}}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  let r; try { r = await api('/field/organize', {method:'POST', json:{ai:!!ai}}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   const short = p => p.replace(/^Notes\//, '');
-  const nm = (r.moves || []).length, nr = (r.renames || []).length, nd = (r.dups || []).length;
-  const affected = [...(r.moves || []).map(m => m.from), ...(r.renames || []).map(m => m.path), ...(r.dups || []).flatMap(d => [d.a, d.b])].map(p => byPath.get(p)).filter(Boolean);
+  const nm = (r.moves || []).length, nr = (r.renames || []).length, nd = (r.dups || []).length, nt = (r.tags || []).length, nti = (r.titles || []).length;
+  const affected = [...(r.moves || []).map(m => m.from), ...(r.renames || []).map(m => m.path), ...(r.tags || []).map(m => m.path), ...(r.titles || []).map(m => m.path), ...(r.dups || []).flatMap(d => [d.a, d.b])].map(p => byPath.get(p)).filter(Boolean);
   if (affected.length){ lastRel = affected.map(n => ({n, norm:.8})); paint(lastRel, {soft:true}); }
-  box.innerHTML = '<p class="hint" style="margin-top:0">看了 ' + r.considered + ' 篇。下面是建议，勾掉不想要的再执行；移动和改名都会把指向它们的链接一起改好，执行后可以一键撤销。</p>' +
-    '<label>放回它意思所在的文件夹 · ' + nm + '</label>' + (nm ? r.moves.map((m, i) => '<label class="row chk"><input type="checkbox" data-mv="' + i + '" checked><div class="grow"><span>' + esc(m.title || short(m.from)) + '</span><small>' + esc(short(m.from)) + ' → ' + esc(short(m.to)) + '</small><small>' + esc(m.reason) + '</small></div><button class="btn" type="button" data-see="' + esc(m.from) + '">看看</button></label>').join('') : '<p class="empty">根目录里没有放错地方的文档。</p>') +
-    '<label>把占位文件名换成标题 · ' + nr + '</label>' + (nr ? r.renames.map((m, i) => '<label class="row chk"><input type="checkbox" data-rn="' + i + '" checked><div class="grow"><span>' + esc(m.to) + '</span><small>' + esc(short(m.path)) + ' · ' + esc(m.reason) + '</small></div><button class="btn" type="button" data-see="' + esc(m.path) + '">看看</button></label>').join('') : '<p class="empty">没有「未命名」这类文件名。</p>') +
+  const see = p => '<button class="btn" type="button" data-see="' + esc(p) + '">看看</button>';
+  box.innerHTML = '<p class="hint" style="margin-top:0">看了 ' + r.considered + ' 篇。下面是建议，勾掉不想要的再执行；移动和改名会把指向它们的链接一起改好，执行后可以一键撤销。</p>' +
+    (r.ai_note ? '<p class="hint">' + esc(r.ai_note) + '</p>' : '') +
+    '<label>放回它意思所在的文件夹 · ' + nm + '</label>' + (nm ? r.moves.map((m, i) => '<label class="row chk"><input type="checkbox" data-mv="' + i + '" checked><div class="grow"><span>' + esc(m.title || short(m.from)) + '</span><small>' + esc(short(m.from)) + ' → ' + esc(short(m.to)) + '</small><small>' + esc(m.reason) + '</small></div>' + see(m.from) + '</label>').join('') : '<p class="empty">根目录里没有放错地方的文档。</p>') +
+    '<label>把占位文件名换成标题 · ' + nr + '</label>' + (nr ? r.renames.map((m, i) => '<label class="row chk"><input type="checkbox" data-rn="' + i + '" checked><div class="grow"><span>' + esc(m.to) + '</span><small>' + esc(short(m.path)) + ' · ' + esc(m.reason) + '</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">没有「未命名」这类文件名。</p>') +
+    (r.ai ? '<label>补标签 · ' + nt + '（AI）</label>' + (nt ? r.tags.map((m, i) => '<label class="row chk"><input type="checkbox" data-tg="' + i + '" checked><div class="grow"><span>' + esc(m.title) + '</span><small>' + m.tags.map(t => '#' + esc(t) + ((m.new || []).includes(t) ? '（新）' : '')).join(' ') + '</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">没有要补标签的。</p>') +
+      '<label>更清楚的标题 · ' + nti + '（AI）</label>' + (nti ? r.titles.map((m, i) => '<label class="row chk"><input type="checkbox" data-ti="' + i + '"><div class="grow"><span>' + esc(m.to) + '</span><small>原来「' + esc(m.from) + '」 · 会改一级标题和文件名</small></div>' + see(m.path) + '</label>').join('') : '<p class="empty">标题都还清楚。</p>') : '') +
     '<label>可能重复 · ' + nd + '</label>' + (nd ? r.dups.map(d => '<div class="row"><div class="grow"><span>' + esc(d.ta) + ' ↔ ' + esc(d.tb) + '</span><small>相似度 ' + d.sim + ' · 只提示，不自动合并</small></div><button class="btn" data-see="' + esc(d.a) + '">打开前一篇</button><button class="btn" data-see="' + esc(d.b) + '">后一篇</button></div>').join('') : '<p class="empty">没有发现很像的两篇。</p>') +
-    '<div class="acts"><button class="btn pri" id="org-go"' + (nm + nr ? '' : ' disabled') + '>执行勾选的 ' + (nm + nr) + ' 项</button><span id="org-msg"></span></div>';
-  const count = () => { const k = box.querySelectorAll('input[data-mv]:checked,input[data-rn]:checked').length; $('org-go').textContent = '执行勾选的 ' + k + ' 项'; $('org-go').disabled = !k; };
+    '<div class="acts"><button class="btn pri" id="org-go">执行</button>' + (r.ai ? '' : '<button class="btn" id="org-ai">让 AI 也看看：补标签、起标题</button>') + '<span id="org-msg"></span></div>';
+  const count = () => { const k = box.querySelectorAll('input[type=checkbox]:checked').length; $('org-go').textContent = '执行勾选的 ' + k + ' 项'; $('org-go').disabled = !k; };
+  count();
   box.querySelectorAll('input[type=checkbox]').forEach(c => c.onchange = count);
   box.querySelectorAll('[data-see]').forEach(b => b.onclick = e => { e.preventDefault(); const n = byPath.get(b.dataset.see); if (n){ closePanel(); openDoc(n); } });
+  if ($('org-ai')) $('org-ai').onclick = () => openOrganize(true);
   $('org-go').onclick = async () => {
-    const mv = [...box.querySelectorAll('input[data-mv]:checked')].map(c => r.moves[+c.dataset.mv]);
-    const rn = [...box.querySelectorAll('input[data-rn]:checked')].map(c => r.renames[+c.dataset.rn]);
+    const pick = (attr, list) => [...box.querySelectorAll('input[' + attr + ']:checked')].map(c => list[+c.getAttribute(attr)]);
+    const mv = pick('data-mv', r.moves || []), rn = pick('data-rn', r.renames || []), tg = pick('data-tg', r.tags || []), ti = pick('data-ti', r.titles || []);
     const msg = $('org-msg'); $('org-go').disabled = true; msg.className = ''; msg.textContent = '正在执行…';
-    const undo = [], fails = []; let relinked = 0;
+    if (editing) await flushSave();
+    const undo = [], fails = []; let relinked = 0, done = 0;
+    const src = async p => (await api('/doc?path=' + encP(p))).source || '';
+    const put = (p, md) => api('/doc?path=' + encP(p), {method:'PUT', body:md, headers:{'content-type':'text/markdown'}});
+    for (const m of tg){
+      try { const md = await src(m.path), next = addTags(md, m.tags); if (next !== md){ await put(m.path, next); undo.push({write:m.path, md}); done++; } }
+      catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
+    }
+    for (const m of ti){
+      try {
+        const md = await src(m.path); await put(m.path, setH1(md, m.to));
+        const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}});
+        undo.push({write:x.renamed ? x.path : m.path, md}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; }
+        done++;
+      } catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
+    }
     for (const m of mv){
-      try { const x = await api('/doc/move', {method:'POST', json:{from:m.from, to:m.to}}); undo.push({from:m.to, to:m.from}); relinked += x.relinked || 0; }
+      try { const x = await api('/doc/move', {method:'POST', json:{from:m.from, to:m.to}}); undo.push({from:m.to, to:m.from}); relinked += x.relinked || 0; done++; }
       catch(e){ fails.push(short(m.from) + '：' + (e.message || e)); }
     }
     for (const m of rn){
-      try { const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; } }
+      try { const x = await api('/doc/autoname', {method:'POST', json:{path:m.path}}); if (x.renamed){ undo.push({from:x.path, to:m.path}); relinked += x.relinked || 0; done++; } }
       catch(e){ fails.push(short(m.path) + '：' + (e.message || e)); }
     }
     lastOrganize = undo.reverse();
     await refreshNow();
-    const moved = undo.map(u => byPath.get(u.from)).filter(Boolean);
-    if (moved.length){ lastRel = moved.map(n => ({n, norm:1})); paint(lastRel, {}); }
+    const touched = [...mv.map(m => m.to), ...tg.map(m => m.path)].map(p => byPath.get(p)).filter(Boolean);
+    if (touched.length){ lastRel = touched.map(n => ({n, norm:1})); paint(lastRel, {}); }
     closePanel();
-    toastAct('整理了 <b>' + undo.length + '</b> 篇' + (relinked ? '，改好 ' + relinked + ' 处链接' : '') + (fails.length ? '；' + fails.length + ' 项没做成' : ''), '撤销', undoOrganize, !!fails.length);
-    if (fails.length) console.warn('整理失败项', fails);
+    toastAct('整理了 <b>' + done + '</b> 项' + (relinked ? '，改好 ' + relinked + ' 处链接' : '') + (fails.length ? '；' + fails.length + ' 项没做成：' + esc(fails[0]) : ''), '撤销', undoOrganize, !!fails.length);
   };
 }
+/* 撤销按执行的反序：先把文件挪回去，再写回原文 */
 async function undoOrganize(){
   const u = lastOrganize; if (!u || !u.length) return; lastOrganize = null;
-  let ok = 0; for (const m of u){ try { await api('/doc/move', {method:'POST', json:m}); ok++; } catch(e){} }
+  let ok = 0;
+  for (const m of u){
+    try {
+      if (m.write){ /* 写回时文件可能已被挪回原处 */ const back = u.find(x => x.from === m.write); await api('/doc?path=' + encP(back ? back.to : m.write), {method:'PUT', body:m.md, headers:{'content-type':'text/markdown'}}); }
+      else await api('/doc/move', {method:'POST', json:m});
+      ok++;
+    } catch(e){}
+  }
   await refreshNow(); clearReaction();
   toast(ok === u.length ? '已撤销整理' : '撤销了 ' + ok + ' / ' + u.length + ' 项', ok !== u.length);
+}
+/* 往 frontmatter 的 tags 里补标签（没有 frontmatter 就加一段） */
+function addTags(md, tags){
+  const fm = md.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (!fm) return '---\ntags: [' + tags.join(', ') + ']\n---\n' + md;
+  let body = fm[1]; const m = body.match(/^tags:\s*\[(.*)\]\s*$/m);
+  if (m){ const have = m[1].split(',').map(x => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean); const all = [...new Set([...have, ...tags])]; body = body.replace(m[0], 'tags: [' + all.join(', ') + ']'); }
+  else if (/^tags:\s*$/m.test(body)){ const extra = tags.map(t => '  - ' + t).join('\n'); body = body.replace(/^tags:\s*$/m, 'tags:\n' + extra); }
+  else body += '\ntags: [' + tags.join(', ') + ']';
+  return '---\n' + body + '\n---\n' + md.slice(fm[0].length);
+}
+function setH1(md, title){
+  const fm = (md.match(/^---\n[\s\S]*?\n---\n?/) || [''])[0], rest = md.slice(fm.length);
+  return fm + (/^\s*# .*/.test(rest) ? rest.replace(/^(\s*)# .*/, '$1# ' + title) : '# ' + title + '\n\n' + rest);
 }
 
 /* ═══════════ F3 加密分享 ═══════════ */
@@ -2447,7 +2520,6 @@ addEventListener('menu:toggle-theme', () => toggleTheme());
 addEventListener('menu:check-update', () => openUpdate());
 addEventListener('tray-new-doc', () => newDoc(''));
 addEventListener('tray-open-doc', e => { const p = e.detail && e.detail.path; const n = p && byPath.get(p); if (n) openDoc(n); else if (p) refreshNow().then(() => { const m = byPath.get(p); if (m) openDoc(m); }); });
-addEventListener('tray-secrets', () => { toast('密钥管理还在经典界面'); setTimeout(goClassic, 900); });
 async function openUpdate(){
   if (!DESK){ openPanel('更新', '<p>浏览器里用的是服务器上的鹿蕊，服务器更新后刷新页面就是新版。桌面 App 支持一键自更新。</p>'); return; }
   const box = openPanel('更新', '<p id="up-st"><span class="thinking"><i></i><i></i><i></i> 正在检查</span></p><div class="acts" id="up-acts" hidden><button class="btn pri" id="up-go">下载并安装</button></div>');
@@ -2459,6 +2531,281 @@ async function openUpdate(){
       $('up-go').onclick = async () => { $('up-go').disabled = true; $('up-st').textContent = '正在下载并安装…完成后会自动重启'; try { await window.__TAURI_INTERNALS__.invoke('desktop_install_update'); } catch(e){ $('up-st').textContent = '更新失败：' + (e.message || e); $('up-go').disabled = false; } };
     } else $('up-st').textContent = '已是最新版本' + (r && r.current ? '（v' + r.current + '）' : '');
   } catch(e){ if ($('up-st')) $('up-st').textContent = '检查失败：' + (e.message || e); }
+}
+
+
+/* ═══════════ F4 凭证库（只在本机，明文存 .thirdc/secrets.json） ═══════════ */
+async function openSecrets(){
+  const box = openPanel('凭证库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let r; try { r = await api('/secrets'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const list = r.secrets || [];
+  const mask = v => v ? v.slice(0, 3) + '•'.repeat(Math.min(12, Math.max(4, v.length - 5))) + (v.length > 8 ? v.slice(-2) : '') : '';
+  box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备（库的 .thirdc/ 里），不同步、不进 git。</p>' +
+    (list.length ? list.map((s, i) => '<div class="row"><div class="grow"><span>' + esc(s.name) + '</span><small data-v="' + i + '">' + esc(mask(s.value)) + (s.note ? ' · ' + esc(s.note) : '') + '</small></div><button class="btn" data-show="' + i + '">显示</button><button class="btn" data-copy="' + i + '">复制</button><button class="btn" data-del="' + i + '">删除</button></div>').join('') : '<p class="empty">还没有凭证。</p>') +
+    '<label for="sc-n">新增或更新（同名会覆盖）</label><input type="text" id="sc-n" placeholder="名字，比如 openai" autocomplete="off"><input type="password" id="sc-v" placeholder="值" autocomplete="new-password" style="margin-top:8px"><input type="text" id="sc-note" placeholder="备注（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="sc-go">保存</button><span id="sc-msg"></span></div>';
+  box.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const i = +b.dataset.show, sm = box.querySelector('[data-v="' + i + '"]'), s = list[i]; const on = b.textContent === '显示'; sm.textContent = (on ? s.value : mask(s.value)) + (s.note ? ' · ' + s.note : ''); b.textContent = on ? '隐藏' : '显示'; });
+  box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(list[+b.dataset.copy].value); toast('已复制 <b>' + esc(list[+b.dataset.copy].name) + '</b>'); } catch(e){ toast('复制失败：先点「显示」再手动复制', true); } });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次'; b.classList.add('danger'); return; }
+    try { await api('/secrets?name=' + encodeURIComponent(list[+b.dataset.del].name), {method:'DELETE'}); openSecrets(); } catch(e){ toast(esc(e.message), true); }
+  });
+  $('sc-go').onclick = async () => {
+    const name = $('sc-n').value.trim(), value = $('sc-v').value, note = $('sc-note').value.trim(), m = $('sc-msg');
+    if (!name || !value){ m.className = 'bad'; m.textContent = '名字和值都要填'; return; }
+    try { await api('/secrets', {method:'POST', json:{name, value, note}}); toast('已保存凭证 <b>' + esc(name) + '</b>'); openSecrets(); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); }
+  };
+}
+addEventListener('tray-secrets', () => openSecrets());
+
+/* ═══════════ F4 知识库：切换、新建、连接远程库；退出登录 ═══════════ */
+function webSpaces(){ try { return JSON.parse(localStorage.getItem('thirdc_workspaces') || '[]'); } catch(e){ return []; } }
+async function openVaults(){
+  if (DESK){
+    const box = openPanel('知识库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+    let r; try { r = await window.__TAURI_INTERNALS__.invoke('desktop_vaults'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+    const cur = (r.current || {}).path || '';
+    box.innerHTML = '<p class="hint" style="margin-top:0">每个库是磁盘上的一个文件夹。切换后窗口会重新载入；各库的知识场互不相干。</p>' +
+      (r.vaults || []).map((v, i) => '<div class="row"><div class="grow"><span>' + esc(v.name) + (v.path === cur ? ' · 当前' : '') + '</span><small>' + esc(v.path) + '</small></div>' + (v.path === cur ? '' : '<button class="btn" data-sw="' + i + '">切过去</button>') + '</div>').join('') +
+      '<label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="名字，会建在「文稿」文件夹里"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
+    box.querySelectorAll('[data-sw]').forEach(b => b.onclick = async () => {
+      const v = r.vaults[+b.dataset.sw]; if (editing) await flushSave();
+      b.disabled = true; b.textContent = '正在切换…';
+      try { await window.__TAURI_INTERNALS__.invoke('desktop_switch_vault', {path:v.path}); } catch(e){ toast('<b>切换失败</b>：' + esc(e.message || e), true); b.disabled = false; b.textContent = '切过去'; }
+    });
+    $('vl-go').onclick = async () => {
+      const name = $('vl-new').value.trim(), m = $('vl-msg'); if (!name) return;
+      if (editing) await flushSave();
+      m.className = ''; m.textContent = '正在新建…';
+      try { await window.__TAURI_INTERNALS__.invoke('desktop_create_vault', {name}); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); }
+    };
+    return;
+  }
+  const list = webSpaces(), here = location.origin + BASE;
+  const box = openPanel('知识库', '<p class="hint" style="margin-top:0">这是网页里的鹿蕊：一个地址就是一个库。下面记着你连过的库（只存在这个浏览器里）。</p>' +
+    '<div class="row"><div class="grow"><span>' + esc(vaultName || '当前库') + ' · 当前</span><small>' + esc(here) + '</small></div></div>' +
+    list.filter(w => w.url !== here).map((w, i) => '<div class="row"><div class="grow"><span>' + esc(w.name || w.url) + '</span><small>' + esc(w.url) + '</small></div><button class="btn" data-go="' + i + '">切过去</button><button class="btn" data-rm="' + i + '">移除</button></div>').join('') +
+    '<label for="ws-url">连接另一个库</label><input type="text" id="ws-url" placeholder="地址，比如 https://example.com/thirdc"><input type="password" id="ws-tok" placeholder="令牌（那台鹿蕊的 .thirdc/machine.toml 里的 token）" style="margin-top:8px"><input type="text" id="ws-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="ws-go">记下并切过去</button></div>');
+  const others = list.filter(w => w.url !== here);
+  box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const w = others[+b.dataset.go]; try { localStorage.setItem('thirdc_token', w.token); localStorage.setItem('thirdc_last_ws', w.url); } catch(e){} location.href = w.url + '/field?token=' + encodeURIComponent(w.token); });
+  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const w = others[+b.dataset.rm]; try { localStorage.setItem('thirdc_workspaces', JSON.stringify(list.filter(x => x !== w))); } catch(e){} openVaults(); });
+  $('ws-go').onclick = () => {
+    const url = $('ws-url').value.trim().replace(/\/+$/, '').replace(/\/field$/, ''), tok = $('ws-tok').value.trim(), name = $('ws-name').value.trim();
+    if (!/^https?:\/\//.test(url) || !tok){ toast('地址要以 http(s):// 开头，令牌也要填', true); return; }
+    const next = list.filter(w => w.url !== url); next.push({name:name || url.replace(/^https?:\/\//, ''), url, token:tok});
+    if (!next.some(w => w.url === here)) next.unshift({name:vaultName || '这个库', url:here, token});
+    try { localStorage.setItem('thirdc_workspaces', JSON.stringify(next)); localStorage.setItem('thirdc_token', tok); } catch(e){}
+    location.href = url + '/field?token=' + encodeURIComponent(tok);
+  };
+}
+async function logout(){
+  if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还有没存上的改动</b>，等它存好再退出', true); return; } }
+  if (DESK){ toast('桌面 App 不需要登录：它直接打开本机的库'); return; }
+  try { localStorage.removeItem('thirdc_token'); localStorage.removeItem('thirdc_user'); } catch(e){}
+  location.href = BASE + '/';
+}
+
+/* ═══════════ F4 Agent 记忆：它记住的事都在 Notes/Agent/memory.md 里，普通文档 ═══════════ */
+const MEM_PATH = 'Notes/Agent/memory.md';
+const MEM_RE = /^- \[(.+?)\] (.+?) · (\S+)\s*$/;
+async function openMemory(){
+  const box = openPanel('Agent 记忆', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let text = ''; try { text = (await api('/agent/memory')).memory || ''; } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const lines = text.split('\n'), items = lines.map((l, i) => { const m = l.match(MEM_RE); return m ? {i, kind:m[1], text:m[2], date:m[3]} : null; }).filter(Boolean).reverse();
+  box.innerHTML = '<p class="hint" style="margin-top:0">Agent 做事前会先翻这里。记的是你的偏好、事实和做过的决定；它就是库里的一篇普通文档（' + MEM_PATH + '），会跟着库同步。</p>' +
+    '<label for="mem-t">让它记住一件事</label><div class="row" style="border:0;padding:0"><select id="mem-k" class="sel" style="width:auto"><option>偏好</option><option selected>事实</option><option>决策</option></select><div class="grow"><input type="text" id="mem-t" placeholder="比如：周报用要点，不超过 300 字"></div><button class="btn pri" id="mem-go">记住</button></div>' +
+    '<label>已经记住的 · ' + items.length + '</label>' + (items.length ? items.map(it => '<div class="row"><div class="grow"><span>' + esc(it.text) + '</span><small>' + esc(it.kind) + ' · ' + esc(it.date) + '</small></div><button class="btn" data-forget="' + it.i + '">忘掉</button></div>').join('') : '<p class="empty">还没有。也可以在底部输入「/记住 …」。</p>') +
+    (byPath.has(MEM_PATH) ? '<div class="acts"><button class="btn" id="mem-open">作为文档打开</button></div>' : '');
+  const add = async () => { const t = $('mem-t').value.trim(); if (!t) return; await remember(t, $('mem-k').value); openMemory(); };
+  $('mem-go').onclick = add; $('mem-t').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) add(); });
+  if ($('mem-open')) $('mem-open').onclick = () => { closePanel(); openDoc(byPath.get(MEM_PATH)); };
+  box.querySelectorAll('[data-forget]').forEach(b => b.onclick = async () => {
+    const i = +b.dataset.forget; let cur;
+    try { cur = (await api('/agent/memory')).memory || ''; } catch(e){ toast(esc(e.message), true); return; }
+    const ls = cur.split('\n'); if (ls[i] !== lines[i]){ toast('记忆刚被改过，重新打开再试', true); openMemory(); return; }
+    ls.splice(i, 1);
+    try { await api('/doc?path=' + encP(MEM_PATH), {method:'PUT', body:ls.join('\n'), headers:{'content-type':'text/markdown'}}); toast('忘掉了'); openMemory(); } catch(e){ toast(esc(e.message), true); }
+  });
+}
+async function remember(text, kind){
+  try { await api('/agent/memory', {method:'POST', json:{kind:kind || '事实', text}}); toast('记住了：<b>' + esc(text.slice(0, 40)) + '</b>'); refreshSoon(); }
+  catch(e){ toast('<b>没记上</b>：' + esc(e.message || e), true); }
+}
+
+/* ═══════════ F4 学习：合上原文，用自己的话讲一遍；按记得多牢排复习 ═══════════ */
+let learnRun = null, learnState = {cards:{}};
+async function loadLearn(){ try { learnState = await api('/field/learn/state'); if (!learnState.cards) learnState.cards = {}; } catch(e){} return learnState; }
+function sectionsOf(md, title){
+  md = String(md || '').replace(/^---\n[\s\S]*?\n---\n/, '');
+  const lines = md.split('\n'); let lv = lines.some(l => /^## /.test(l)) ? 2 : lines.some(l => /^### /.test(l)) ? 3 : 0;
+  const out = []; let cur = null, inCode = false;
+  const clean = t => t.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[\[([^\]|#]+)(?:[^\]]*)\]\]/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_`>]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  for (const l of lines){
+    if (/^```/.test(l)) inCode = !inCode;
+    const m = !inCode && lv && l.match(lv === 2 ? /^## (.+)/ : /^### (.+)/);
+    if (m){ if (cur) out.push(cur); cur = {h:m[1].trim(), body:''}; continue; }
+    if (/^# /.test(l) && !cur) continue;
+    if (!cur) cur = {h:'开头', body:''};
+    cur.body += l + '\n';
+  }
+  if (cur) out.push(cur);
+  let secs = out.map(s => ({h:s.h, text:clean(s.body)})).filter(s => s.text.length >= 30);
+  if (!lv || secs.length < 2){
+    /* 没有小标题：按段落凑成 500 字左右一节 */
+    const paras = clean(md.replace(/^# .*\n/, '')).split(/\n\s*\n/).filter(p => p.trim()); secs = []; let buf = '';
+    paras.forEach(p => { if ((buf + p).length > 550 && buf){ secs.push(buf); buf = ''; } buf += (buf ? '\n\n' : '') + p; });
+    if (buf) secs.push(buf);
+    secs = secs.map((t, i) => ({h:secs.length > 1 ? title + '（' + (i + 1) + '）' : title, text:t}));
+  }
+  return secs.slice(0, 12);
+}
+async function startLearn(n){
+  if (!n){ if (reading) n = reading; else { toast('先打开一篇，或在 /复习 里选一篇'); return; } }
+  endLearn(true); endAgent(); dissolveCrystal();
+  if (reading !== n) await openDoc(n);
+  let d = docData; if (!d || d.path !== n.p){ try { d = await api('/doc?path=' + encP(n.p)); } catch(e){ toast(esc(e.message), true); return; } }
+  if (editing) toggleEdit();
+  const secs = sectionsOf(d.source || '', n.full);
+  if (!secs.length){ toast('这篇太短了，没什么可复述的'); return; }
+  const el = document.createElement('div'); el.className = 'agent learn';
+  document.body.appendChild(el); document.body.classList.add('learning');
+  learnRun = {n, secs, i:0, grades:[], el, t0:Date.now()};
+  renderLearn();
+}
+function renderLearn(){
+  const L = learnRun; if (!L) return;
+  const s = L.secs[L.i], done = L.i >= L.secs.length, el = L.el;
+  if (done) return finishLearn();
+  el.innerHTML = '<div class="ah"><b>学</b><span class="at"></span><button class="x" aria-label="结束">×</button></div>' +
+    '<div class="lprog">' + L.secs.map((_, i) => '<i class="' + (i < L.i ? ({good:'ok', hard:'mid', again:'no'}[L.grades[i]] || 'ok') : i === L.i ? 'cur' : '') + '"></i>').join('') + '</div>' +
+    '<p class="lh"></p><p class="lq hint">原文已经合上。用自己的话讲一遍这一节在说什么、为什么重要——讲给一个没读过的人听。</p>' +
+    '<textarea id="ln-a" placeholder="写下来，或者对着屏幕说一遍也行"></textarea>' +
+    '<div class="la"><button class="btn" id="ln-q">出一道题</button><button class="btn" id="ln-c">AI 看看我讲得怎样</button><button class="btn" id="ln-r">对照原文</button></div>' +
+    '<div class="ar" id="ln-out" hidden></div>' +
+    '<div class="lg"><span>这一节我</span><button class="btn" data-g="good">讲清楚了</button><button class="btn" data-g="hard">有点模糊</button><button class="btn" data-g="again">没讲出来</button></div>';
+  el.querySelector('.at').textContent = L.n.full; el.querySelector('.lh').textContent = '第 ' + (L.i + 1) + ' / ' + L.secs.length + ' 节 · ' + s.h;
+  el.querySelector('.x').onclick = () => endLearn();
+  document.body.classList.remove('peek');
+  scrollToSection(s.h);
+  const out = $('ln-out');
+  const show = html => { out.hidden = false; out.innerHTML = html; };
+  $('ln-r').onclick = () => { const on = document.body.classList.toggle('peek'); $('ln-r').textContent = on ? '再合上' : '对照原文'; if (vw < 720 || !document.body.classList.contains('reading')) show('<div class="reply"><p>' + esc(s.text).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') + '</p></div>'); };
+  const ai = async (task, btn) => {
+    btn.disabled = true; show('<span class="thinking"><i></i><i></i><i></i> ' + (task === 'check' ? '对照原文看你讲的' : '出题中') + '</span>');
+    try {
+      const r = await api('/field/learn', {method:'POST', json:{task, title:L.n.full, section:s.h, text:s.text, answer:$('ln-a').value}});
+      show('<div class="reply">' + (task === 'question' ? '<p><b>想一想：</b>' + esc(r.text) + '</p>' : r.text.split('\n').filter(Boolean).map(l => '<p>' + esc(l).replace(/^(讲对了|漏掉了|讲偏了)：/, '<b>$1：</b>') + '</p>').join('')) + '</div>');
+      if (r.grade){ const b = el.querySelector('[data-g="' + r.grade + '"]'); if (b) b.classList.add('sug'); }
+    } catch(e){ show('<p class="hint">' + esc(e.message || e) + '</p>' + (e.status === 409 ? '<p><button class="btn" id="ln-set">去设置模型</button></p>' : '')); const sb = $('ln-set'); if (sb) sb.onclick = openSettings; }
+    btn.disabled = false;
+  };
+  $('ln-q').onclick = () => ai('question', $('ln-q'));
+  $('ln-c').onclick = () => { if (!$('ln-a').value.trim()){ $('ln-a').focus(); toast('先写下你的复述'); return; } ai('check', $('ln-c')); };
+  el.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { L.grades[L.i] = b.dataset.g; L.i++; renderLearn(); });
+  setTimeout(() => { const a = $('ln-a'); if (a) a.focus(); }, 60);
+}
+function scrollToSection(h){
+  const body = $('doc') && $('doc').querySelector('.body'); if (!body) return;
+  const t = [...body.querySelectorAll('h2,h3')].find(x => x.textContent.trim() === h.trim());
+  if (t) t.scrollIntoView({behavior:reduce ? 'auto' : 'smooth', block:'start'}); else $('doc').scrollTop = 0;
+}
+async function finishLearn(){
+  const L = learnRun; if (!L) return;
+  const g = L.grades, again = g.filter(x => x === 'again').length, hard = g.filter(x => x === 'hard').length;
+  const grade = again * 3 >= g.length ? 'again' : (again || hard) ? 'hard' : 'good';
+  let card = null; try { card = (await api('/field/learn/grade', {method:'POST', json:{path:L.n.p, grade}})).card; learnState.cards[L.n.p] = card; } catch(e){ toast('<b>复习时间没记上</b>：' + esc(e.message || e), true); }
+  const days = card ? Math.max(1, Math.round((card.due * 1000 - Date.now()) / DAY)) : null;
+  const mins = Math.max(1, Math.round((Date.now() - L.t0) / 60000));
+  L.el.innerHTML = '<div class="ah"><b>学</b><span class="at"></span><button class="x" aria-label="结束">×</button></div>' +
+    '<div class="lprog">' + g.map(x => '<i class="' + ({good:'ok', hard:'mid', again:'no'}[x]) + '"></i>').join('') + '</div>' +
+    '<p class="lh">讲完了 ' + g.length + ' 节，用了 ' + mins + ' 分钟</p><p>讲清楚 ' + (g.length - again - hard) + ' 节，模糊 ' + hard + ' 节，没讲出来 ' + again + ' 节。</p>' +
+    (days ? '<p class="hint">' + (grade === 'again' ? '明天' : days + ' 天后') + '再讲一遍（' + new Date(card.due * 1000).toLocaleDateString() + '）。到时候 /复习 里会有它。</p>' : '') +
+    '<div class="la"><button class="btn pri" id="ln-end">好</button>' + (again || hard ? '<button class="btn" id="ln-again">只练模糊的几节</button>' : '') + '</div>';
+  L.el.querySelector('.at').textContent = L.n.full; L.el.querySelector('.x').onclick = () => endLearn();
+  $('ln-end').onclick = () => endLearn();
+  if ($('ln-again')) $('ln-again').onclick = () => { const weak = L.secs.filter((_, i) => g[i] !== 'good'); learnRun = Object.assign(L, {secs:weak, i:0, grades:[], t0:Date.now()}); renderLearn(); };
+  document.body.classList.remove('peek');
+}
+function endLearn(quiet){ if (!learnRun) return; learnRun.el.remove(); learnRun = null; document.body.classList.remove('learning', 'peek'); }
+async function openReview(){
+  await loadLearn();
+  const now = Date.now() / 1000, cards = Object.entries(learnState.cards || {}).map(([p, c]) => ({p, c, n:byPath.get(p)})).filter(x => x.n);
+  const due = cards.filter(x => x.c.due <= now).sort((a, b) => a.c.due - b.c.due), soon = cards.filter(x => x.c.due > now).sort((a, b) => a.c.due - b.c.due).slice(0, 20);
+  const when = t => { const d = Math.round((t * 1000 - Date.now()) / DAY); return d <= 0 ? '今天' : d === 1 ? '明天' : d + ' 天后'; };
+  const row = x => '<div class="row"><div class="grow"><span>' + esc(x.n.full) + '</span><small>' + (x.c.reps || 0) + ' 次 · 上次「' + ({good:'讲清楚了', hard:'有点模糊', again:'没讲出来', easy:'很轻松'}[x.c.grade] || '') + '」 · ' + when(x.c.due) + '</small></div><button class="btn" data-ln="' + esc(x.p) + '">开始</button></div>';
+  const box = openPanel('复习', '<p class="hint" style="margin-top:0">学过的文档按你讲得清不清楚排下次复习：讲得越清楚，隔得越久。复习进度存在库根的 .litmus/ 里，会跟着库同步。</p>' +
+    '<label>今天该复习 · ' + due.length + '</label>' + (due.length ? due.map(row).join('') : '<p class="empty">今天没有要复习的。</p>') +
+    '<label>接下来</label>' + (soon.length ? soon.map(row).join('') : '<p class="empty">还没有学过的文档。打开一篇，「⋯」→ 学这一篇，或输入 /学习。</p>'));
+  box.querySelectorAll('[data-ln]').forEach(b => b.onclick = () => { closePanel(); startLearn(byPath.get(b.dataset.ln)); });
+  const all = [...due, ...soon].map(x => x.n); if (all.length){ lastRel = all.map(n => ({n, norm:due.some(x => x.n === n) ? 1 : .45})); paint(lastRel, {soft:true}); }
+}
+/* 打开知识场时：有该复习的就提醒一次（每天一次） */
+setTimeout(async () => {
+  await loadLearn(); const now = Date.now() / 1000;
+  const due = Object.entries(learnState.cards || {}).filter(([p, c]) => c.due <= now && byPath.has(p)).length;
+  let seen = ''; try { seen = localStorage.getItem('litmus_review_nudge') || ''; } catch(e){}
+  if (due && seen !== todayStr()){ try { localStorage.setItem('litmus_review_nudge', todayStr()); } catch(e){} toastAct('今天有 <b>' + due + '</b> 篇该复习了', '开始', openReview); }
+}, 4000);
+
+/* ═══════════ F4 日历：哪天写了什么、哪天该复习 ═══════════ */
+let calMonth = null;
+function openCalendar(y, m){
+  const now = new Date(); if (y == null){ y = calMonth ? calMonth[0] : now.getFullYear(); m = calMonth ? calMonth[1] : now.getMonth(); }
+  if (m < 0){ y--; m = 11; } if (m > 11){ y++; m = 0; } calMonth = [y, m];
+  const byDay = new Map(); nodes.forEach(n => { if (!n.d) return; (byDay.get(n.d) || byDay.set(n.d, []).get(n.d)).push(n); });
+  const dueDay = new Map(); Object.entries(learnState.cards || {}).forEach(([p, c]) => { const n = byPath.get(p); if (!n) return; const d = new Date(c.due * 1000); const k = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); (dueDay.get(k) || dueDay.set(k, []).get(k)).push(n); });
+  const first = new Date(y, m, 1), startDow = (first.getDay() + 6) % 7, ndays = new Date(y, m + 1, 0).getDate();
+  const max = Math.max(1, ...[...byDay.entries()].filter(([k]) => k.startsWith(y + '-' + pad(m + 1))).map(([, v]) => v.length));
+  let cells = ''; for (let i = 0; i < startDow; i++) cells += '<span></span>';
+  for (let d = 1; d <= ndays; d++){
+    const k = y + '-' + pad(m + 1) + '-' + pad(d), list = byDay.get(k) || [], due = dueDay.get(k) || [], today = k === todayStr();
+    const lv = list.length ? Math.ceil(list.length / max * 4) : 0;
+    cells += '<button class="cd lv' + lv + (today ? ' today' : '') + '" data-d="' + k + '"' + (list.length || due.length ? '' : ' disabled') + ' title="' + (list.length ? list.length + ' 篇' : '') + (due.length ? (list.length ? ' · ' : '') + due.length + ' 篇该复习' : '') + '"><b>' + d + '</b>' + (list.length ? '<small>' + list.length + '</small>' : '') + (due.length ? '<i></i>' : '') + '</button>';
+  }
+  const box = openPanel('日历', '<div class="calh"><button class="btn" id="cal-p" aria-label="上个月">‹</button><b>' + y + ' 年 ' + (m + 1) + ' 月</b><button class="btn" id="cal-n" aria-label="下个月">›</button><button class="btn" id="cal-t">今天</button></div>' +
+    '<div class="cal"><em>一</em><em>二</em><em>三</em><em>四</em><em>五</em><em>六</em><em>日</em>' + cells + '</div>' +
+    '<p class="hint">颜色越深，那天写下或收进来的越多；带小点的日子有该复习的。点一天，那天的文档会在场上亮起。</p><div id="cal-day"></div>');
+  $('cal-p').onclick = () => openCalendar(y, m - 1); $('cal-n').onclick = () => openCalendar(y, m + 1); $('cal-t').onclick = () => { calMonth = null; openCalendar(); };
+  box.querySelectorAll('.cd[data-d]').forEach(b => b.onclick = () => {
+    box.querySelectorAll('.cd.on').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    const k = b.dataset.d, list = byDay.get(k) || [], due = dueDay.get(k) || [];
+    $('cal-day').innerHTML = '<label>' + k + ' · ' + list.length + ' 篇</label>' + list.map(n => docRow(n, ({doc:'文档', memo:'随手记', answer:'收下的答案', source:'采集原文', html:'HTML 文档'}[n.k] || '') + ' · ' + n.p)).join('') +
+      (due.length ? '<label>这天该复习</label>' + due.map(n => '<div class="row"><div class="grow"><span>' + esc(n.full) + '</span></div><button class="btn" data-ln="' + esc(n.p) + '">学</button></div>').join('') : '');
+    wireOpen($('cal-day'));
+    $('cal-day').querySelectorAll('[data-ln]').forEach(x => x.onclick = () => { closePanel(); startLearn(byPath.get(x.dataset.ln)); });
+    const all = [...list, ...due]; if (all.length){ lastRel = all.map(n => ({n, norm:1})); paint(lastRel, {}); }
+  });
+}
+
+/* ═══════════ F4 插件索引：社区插件一键装 ═══════════ */
+async function wirePluginIndex(box){
+  const holder = box.querySelector('#pl-index'); if (!holder) return;
+  let idx; try { const r = await fetch(BASE + '/plugin-index', {cache:'no-store'}); idx = await r.json(); } catch(e){ holder.innerHTML = '<p class="hint">插件索引没加载出来：' + esc(e.message || e) + '</p>'; return; }
+  const have = new Set(plugins.map(p => p.id));
+  const list = (idx.plugins || []).filter(p => !have.has(p.id));
+  holder.innerHTML = '<label>社区插件 · ' + list.length + '</label>' + (list.length ? list.map((p, i) => '<div class="row"><div class="grow"><span>' + esc(p.name) + (p.verified ? ' · 已核验' : '') + '</span><small>' + esc(p.description || '') + (p.author ? ' · ' + esc(p.author) : '') + '</small></div><button class="btn" data-ix="' + i + '">安装</button></div>').join('') : '<p class="empty">索引里的插件都装上了。</p>') +
+    (idx.submit ? '<p class="hint">想把自己的插件放进来：' + esc(idx.submit) + '</p>' : '');
+  holder.querySelectorAll('[data-ix]').forEach(b => b.onclick = async () => {
+    const p = list[+b.dataset.ix]; b.disabled = true; b.textContent = '正在安装…';
+    try { const r = await api('/plugins/install', {method:'POST', json:{url:'https://github.com/' + p.repo, path:p.path || ''}}); toast('装好了：<b>' + esc((r.installed || []).join('、') || p.name) + '</b>'); openPlugins(); }
+    catch(e){ b.disabled = false; b.textContent = '安装'; toast('<b>安装失败</b>：' + esc(e.message || e), true); }
+  });
+}
+
+/* ═══════════ F4 网页本地化：正文 + 图片一起存进库 ═══════════ */
+async function localizeUrl(url){
+  toast('正在把网页存进库（正文和图片）…');
+  let html = null;
+  if (DESK){ try { html = await window.__TAURI_INTERNALS__.invoke('desktop_render_page', {url}); } catch(e){ html = null; } }
+  try {
+    const r = await api('/field/localize', {method:'POST', json:html ? {url, html} : {url}});
+    await refreshNow(); const n = byPath.get(r.rel);
+    if (n){ flash(n); focusOn(n.gx, n.gy, Math.max(cam.ts, .7), (vw - sheetW()) / 2, vh * .42); }
+    toastAct('存进来了：<b>' + esc(r.title || r.rel) + '</b>' + (r.images ? ' · ' + r.images + ' 张图' : '') + (r.failed ? '（' + r.failed + ' 张没下下来，保留了原地址）' : ''), '打开', () => n && openDoc(n));
+  } catch(e){
+    /* 本地化失败（比如图片服务器拒绝）：退回只收正文 */
+    try { const r = await api('/ingest/web', {method:'POST', json:{url}}); await refreshNow(); const n = byPath.get(r.rel); if (n) flash(n); toastAct('只收下了正文：<b>' + esc(r.title || r.rel) + '</b>（' + esc(e.message || e) + '）', '打开', () => n && openDoc(n), true); }
+    catch(e2){ toast('<b>没抓下来</b>：' + esc(e.message || e) + '。可以换个网址，或者把正文复制进来用 + 记一笔', true); }
+  }
 }
 
 /* ───────── 视图、主题、帮助 ───────── */
@@ -2539,7 +2886,7 @@ loadField().then(() => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence();
-window.__field = {openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+window.__field = {openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>
