@@ -55,7 +55,8 @@ android {
         create("release") {
             storeFile = file("../../../litmus-release.keystore")
             storePassword = signingValue("TAURI_KEYSTORE_PASSWORD", "storePassword")
-            keyAlias = "litmus"
+            // keystore 里的密钥别名是建库时定的，改名不动它（改了就签不了名）
+            keyAlias = "thirdc"
             keyPassword = signingValue("TAURI_KEY_PASSWORD", "keyPassword")
         }
     }
