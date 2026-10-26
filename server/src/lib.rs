@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 mod field;
+mod share;
 
 pub struct AppState {
     pub kernel: Arc<Mutex<Kernel>>,
@@ -195,6 +196,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/note", post(field::note))
         .route("/field/ai", get(field::ai_get).post(field::ai_put))
         .route("/field/ai/test", post(field::ai_test))
+        .route("/field/region", post(field::region_rename))
+        .route("/field/organize", post(field::organize_plan))
+        .route("/field/views", get(field::views_get).put(field::views_put))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {
@@ -259,7 +263,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/git/checkout", post(git_checkout))
         .route("/git/sync", post(git_sync))
         .route("/presentation", get(presentation))
-        .route("/share", post(share_create))
+        .route("/share", post(share::create))
+        .route("/share/{id}", axum::routing::delete(share::revoke))
+        .route("/shares", get(share::list))
+        .route("/s/{id}", get(share::view))
         .route("/metrics", get(metrics))
         .route("/design/{name}", get(design_get))
         .route("/a2ui/render", post(a2ui_render))
@@ -481,8 +488,9 @@ async fn move_doc(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     if let Err(e) = std::fs::rename(&src, &dst) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
+    let relinked = relink_moved(&k.vault.root, &from, &to);
     let _ = k.sync_all();
-    Json(json!({ "from": from, "to": to })).into_response()
+    Json(json!({ "from": from, "to": to, "relinked": relinked })).into_response()
 }
 
 /// 目录路径合法性：Notes/ 前缀、无 ..、无反斜杠、非根本身、段非空。
@@ -1183,6 +1191,47 @@ async fn doc_autoname(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
 }
 
 /// 改名后修双链：[[旧名]] / [[旧名|别名]] / [[旧名#小节]] → 新名。
+/// 文档移动 / 改名后，把别处指向它的链接改好：`[[完整路径]]`、`[[完整路径去扩展名]]`、
+/// `](完整路径)`，以及文件名变了时的 `[[文件名]]`。返回改动的文档数（同一篇可能计两次，只作提示）。
+fn relink_moved(root: &std::path::Path, from: &str, to: &str) -> usize {
+    let strip = |p: &str| p.trim_end_matches(".md").to_string();
+    let (fs, ts) = (stem_of(from), stem_of(to));
+    let mut pairs: Vec<(String, String)> = vec![(from.to_string(), to.to_string())];
+    if from.ends_with(".md") && to.ends_with(".md") {
+        pairs.push((strip(from), strip(to)));
+    }
+    let mut changed = 0usize;
+    let mut stack = vec![root.join("Notes")];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(s) = std::fs::read_to_string(&p) else { continue };
+            let mut out = s.clone();
+            for (a, b) in &pairs {
+                for tail in ["]]", "|", "#"] {
+                    out = out.replace(&format!("[[{a}{tail}"), &format!("[[{b}{tail}"));
+                }
+                out = out.replace(&format!("]({a})"), &format!("]({b})"));
+            }
+            if out != s && std::fs::write(&p, &out).is_ok() {
+                changed += 1;
+            }
+        }
+    }
+    if fs != ts {
+        changed += rewrite_wikilinks(root, &fs, &ts);
+    }
+    changed
+}
+
 fn rewrite_wikilinks(root: &std::path::Path, old: &str, new: &str) -> usize {
     let mut changed = 0;
     let mut stack = vec![root.join("Notes")];
@@ -5268,38 +5317,6 @@ fn html_unescape(s: &str) -> String {
 }
 
 /// 加密分享：存密文，服务器永远没有密钥（在 URL fragment 里）。
-async fn share_create(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
-    if let Err(e) = check_token(&st, &h) {
-        return e.into_response();
-    }
-    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let content = req.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
-    let iv = req.get("iv").and_then(|v| v.as_array()).map(|a| serde_json::to_string(a).unwrap_or_default()).unwrap_or_default();
-    if content.is_empty() {
-        return err(StatusCode::BAD_REQUEST, "需要 content").into_response();
-    }
-    let id = format!("{}", kernel_core::Cas::hash_hex(content.as_bytes())[..16].to_string());
-    let dir = st.kernel.lock().unwrap().vault.sidecar().join("shares");
-    let _ = std::fs::create_dir_all(&dir);
-    std::fs::write(dir.join(format!("{id}.json")), serde_json::to_string(&json!({"content":content,"iv":iv})).unwrap_or_default()).unwrap_or(());
-    Json(json!({ "id": id })).into_response()
-}
-
-#[allow(dead_code)]
-async fn share_get(AxumPath(id): AxumPath<String>) -> impl IntoResponse {
-    if id.contains("..") || id.contains('/') {
-        return err(StatusCode::BAD_REQUEST, "bad id").into_response();
-    }
-    // 共享不需要 token（接收人没有）——密钥在 URL fragment 里保护隐私
-    let dir = {
-        // 无 state（公共端点），从环境/配置找第一个库？简化：不验 token，只读 sidecar
-        // 实际上需要 state，但我们让它公开（密钥加密保护内容）
-        std::path::PathBuf::from("/data/kb/.thirdc/shares")
-    };
-    let _ = dir;
-    err(StatusCode::NOT_FOUND, "share not found (需要完整路径)").into_response()
-}
-
 /* ───────── 文档格式互转：导入（结构保真）/ 导出（docx · odt · 打印版 PDF） ───────── */
 
 /// 任意文档文件 → 结构化 Markdown（图片尚未落库，占位 kc-img://n）。返回 (结果, 抽取器名)。

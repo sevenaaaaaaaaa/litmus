@@ -270,10 +270,11 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             count[r] += 1;
         }
         let links = links_of(&f.vectors.paths, &meta, &texts);
+        let names = load_region_names(&root2);
         let body = json!({
             "epoch": epoch,
             "links": links.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
-            "regions": f.region_names.iter().zip(count.iter()).map(|(n, c)| json!({"name": n, "count": c})).collect::<Vec<_>>(),
+            "regions": f.region_names.iter().zip(count.iter()).map(|(n, c)| json!({"name": names.get(n).cloned().unwrap_or_else(|| n.clone()), "auto": n, "count": c})).collect::<Vec<_>>(),
             "docs": meta.iter().enumerate().map(|(i, m)| json!({
                 "p": m.path, "t": m.title, "k": m.kind, "d": m.date, "ex": m.excerpt,
                 "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime, "g": m.tags,
@@ -288,6 +289,208 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
     let built = Arc::new(built);
     cache().lock().unwrap().insert(root, built.clone());
     Ok(built)
+}
+
+// ───────── 区域改名：用户起的名字按自动名记住（自动名 = 区域中心文档的短标题） ─────────
+
+fn region_names_path(root: &std::path::Path) -> PathBuf {
+    root.join(".thirdc").join("field-names.json")
+}
+
+fn load_region_names(root: &std::path::Path) -> HashMap<String, String> {
+    std::fs::read_to_string(region_names_path(root))
+        .ok()
+        .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// POST /field/region {auto, name}：name 为空表示恢复自动名。区域的中心文档变了时，名字回到自动名。
+pub async fn region_rename(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let auto = req.get("auto").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let name: String = req.get("name").and_then(|v| v.as_str()).unwrap_or("").trim().chars().take(24).collect();
+    if auto.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "需要 auto（区域的自动名）").into_response();
+    }
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let mut names = load_region_names(&root);
+    if name.is_empty() || name == auto {
+        names.remove(&auto);
+    } else {
+        names.insert(auto.clone(), name.clone());
+    }
+    let _ = std::fs::create_dir_all(root.join(".thirdc"));
+    if let Err(e) = std::fs::write(region_names_path(&root), serde_json::to_vec_pretty(&names).unwrap_or_default()) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    cache().lock().unwrap().remove(&root);
+    Json(json!({ "auto": auto, "name": if name.is_empty() { auto.clone() } else { name } })).into_response()
+}
+
+// ───────── 视角：一组文档 + 镜头 + 排布，可命名、切换（替代经典壳的多画布） ─────────
+
+fn views_path(root: &std::path::Path) -> PathBuf {
+    root.join(".thirdc").join("field-views.json")
+}
+
+pub async fn views_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let v: Value = std::fs::read_to_string(views_path(&root)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "views": [] }));
+    Json(v).into_response()
+}
+
+/// PUT /field/views {views:[{name, layout, cam:{x,y,s}, paths:[...], q?}]}：整表替换（最多 60 个，每个最多 400 篇）。
+pub async fn views_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let Some(list) = req.get("views").and_then(|v| v.as_array()) else {
+        return err(StatusCode::BAD_REQUEST, "需要 views 数组").into_response();
+    };
+    let clean: Vec<Value> = list
+        .iter()
+        .take(60)
+        .filter_map(|v| {
+            let name: String = v.get("name")?.as_str()?.trim().chars().take(40).collect();
+            if name.is_empty() {
+                return None;
+            }
+            let paths: Vec<Value> = v
+                .get("paths")
+                .and_then(|p| p.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str()).filter(|p| kernel_core::is_safe_doc_path(p)).take(400).map(|p| json!(p)).collect())
+                .unwrap_or_default();
+            let num = |k: &str| v.get("cam").and_then(|c| c.get(k)).and_then(|x| x.as_f64()).filter(|x| x.is_finite()).unwrap_or(0.0);
+            Some(json!({
+                "name": name,
+                "layout": if v.get("layout").and_then(|l| l.as_str()) == Some("time") { "time" } else { "sem" },
+                "cam": { "x": num("x"), "y": num("y"), "s": num("s").clamp(0.02, 4.0) },
+                "paths": paths,
+                "q": v.get("q").and_then(|q| q.as_str()).map(|q| q.chars().take(200).collect::<String>()).unwrap_or_default(),
+                "at": v.get("at").and_then(|x| x.as_u64()).unwrap_or(0),
+            }))
+        })
+        .collect();
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let _ = std::fs::create_dir_all(root.join(".thirdc"));
+    match std::fs::write(views_path(&root), serde_json::to_vec_pretty(&json!({ "views": clean })).unwrap_or_default()) {
+        Ok(()) => Json(json!({ "views": clean })).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+// ───────── 批量整理：用场本身给建议（放回意思所在的文件夹、占位名改成标题、可能重复） ─────────
+
+/// 一篇文档所在的文件夹（`Notes/a/b.md` → `Notes/a`；`Notes/b.md` → `Notes`）。
+fn folder_of(p: &str) -> &str {
+    p.rsplit_once('/').map(|(d, _)| d).unwrap_or("")
+}
+
+/// POST /field/organize：只给建议，不改文件。执行由壳逐条调用 /doc/move 与 /doc/autoname（都会改好链接）。
+pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let c = match current(&st, false).await {
+        Ok(c) => c,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let names = load_region_names(&root);
+    let f = &c.field;
+    let n = c.meta.len();
+    let region_name = |r: usize| {
+        let a = f.region_names.get(r).cloned().unwrap_or_default();
+        names.get(&a).cloned().unwrap_or(a)
+    };
+    // 每个区域里，成员最多的「真」文件夹（不算 Notes 根、随手记、答案、采集原文）
+    let skip_folder = |d: &str| d == "Notes" || d.starts_with("Notes/Memos") || d.starts_with("Notes/答案") || d.starts_with("Notes/Agent");
+    let k = f.region_names.len();
+    let mut tally: Vec<HashMap<String, usize>> = vec![HashMap::new(); k];
+    let mut members = vec![0usize; k];
+    for (i, m) in c.meta.iter().enumerate() {
+        let r = f.region[i];
+        members[r] += 1;
+        let d = folder_of(&m.path);
+        if !skip_folder(d) && m.kind != "source" {
+            *tally[r].entry(d.to_string()).or_insert(0) += 1;
+        }
+    }
+    let home: Vec<Option<(String, usize)>> = tally
+        .iter()
+        .enumerate()
+        .map(|(r, t)| {
+            let mut v: Vec<(&String, &usize)> = t.iter().collect();
+            v.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+            v.first().filter(|(_, c)| **c >= 3 && **c * 3 >= members[r]).map(|(d, c)| ((*d).clone(), **c))
+        })
+        .collect();
+    // 占位文件名 → 正文标题（先算：同一篇既要挪又要改名时，合成一次移动）
+    let safe_name = |t: &str| -> String {
+        t.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '#' | '\n' | '\r' | '\t')).collect::<String>().trim().chars().take(60).collect()
+    };
+    let mut retitle: HashMap<String, String> = HashMap::new();
+    for m in &c.meta {
+        if !m.path.ends_with(".md") || !super::is_placeholder_name(&super::stem_of(&m.path)) {
+            continue;
+        }
+        let md = std::fs::read_to_string(root.join(&m.path)).unwrap_or_default();
+        if let Some(h1) = super::doc_h1(&md).filter(|t| !super::is_placeholder_name(t)) {
+            let n = safe_name(&h1);
+            if !n.is_empty() {
+                retitle.insert(m.path.clone(), n);
+            }
+        }
+    }
+    let mut moves = Vec::new();
+    for (i, m) in c.meta.iter().enumerate() {
+        if folder_of(&m.path) != "Notes" || m.kind != "doc" {
+            continue;
+        }
+        let r = f.region[i];
+        if let Some((dir, cnt)) = &home[r] {
+            let name = match retitle.remove(&m.path) {
+                Some(t) => format!("{t}.md"),
+                None => m.path.rsplit('/').next().unwrap_or(&m.path).to_string(),
+            };
+            let to = format!("{dir}/{name}");
+            if !root.join(&to).exists() {
+                let renamed = !m.path.ends_with(&format!("/{name}"));
+                moves.push(json!({
+                    "from": m.path, "to": to, "title": m.title, "region": region_name(r),
+                    "reason": format!("散放在 Notes 根目录；意思上属于「{}」，那里有 {cnt} 篇放在 {dir}/{}", region_name(r), if renamed { "；占位文件名顺便换成标题" } else { "" }),
+                }));
+            }
+        }
+    }
+    let mut renames: Vec<Value> = retitle
+        .into_iter()
+        .filter(|(p, t)| {
+            let d = folder_of(p);
+            !root.join(format!("{d}/{t}.md")).exists()
+        })
+        .map(|(p, t)| json!({ "path": p, "from": super::stem_of(&p), "to": t, "reason": "文件名是占位名，正文已有标题" }))
+        .collect();
+    renames.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    let mut dups = Vec::new();
+    for &(a, b, w) in &f.edges {
+        if w >= 0.86 && a < n && b < n {
+            dups.push(json!({ "a": c.meta[a].path, "b": c.meta[b].path, "ta": c.meta[a].title, "tb": c.meta[b].title, "sim": (w * 100.0).round() / 100.0 }));
+        }
+    }
+    dups.sort_by(|x, y| y["sim"].as_f64().partial_cmp(&x["sim"].as_f64()).unwrap_or(std::cmp::Ordering::Equal));
+    dups.truncate(30);
+    Json(json!({ "moves": moves, "renames": renames, "dups": dups, "considered": n })).into_response()
 }
 
 /// 文档之间真实写下的链接：`[[目标]]`（可带 |别名 #标题 ^块）与 `](Notes/...)`。
@@ -393,10 +596,14 @@ pub async fn agent(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
         let result = match ai {
             Some(cfg) if !cfg.base_url.is_empty() => {
                 let tx_step = tx.clone();
-                thirdc_mcp::agent::run_ai_with(&server, &cfg, &full, move |s| {
+                let tx_delta = tx.clone();
+                let mut on_step = move |s: &thirdc_mcp::agent::Step| {
                     let _ = tx_step.send(ev("step", json!({ "tool": s.tool, "args": step_args(&s.args), "ok": s.ok, "summary": s.summary.chars().take(300).collect::<String>() })));
-                })
-                .await
+                };
+                let mut on_delta = move |t: &str| {
+                    let _ = tx_delta.send(ev("delta", json!({ "t": t })));
+                };
+                thirdc_mcp::agent::run_ai_streaming(&server, &cfg, &full, &mut on_step, &mut on_delta).await
             }
             _ => {
                 let out = thirdc_mcp::agent::command_mode(&server, &full);
@@ -723,6 +930,9 @@ pub async fn crystal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
             let system = "你在回答用户个人知识库里的一个问题。只依据用户给出的编号资料回答，用中文，120 到 220 字，可以分 2 到 4 个短段或要点。\
                 每个论断后用 [编号] 标出处，例如 [2]。资料不够回答时，直说缺什么。不要写开场白和总结套话。";
             let user = format!("问题：{q}\n\n资料：\n{}", ctx.join("\n\n"));
+            if req.get("stream").and_then(|v| v.as_bool()).unwrap_or(false) {
+                return crystal_stream(cfg, system, user, q, sources, refs).into_response();
+            }
             match thirdc_mcp::agent::complete(&cfg, system, &user).await {
                 Ok(text) if !text.trim().is_empty() => Json(json!({ "mode": "ai", "text": text.trim(), "sources": refs })).into_response(),
                 Ok(_) => Json(json!({ "mode": "extract", "note": "模型返回了空答案，下面是原文里最相关的句子。", "text": extract(&sources, &q), "sources": refs })).into_response(),
@@ -737,6 +947,36 @@ pub async fn crystal(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         }))
         .into_response(),
     }
+}
+
+/// 结晶答案的流式版：先回 start（来源），正文逐段 delta，最后 done（与非流式 JSON 同形）。
+/// 模型中途失败或返回空答案时，done 退化为原文摘句并带 note。
+fn crystal_stream(
+    cfg: kernel_core::AiConfig,
+    system: &'static str,
+    user: String,
+    q: String,
+    sources: Vec<(String, String, String)>,
+    refs: Vec<Value>,
+) -> impl IntoResponse {
+    use axum::response::sse::Sse;
+    use futures_util::stream;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<SseEvent>();
+    tokio::spawn(async move {
+        let ev = |name: &str, data: Value| -> SseEvent { Ok(axum::response::sse::Event::default().event(name).data(data.to_string())) };
+        let _ = tx.send(ev("start", json!({ "sources": refs })));
+        let txd = tx.clone();
+        let mut on_delta = move |t: &str| {
+            let _ = txd.send(ev("delta", json!({ "t": t })));
+        };
+        let done = match thirdc_mcp::agent::complete_stream(&cfg, system, &user, &mut on_delta).await {
+            Ok(text) if !text.trim().is_empty() => json!({ "mode": "ai", "text": text.trim(), "sources": refs }),
+            Ok(_) => json!({ "mode": "extract", "note": "模型返回了空答案，下面是原文里最相关的句子。", "text": extract(&sources, &q), "sources": refs }),
+            Err(e) => json!({ "mode": "extract", "note": format!("这次没有连上模型（{e}），下面是原文里最相关的句子。"), "text": extract(&sources, &q), "sources": refs }),
+        };
+        let _ = tx.send(ev("done", done));
+    });
+    Sse::new(stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|item| (item, rx)) }))
 }
 
 fn extract(sources: &[(String, String, String)], q: &str) -> String {
@@ -962,6 +1202,158 @@ mod api_tests {
         assert!(text.contains("event: start") && text.contains("event: reply") && text.contains("event: done"), "{text}");
         let (st, _) = call(&app, &token, "POST", "/field/agent", r#"{"message":"  "}"#).await;
         assert_eq!(st, 400);
+    }
+
+    async fn raw(app: &axum::Router, token: Option<&str>, method: &str, uri: &str, body: &str) -> (u16, String) {
+        let mut b = Request::builder().method(method).uri(uri).header("content-type", "application/json");
+        if let Some(t) = token {
+            b = b.header("authorization", format!("Bearer {t}"));
+        }
+        let resp = app.clone().oneshot(b.body(Body::from(body.to_string())).unwrap()).await.unwrap();
+        let st = resp.status().as_u16();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap();
+        (st, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    #[tokio::test]
+    async fn regions_rename_and_views_round_trip() {
+        let (app, token, _dir) = app();
+        seed(&app, &token).await;
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let auto = d["regions"][0]["auto"].as_str().unwrap().to_string();
+        assert_eq!(d["regions"][0]["name"], auto.as_str());
+        let (st, _) = call(&app, &token, "POST", "/field/region", &serde_json::json!({"auto": auto, "name": "我的区域"}).to_string()).await;
+        assert_eq!(st, 200);
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        assert!(d["regions"].as_array().unwrap().iter().any(|r| r["name"] == "我的区域" && r["auto"] == auto.as_str()));
+        let (_, _) = call(&app, &token, "POST", "/field/region", &serde_json::json!({"auto": auto, "name": ""}).to_string()).await;
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        assert!(!d["regions"].as_array().unwrap().iter().any(|r| r["name"] == "我的区域"));
+
+        let body = r#"{"views":[{"name":"写作","layout":"time","cam":{"x":10,"y":-5,"s":9},"paths":["Notes/同步/协议.md","../etc/passwd"]},{"name":"  "}]}"#;
+        let (st, v) = call(&app, &token, "PUT", "/field/views", body).await;
+        assert_eq!(st, 200, "{v}");
+        let (_, g) = call(&app, &token, "GET", "/field/views", "").await;
+        let vs = g["views"].as_array().unwrap();
+        assert_eq!(vs.len(), 1, "空名字的视角应被丢掉");
+        assert_eq!(vs[0]["layout"], "time");
+        assert_eq!(vs[0]["cam"]["s"], 4.0, "缩放要夹在范围内");
+        assert_eq!(vs[0]["paths"].as_array().unwrap().len(), 1, "非法路径要被滤掉");
+    }
+
+    #[tokio::test]
+    async fn organize_suggests_and_move_relinks() {
+        let (app, token, dir) = app();
+        seed(&app, &token).await;
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/未命名.md")), "# 冲突的三种处理\n\n同步 冲突 合并 两边保留 CRDT 设备 离线 op-log。").await;
+        assert_eq!(st, 200);
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/同步/目录.md")), "# 目录\n\n见 [[Notes/未命名.md]] 和 [[未命名|那篇]]，以及 [原文](Notes/未命名.md)。同步 冲突").await;
+        assert_eq!(st, 200);
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/发布/未命名.md")), "# 证书续期\n\n域名 证书 发布 部署 线上。").await;
+        assert_eq!(st, 200);
+        let (st, plan) = call(&app, &token, "POST", "/field/organize", "{}").await;
+        assert_eq!(st, 200, "{plan}");
+        let mv = plan["moves"].as_array().unwrap();
+        assert!(mv.iter().any(|m| m["from"] == "Notes/未命名.md" && m["to"] == "Notes/同步/冲突的三种处理.md"), "挪动与改名合成一次：{plan}");
+        let rn = plan["renames"].as_array().unwrap();
+        assert!(!rn.iter().any(|r| r["path"] == "Notes/未命名.md"), "已经合进移动的不再单列：{plan}");
+        assert!(rn.iter().any(|r| r["path"] == "Notes/发布/未命名.md" && r["to"] == "证书续期"), "{plan}");
+        // 执行移动：链接一起改
+        let (st, r) = call(&app, &token, "POST", "/doc/move", r#"{"from":"Notes/未命名.md","to":"Notes/同步/冲突三种.md"}"#).await;
+        assert_eq!(st, 200, "{r}");
+        assert!(r["relinked"].as_u64().unwrap() >= 1);
+        let idx = std::fs::read_to_string(dir.path().join("Notes/同步/目录.md")).unwrap();
+        assert!(idx.contains("[[Notes/同步/冲突三种.md]]") && idx.contains("[[冲突三种|那篇]]") && idx.contains("](Notes/同步/冲突三种.md)"), "{idx}");
+    }
+
+    #[tokio::test]
+    async fn encrypted_share_round_trip() {
+        let (app, token, _dir) = app();
+        let (st, r) = call(&app, &token, "POST", "/share", r#"{"content":"Q0lQSEVSVEVYVA","iv":"aXZpdml2aXZpdml2","expires_days":7,"path":"Notes/x.md"}"#).await;
+        assert_eq!(st, 200, "{r}");
+        let id = r["id"].as_str().unwrap().to_string();
+        assert_eq!(r["url"], format!("/s/{id}"));
+        assert!(r["public_url"].is_null(), "没配公开目标就没有公开地址");
+        // 查看页免令牌，密文嵌在页里
+        let (st, html) = raw(&app, None, "GET", &format!("/s/{id}"), "").await;
+        assert_eq!(st, 200);
+        assert!(html.contains("Q0lQSEVSVEVYVA") && html.contains("\"expires\":"));
+        assert!(!html.contains("__SHARE_DATA__"));
+        let (_, l) = call(&app, &token, "GET", "/shares", "").await;
+        assert_eq!(l["items"][0]["id"], id.as_str());
+        assert!(l["items"][0].get("content").is_none(), "列表不回密文");
+        let (st, _) = raw(&app, None, "GET", "/shares", "").await;
+        assert_eq!(st, 401);
+        let (st, _) = call(&app, &token, "DELETE", &format!("/share/{id}"), "").await;
+        assert_eq!(st, 200);
+        let (st, html) = raw(&app, None, "GET", &format!("/s/{id}"), "").await;
+        assert_eq!(st, 404);
+        assert!(html.contains(">null</script>"));
+        let (st, _) = raw(&app, None, "GET", "/s/..%2Fx", "").await;
+        assert_eq!(st, 404);
+    }
+
+    /// 假的 OpenAI 兼容服务：要工具时先流式吐一个分成几段的工具调用，之后流式吐正文。
+    async fn mock_llm() -> String {
+        use axum::{routing::post, Router};
+        async fn h(body: axum::body::Bytes) -> axum::response::Response {
+            let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+            let msgs = v["messages"].as_array().cloned().unwrap_or_default();
+            let tool_turn = v.get("tools").is_some() && !msgs.iter().any(|m| m["role"] == "tool");
+            let chunks: Vec<String> = if tool_turn {
+                vec![
+                    r#"{"choices":[{"delta":{"content":"我先查一下"}}]}"#.into(),
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"search_","arguments":"{\"query\":"}}]}}]}"#.into(),
+                    r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"vault","arguments":"\"同步\"}"}}]}}]}"#.into(),
+                ]
+            } else {
+                vec![
+                    r#"{"choices":[{"delta":{"content":"冲突时两边"}}]}"#.into(),
+                    r#"{"choices":[{"delta":{"content":"都保留 [1]。"}}]}"#.into(),
+                    r#"{"choices":[],"usage":{"total_tokens":42}}"#.into(),
+                ]
+            };
+            if v["stream"] != true {
+                let text = if tool_turn { String::new() } else { "冲突时两边都保留 [1]。".to_string() };
+                return axum::response::Response::builder().header("content-type", "application/json")
+                    .body(axum::body::Body::from(serde_json::json!({"choices":[{"message":{"role":"assistant","content":text}}]}).to_string())).unwrap();
+            }
+            let mut out = String::new();
+            for c in chunks {
+                out.push_str(&format!("data: {c}\n\n"));
+            }
+            out.push_str("data: [DONE]\n\n");
+            axum::response::Response::builder().header("content-type", "text/event-stream").body(axum::body::Body::from(out)).unwrap()
+        }
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, Router::new().route("/v1/chat/completions", post(h))).await.unwrap() });
+        format!("http://{addr}/v1")
+    }
+
+    #[tokio::test]
+    async fn crystal_and_agent_stream_from_the_model() {
+        let (app, token, _dir) = app();
+        seed(&app, &token).await;
+        let base = mock_llm().await;
+        let (st, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        assert_eq!(st, 200);
+        let (st, text) = raw(&app, Some(&token), "POST", "/field/crystal", r#"{"q":"冲突怎么办","paths":["Notes/同步/冲突.md"],"stream":true}"#).await;
+        assert_eq!(st, 200);
+        assert!(text.contains("event: start") && text.matches("event: delta").count() == 2, "{text}");
+        assert!(text.contains(r#""text":"冲突时两边都保留 [1]。""#) && text.contains(r#""mode":"ai""#), "{text}");
+        // 不要流式时照旧回 JSON
+        let (_, j) = call(&app, &token, "POST", "/field/crystal", r#"{"q":"冲突怎么办","paths":["Notes/同步/冲突.md"]}"#).await;
+        assert_eq!(j["text"], "冲突时两边都保留 [1]。");
+        // Agent：工具调用分段到达也能拼回来；过渡话、步骤、正文增量依次推出
+        let (st, text) = raw(&app, Some(&token), "POST", "/field/agent", r#"{"message":"同步冲突怎么处理"}"#).await;
+        assert_eq!(st, 200);
+        let i_pre = text.find("我先查一下").expect("过渡话");
+        let i_step = text.find("event: step").expect("步骤");
+        let i_ans = text.find("冲突时两边").unwrap_or_else(|| panic!("正文增量：{text}"));
+        assert!(i_pre < i_step && i_step < i_ans, "{text}");
+        assert!(text.contains(r#""tool":"search_vault""#) && text.contains(r#""query":"同步""#), "{text}");
+        assert!(text.contains("event: reply") && text.contains(r#""tokens":42"#), "{text}");
     }
 
     #[tokio::test]

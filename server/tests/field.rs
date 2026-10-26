@@ -116,3 +116,29 @@ fn ink_and_litmus_pass_aa_on_paper_in_both_themes() {
         assert!(c >= 1.6, "[{name}] --ink3-c 太淡：{c:.2}:1");
     }
 }
+
+/// 加密分享查看页（server/web/share.html）同一套纪律：零 hex / rgb / hsl，字号走 token，不直出 emoji。
+#[test]
+fn share_page_follows_the_same_discipline() {
+    const SHARE: &str = include_str!("../web/share.html");
+    let end = SHARE.find("<script id=\"share-data\"").expect("数据占位");
+    let s = &SHARE[..end];
+    for f in ["rgb(", "rgba(", "hsl(", "hsla("] {
+        assert!(!s.contains(f), "分享页出现 {f}");
+    }
+    let b = s.as_bytes();
+    for (i, &c) in b.iter().enumerate() {
+        if c == b'#' && i > 0 && matches!(b[i - 1], b':' | b'(' | b',' | b' ') {
+            let n = b[i + 1..].iter().take_while(|x| x.is_ascii_hexdigit()).count();
+            assert!(!matches!(n, 3 | 4 | 6 | 8), "分享页出现 hex 色值：{}", &s[i..i + 1 + n]);
+        }
+    }
+    for line in s.lines() {
+        if let Some(j) = line.find("font-size:") {
+            let decl: String = line[j + 10..].chars().take_while(|&c| c != ';' && c != '}').collect();
+            assert!(!decl.contains("px"), "分享页裸 px 字号：{decl}");
+        }
+    }
+    assert!(!s.chars().any(|c| ('\u{1F300}'..='\u{1FAFF}').contains(&c)), "分享页直出 emoji");
+    assert!(SHARE.contains("__SHARE_DATA__"));
+}

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>加密分享 · 鹿蕊 Litmus</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<style>
+/* 加密分享的查看页：密文嵌在本页，密钥只在链接 # 之后（浏览器不会把它发给服务器），在这里解密。
+   全 oklch、零 hex；字号走 tokens。 */
+:root{
+  --paper-c: .972 .006 286; --sheet-c: .992 .003 286; --ink-c: .255 .022 282; --ink2-c: .47 .02 282;
+  --rule-c: .905 .008 286; --litmus-c: .53 .19 259; --acid-c: .57 .19 18;
+  --paper: oklch(var(--paper-c)); --sheet: oklch(var(--sheet-c)); --ink: oklch(var(--ink-c)); --ink-2: oklch(var(--ink2-c));
+  --rule: oklch(var(--rule-c)); --litmus: oklch(var(--litmus-c)); --acid: oklch(var(--acid-c));
+  --f-display: "Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --paper-c: .185 .014 278; --sheet-c: .222 .016 278; --ink-c: .93 .01 282; --ink2-c: .72 .018 282;
+  --rule-c: .30 .016 278; --litmus-c: .72 .15 252; --acid-c: .72 .15 20; color-scheme: dark;
+}}
+html,body{margin:0;min-height:100%}
+body{background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.7 var(--font-body);-webkit-font-smoothing:antialiased}
+header{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--rule);font-size:var(--fs-2);color:var(--ink-2)}
+header b{font:600 var(--fs-3) var(--f-display);color:var(--ink)}
+header .lock{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+header .lock svg{width:14px;height:14px}
+main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+h1{font:600 var(--fs-5)/1.35 var(--f-display);margin:0 0 6px}
+.meta{font:400 var(--fs-1)/1.5 var(--font-mono);color:var(--ink-2);margin-bottom:22px}
+iframe{width:100%;border:0;display:block;background:var(--sheet);border-radius:var(--r-md);min-height:60vh}
+.box{max-width:420px;margin:12vh auto 0;background:var(--sheet);border-radius:var(--r-lg);box-shadow:inset 0 0 0 1px var(--rule);padding:22px}
+.box p{margin:0 0 12px}
+.box input{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:var(--paper);border:0;box-shadow:inset 0 0 0 1px var(--rule);border-radius:var(--r-md);padding:9px 12px;outline:none}
+.box input:focus{box-shadow:inset 0 0 0 2px var(--litmus)}
+.box button{margin-top:12px;font:inherit;border:0;border-radius:var(--r-pill);padding:8px 16px;background:var(--ink);color:var(--paper);cursor:pointer}
+.bad{color:var(--acid)}
+.hint{font-size:var(--fs-2);color:var(--ink-2)}
+footer{text-align:center;font-size:var(--fs-1);color:var(--ink-2);padding:0 20px 30px}
+</style>
+</head>
+<body>
+<header><b>鹿蕊 Litmus</b><span>加密分享</span><span class="lock"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>端到端加密</span></header>
+<main id="main"><div class="box"><p>正在解密…</p></div></main>
+<footer>内容在你的浏览器里解密；存放它的服务器只有密文，看不到内容。</footer>
+<script id="share-data" type="application/json">__SHARE_DATA__</script>
+<script>
+(function(){
+  var main = document.getElementById('main');
+  var esc = function(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+  var fail = function(msg){ main.innerHTML = '<div class="box"><p class="bad">' + esc(msg) + '</p><p class="hint">链接要完整复制，包括 # 后面的部分。</p></div>'; };
+  var data; try { data = JSON.parse(document.getElementById('share-data').textContent); } catch(e){ return fail('这个分享的数据坏了。'); }
+  if (!data || !data.content) return fail('这个分享不存在，或已被撤回。');
+  if (data.expires && Date.now() / 1000 > data.expires) return fail('这个分享已过期。');
+  if (!window.crypto || !crypto.subtle) return fail('需要在 https 页面或较新的浏览器里打开。');
+  var b64 = function(s){ s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var bin = atob(s), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+  var frag = {}; location.hash.slice(1).split('&').forEach(function(kv){ var i = kv.indexOf('='); if (i > 0) frag[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
+  var iv = Array.isArray(data.iv) ? new Uint8Array(data.iv) : b64(String(data.iv || ''));
+  var ct = b64(data.content);
+  function open(key){
+    return crypto.subtle.decrypt({name:'AES-GCM', iv:iv}, key, ct).then(function(buf){
+      var p = JSON.parse(new TextDecoder().decode(buf));
+      show(p);
+    });
+  }
+  function show(p){
+    var title = p.title || '分享的文档';
+    document.title = title + ' · 加密分享';
+    main.innerHTML = '<h1></h1><div class="meta"></div><iframe sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" title="正文"></iframe>';
+    main.querySelector('h1').textContent = title;
+    var when = data.created ? new Date(data.created * 1000) : null;
+    main.querySelector('.meta').textContent = (when ? '分享于 ' + when.toLocaleDateString() : '') + (data.expires ? ' · ' + new Date(data.expires * 1000).toLocaleDateString() + ' 过期' : '');
+    var f = main.querySelector('iframe');
+    var html = p.html || ('<pre style="white-space:pre-wrap">' + esc(p.markdown || '') + '</pre>');
+    /* 正文不执行任何脚本：沙箱不给 allow-scripts；链接在新窗口打开 */
+    html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+    f.srcdoc = html.replace(/<head>/i, '<head><base target="_blank">');
+    f.onload = function(){ try { var d = f.contentDocument; var h1 = d.querySelector('h1'); if (h1 && h1.textContent.trim() === title.trim()) h1.remove(); f.style.height = Math.max(400, d.documentElement.scrollHeight + 24) + 'px'; } catch(e){} };
+  }
+  if (frag.k2){
+    crypto.subtle.importKey('raw', b64(frag.k2), {name:'AES-GCM'}, false, ['decrypt']).then(open).catch(function(){ fail('解不开：链接里的密钥不对。'); });
+  } else if (frag.k){
+    /* 经典界面生成的旧链接：k = base64(口令)，密钥 = 口令补齐到 32 字节 */
+    var pass; try { pass = atob(frag.k); } catch(e){ return fail('链接里的密钥格式不对。'); }
+    crypto.subtle.importKey('raw', new TextEncoder().encode((pass + '0'.repeat(32)).slice(0, 32)), {name:'AES-GCM'}, false, ['decrypt']).then(open).catch(function(){ fail('解不开：链接里的密钥不对。'); });
+  } else if (data.salt){
+    main.innerHTML = '<div class="box"><p>这份分享设了密码。</p><input type="password" id="pw" autocomplete="off" placeholder="密码"><button id="go">打开</button><p class="bad" id="err"></p></div>';
+    var go = function(){
+      var pw = document.getElementById('pw').value; if (!pw) return;
+      document.getElementById('err').textContent = '';
+      crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']).then(function(base){
+        return crypto.subtle.deriveKey({name:'PBKDF2', salt:b64(data.salt), iterations:data.iter || 210000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['decrypt']);
+      }).then(open).catch(function(){ var e = document.getElementById('err'); if (e) e.textContent = '密码不对。'; });
+    };
+    document.getElementById('go').onclick = go;
+    document.getElementById('pw').addEventListener('keydown', function(e){ if (e.key === 'Enter') go(); });
+    document.getElementById('pw').focus();
+  } else fail('链接里缺少密钥。');
+})();
+</script>
+</body>
+</html>

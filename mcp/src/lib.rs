@@ -1774,6 +1774,187 @@ pub mod agent {
         Ok(body["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
     }
 
+    /// 发一次 chat/completions，要求流式（`stream: true`）。正文增量逐段回调 `on_delta`；
+    /// 工具调用按 index 拼回完整的 `tool_calls`。服务商不支持流式、直接回整块 JSON 时也能用
+    /// （整段正文一次回调）。返回拼好的 assistant message 与 token 数（流式时服务商可能不给，记 0）。
+    pub async fn chat_stream(
+        client: &reqwest::Client,
+        cfg: &AiConfig,
+        mut body: Value,
+        on_delta: &mut (dyn FnMut(&str) + Send),
+    ) -> anyhow::Result<(Value, u64)> {
+        let key = cfg.resolved_key();
+        let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
+        body["stream"] = json!(true);
+        let mut req = client.post(&url).json(&body);
+        if !key.is_empty() {
+            req = req.bearer_auth(&key);
+        }
+        let mut resp = req.send().await?;
+        let status = resp.status();
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.contains("event-stream"))
+            .unwrap_or(false);
+        if !status.is_success() || !is_sse {
+            let text = resp.text().await?;
+            let v: Value = serde_json::from_str(&text).unwrap_or(json!({ "raw": text }));
+            if !status.is_success() {
+                anyhow::bail!("模型接口返回 {status}: {}", v);
+            }
+            let msg = v["choices"][0]["message"].clone();
+            if let Some(c) = msg["content"].as_str() {
+                if !c.is_empty() {
+                    on_delta(c);
+                }
+            }
+            return Ok((msg, v["usage"]["total_tokens"].as_u64().unwrap_or(0)));
+        }
+        let mut buf: Vec<u8> = Vec::new();
+        let mut content = String::new();
+        let mut calls: Vec<Value> = Vec::new();
+        let mut tokens = 0u64;
+        let mut done = false;
+        while !done {
+            let Some(chunk) = resp.chunk().await? else { break };
+            buf.extend_from_slice(&chunk);
+            while let Some(nl) = buf.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=nl).collect();
+                let line = String::from_utf8_lossy(&line);
+                let line = line.trim();
+                let Some(data) = line.strip_prefix("data:") else { continue };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    done = true;
+                    break;
+                }
+                let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+                if let Some(t) = v["usage"]["total_tokens"].as_u64() {
+                    tokens = t;
+                }
+                let delta = &v["choices"][0]["delta"];
+                if let Some(c) = delta["content"].as_str() {
+                    if !c.is_empty() {
+                        content.push_str(c);
+                        on_delta(c);
+                    }
+                }
+                if let Some(tcs) = delta["tool_calls"].as_array() {
+                    for tc in tcs {
+                        let i = tc["index"].as_u64().unwrap_or(calls.len() as u64) as usize;
+                        while calls.len() <= i {
+                            calls.push(json!({ "id": "", "type": "function", "function": { "name": "", "arguments": "" } }));
+                        }
+                        let c = &mut calls[i];
+                        if let Some(id) = tc["id"].as_str() {
+                            c["id"] = json!(id);
+                        }
+                        if let Some(n) = tc["function"]["name"].as_str() {
+                            let cur = c["function"]["name"].as_str().unwrap_or("").to_string();
+                            c["function"]["name"] = json!(cur + n);
+                        }
+                        if let Some(a) = tc["function"]["arguments"].as_str() {
+                            let cur = c["function"]["arguments"].as_str().unwrap_or("").to_string();
+                            c["function"]["arguments"] = json!(cur + a);
+                        }
+                    }
+                }
+            }
+        }
+        let mut msg = json!({ "role": "assistant", "content": if content.is_empty() && !calls.is_empty() { Value::Null } else { json!(content) } });
+        if !calls.is_empty() {
+            msg["tool_calls"] = json!(calls);
+        }
+        Ok((msg, tokens))
+    }
+
+    /// 纯文本补全的流式版：正文边生成边回调（结晶答案用）。
+    pub async fn complete_stream(
+        cfg: &AiConfig,
+        system: &str,
+        user: &str,
+        on_delta: &mut (dyn FnMut(&str) + Send),
+    ) -> anyhow::Result<String> {
+        let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(180)).build()?;
+        let (msg, _) = chat_stream(
+            &client,
+            cfg,
+            json!({
+                "model": cfg.model,
+                "temperature": 0.1,
+                "messages": [
+                    { "role": "system", "content": system },
+                    { "role": "user", "content": user },
+                ],
+            }),
+            on_delta,
+        )
+        .await?;
+        Ok(msg["content"].as_str().unwrap_or("").to_string())
+    }
+
+    /// 带工具的 Agent，流式版：每一步工具调用回调 `on_step`，正文增量回调 `on_delta`。
+    /// 一轮里先吐出的正文若随后跟着工具调用，那是「我先查一下」之类的过渡话，
+    /// 调用方收到 step 时应当把这段草稿清掉。
+    pub async fn run_ai_streaming(
+        server: &McpServer,
+        cfg: &AiConfig,
+        message: &str,
+        on_step: &mut (dyn FnMut(&Step) + Send),
+        on_delta: &mut (dyn FnMut(&str) + Send),
+    ) -> anyhow::Result<Outcome> {
+        let tools = server.tools_for_llm();
+        let mut messages = vec![
+            json!({ "role": "system", "content":
+                "你是 ThirdC 知识库里的协作者。优先用工具了解库中现有内容再回答；\
+                 写文档前先 search_vault 查重。回答简洁，用中文。\
+                 当用户要求整理/汇总时，用 write_doc 把结果沉淀成文档。" }),
+            json!({ "role": "user", "content": message }),
+        ];
+        let client = reqwest::Client::new();
+        let mut steps = Vec::new();
+        let mut tokens = 0u64;
+        for _ in 0..cfg.max_steps.max(1) {
+            let (msg, t) = chat_stream(
+                &client,
+                cfg,
+                json!({ "model": cfg.model, "messages": messages, "tools": tools, "tool_choice": "auto" }),
+                on_delta,
+            )
+            .await?;
+            tokens += t;
+            let tool_calls = msg["tool_calls"].as_array().cloned().unwrap_or_default();
+            if tool_calls.is_empty() {
+                let reply = msg["content"].as_str().filter(|s| !s.is_empty()).unwrap_or("(模型没有返回内容)").to_string();
+                return Ok(Outcome { mode: "ai", reply, steps, tokens });
+            }
+            messages.push(msg.clone());
+            for call in tool_calls {
+                let name = call["function"]["name"].as_str().unwrap_or("").to_string();
+                let args: Value = call["function"]["arguments"]
+                    .as_str()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(json!({}));
+                let (ok, summary) = match server.call_tool_public(&name, args.clone()) {
+                    Ok(v) => (true, crate::extract_tool_text(&v)),
+                    Err(e) => (false, format!("失败：{e}")),
+                };
+                let step = Step { tool: name.clone(), args: args.clone(), ok, summary: summary.clone() };
+                on_step(&step);
+                steps.push(step);
+                messages.push(json!({ "role": "tool", "tool_call_id": call["id"].clone(), "content": summary }));
+            }
+        }
+        Ok(Outcome {
+            mode: "ai",
+            reply: "已达到工具调用步数上限，未得到最终答复。可细化问题后重试。".into(),
+            steps,
+            tokens,
+        })
+    }
+
     /// AI 模式：模型选择工具 → 执行 → 回灌结果，直到给出最终答复。
     pub async fn run_ai(
         server: &McpServer,

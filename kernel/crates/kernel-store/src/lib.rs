@@ -224,7 +224,8 @@ pub struct BrowserConfig {
 }
 
 /// OpenAI 兼容的模型端点配置（OpenAI / DeepSeek / Ollama / vLLM / 任意兼容服务）。
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// `Default` 手写：派生出来的 max_steps 会是 0，第一次在界面里配好模型后 Agent 只能走一步。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
     /// 形如 https://api.openai.com/v1 或 http://localhost:11434/v1
     pub base_url: String,
@@ -243,6 +244,12 @@ pub struct AiConfig {
 
 fn default_max_steps() -> usize {
     6
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self { base_url: String::new(), api_key: String::new(), model: String::new(), embedding_model: String::new(), max_steps: default_max_steps() }
+    }
 }
 
 impl AiConfig {
