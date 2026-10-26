@@ -6,11 +6,11 @@
 <title>鹿蕊 Litmus</title>
 <script>
 (function(){
-  /* 知识场（docs/spec/field.md）：选过知识场的用户直接进新壳；?classic 或 /经典界面 留在这里。
-     没有令牌时不跳——登录页在经典壳里，登录后下一次打开再进知识场。 */
+  /* 知识场（docs/spec/field.md）是默认界面：打开 / 直接进 /field。
+     留在经典壳的三种情况：?classic、在知识场里选过 /经典界面（litmus_shell=classic）、还没有令牌（登录页在经典壳里，登录后自动进知识场）。 */
   try{
     var qs=new URLSearchParams(location.search);
-    if(localStorage.getItem('litmus_shell')==='field'&&!qs.has('classic')&&(qs.get('token')||localStorage.getItem('thirdc_token'))){
+    if(localStorage.getItem('litmus_shell')!=='classic'&&!qs.has('classic')&&(qs.get('token')||localStorage.getItem('thirdc_token'))){
       location.replace(location.pathname.replace(/\/index\.html$/,'').replace(/\/+$/,'')+'/field'+location.search+location.hash);
       return;
     }
@@ -5745,7 +5745,7 @@ const CMDS=[
     try{localStorage.setItem('thirdc_motion',on?'reduced':'full')}catch{}toast(on?'已减少动效：过渡即时完成':'动效已恢复','ok');}],
   ['打开发布面板','p',async()=>{await Promise.all([loadPublishTargets(),loadPublishList()]);openOverlay('pub-ov');}],
   ['查看路线图','r',()=>{renderRoad();openOverlay('road-ov');}],
-  ['试用知识场（新界面）','field',()=>{try{localStorage.setItem('litmus_shell','field')}catch{}location.href=BASE+'/field';}],
+  ['回到知识场','field',()=>{try{localStorage.setItem('litmus_shell','field')}catch{}location.href=BASE+'/field';}],
   ['导入设计规范','g',async()=>{await openDesign();}],
   ['切换到画布','1',()=>{closeAll();document.querySelector('[data-view=canvas]').click();}],
   ['切换到时间线','2',()=>{closeAll();document.querySelector('[data-view=timeline]').click();}],
