@@ -1,6 +1,6 @@
 # 知识场（Field）
 
-> 状态：F0（内核）+ F1（独立新壳）+ F2（功能接回）已实现；0.11.0 起知识场是默认界面，经典界面保留可切换
+> 状态：F0–F4、G1–G4 已实现；0.14.0 起知识场是唯一的界面（经典界面退役）
 > 与 `os.md`（宪法）、`interaction.md`（交互契约）并列。经典壳的结构规则见 `content-workspace.md`；知识场是下一代默认壳的候选，F2 起替代它的信息结构部分。
 
 ## 0. 为什么要做
@@ -68,19 +68,19 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 - 主题沿用 `thirdc_theme`；桌面端 `html.desktop` 留出红绿灯、顶部 44px 拖拽区、IPC 桥兜底与原生明暗同步。
 - 渲染只在动画期跑（PERF 纪律），视口外节点不写样式。
 
-### 3.4 两个壳怎么切
+### 3.4 唯一的界面（0.14 起）
 
-- 知识场是默认界面：打开 `/`（桌面 App 启动时也是）有令牌就直接进 `/field`。
-- 留在经典壳：`/?classic`；或在知识场里输入 `/经典界面`（写 `localStorage.litmus_shell = 'classic'`，之后一直停在经典壳）。
-- 从经典壳回来：⌘K →「回到知识场」（写 `'field'`）。
-- 没有令牌时不跳：登录页在经典壳里，登录后 reload 自动进知识场。
-- Service Worker 的导航缓存按路径各存一份，断网时两个壳各自回落，不串壳；壳版本哈希包含 `field.html`。
+- 经典界面（`index.html`）已退役删除。`/` 与 `/field` 都是知识场；`/?doc=Notes/…` 深链直接打开那篇（浏览器扩展、托盘、旧书签）。
+- 网页版没有令牌时，知识场自己显示登录（`POST /auth/login`），登录后留在原地址。
+- 桌面 App 原生菜单与托盘的事件（`menu:*`、`tray-*`）都由知识场接住。
+- Service Worker 的壳版本 = `field.html` + `tokens.css` 内容哈希。
 
 ## 4. 测试
 
 - `cargo test -p kernel-core field`：切词、确定性、语义邻近、增量不挪旧点、区域名、落位、空库。
 - `cargo test -p thirdc-server --lib field`：页面免令牌、接口要令牌、data → react → near → place → crystal → note 端到端、新增文档不挪旧坐标。
-- `cargo test -p thirdc-server --test field`：壳的字号走 token、零 hex、无 emoji、纸与墨及石蕊蓝 / 红在两种明暗下 ≥ 4.5:1。
+- `cargo test -p thirdc-server --test field --test craft --test palette`：壳的字号走 token、零 hex、无 emoji、毛玻璃两档、圆角走 token、纸与墨及石蕊蓝 / 红在两种明暗下 ≥ 4.5:1；分享页同一套。
+- `node --test server/tests/field.mjs`：壳里的纯函数（意图判断、切节、frontmatter、逐行对比、标签主干）。
 - `scripts/perf-check.sh` 新增 4 条预算（见 `PERF.md`）。
 
 ## 5. F2：把经典界面的功能接回来
@@ -103,6 +103,7 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | G1 大库提速 | 见 `PERF.md`「知识场大库纪律」 | 已完成 |
 | G2 全库整理 | `server/src/organize.rs`。场构建时算信号（正文字数、TODO、计划日期）；`POST /field/organize {scope}` 增加 `fragments`（< 280 字的文档按近邻 ≥ 0.3 连通，3–12 篇一组，按跨越时间排序）、`stale`（superseded / expired / todo / aging）、`options`（区域与日期范围）；`POST /field/merge`（plain / ai，原文 keep / archive，返回撤销说明）；`POST /field/refresh`（参照更新版起草，不写盘）；`/field/patrol`（估算 / 开始 / 进度 / 停下，每批 30 篇补标签起标题、每批 6 篇核实过时，结果存 `.thirdc/patrol.json`） | 已完成 |
 | G3 数据源 | `server/src/sources.rs`。配置 `.thirdc/sources.json`，索引 `.thirdc/sources/index.json`，抽出的文字 `.thirdc/sources/text/<hash>.txt`（设备本地）。种类 folder / agent / mcp / google / rest；`/sources`（列表、增改、`onboarded`）、`/sources/detect`（只数个数）、`/sources/{id}/scan`（后台增量：路径 + 大小 + 修改时间不变就沿用）、`/sources/connection`（写 thirdc.toml 的 [[connections]]）、`/sources/google/start|callback`（OAuth 本机回环，refresh token 存凭证库）。知识场把条目当 `ext:<源>/<条目>` 节点铺进场（`k=ext`、`s`=来源名），缓存键加 `sources::REV`；`/field/ext` 只读、`/field/ext/import`（move / copy）；结晶能读库外原文；整理排除库外。截图 OCR：macOS Vision（首次编译一个 Swift 小程序到临时目录）→ tesseract | 已完成 |
+| G4 退役经典界面 | 删 `index.html` 与 `workspace.mjs`；`/` 直接是知识场；登录与 `?doc=` 深链进知识场；工艺测试改查 `field.html`（毛玻璃两档、圆角 token；7px 以内的节点标记允许 1–2px） | 已完成 |
 
 其他未做：学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。
 

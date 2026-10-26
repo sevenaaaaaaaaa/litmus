@@ -85,7 +85,7 @@
 - 失败可诊断：登录/列表失败在**同步阶段**立刻返回 4xx/5xx 与原因（不再等全量超时）；
   单篇失败计入 `failed`，不阻断其余文件。
 - 账号/服务器落盘 `.thirdc/remote.json`；页面刷新后 `resumeSync()` 接续未完成任务。
-- **近期更新**：Onboarding 浮层内容由 `server/web/index.html` 的 `WHATS_NEW` 数组驱动，
+- **近期更新**：Onboarding 浮层内容由经典壳 `index.html` 的 `WHATS_NEW` 数组驱动（0.14 起经典壳退役，版本说明以 CHANGELOG 为准），
   发版时追加一条（与 `docs/RELEASE.md` 的发布清单同步）。
 
 ## 4. 路线图

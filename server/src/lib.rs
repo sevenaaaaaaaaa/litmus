@@ -126,7 +126,7 @@ fn check_token(state: &AppState, headers: &HeaderMap) -> Result<(), (StatusCode,
 }
 
 /// 构建带认证的 API 路由。`/` 与静态资产不需要令牌，页面内用令牌调 API。
-/// Service Worker 源码：__SHELL_VERSION__ 由路由注入 index.html 内容哈希。
+/// Service Worker 源码：__SHELL_VERSION__ 由路由注入壳内容哈希。
 const SW_SRC: &str = r#"
 const SHELL = '__SHELL_VERSION__';
 self.addEventListener('install', e => self.skipWaiting());
@@ -177,12 +177,12 @@ self.addEventListener('fetch', e => {
 });
 "#;
 
-/// 壳版本：index.html 内容哈希（构建期内嵌，改动自动出新缓存键）。
+/// 壳版本：field.html 内容哈希（构建期内嵌，改动自动出新缓存键）。
 fn shell_version() -> &'static String {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
-        // 壳 = index.html + tokens.css：只改配色也必须换缓存键
-        let html = [include_str!("../web/index.html"), include_str!("../web/field.html"), include_str!("../web/tokens.css")].concat();
+        // 壳 = field.html + tokens.css：只改配色也必须换缓存键
+        let html = [include_str!("../web/field.html"), include_str!("../web/tokens.css")].concat();
         format!("thirdc-shell-{}", &kernel_core::Cas::hash_hex(html.as_bytes())[..12])
     })
 }
@@ -190,7 +190,8 @@ fn shell_version() -> &'static String {
 /// 构建带认证的 API 路由。`/` 与静态资产不需要令牌，页面内用令牌调 API。
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(app))
+        // 唯一的界面：知识场（0.14 起经典界面退役；/field 留作别名，旧书签照样能开）
+        .route("/", get(field::page))
         .route("/field", get(field::page))
         .route("/field/data", get(field::data))
         .route("/field/react", get(field::react))
@@ -227,7 +228,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/icon48.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon48.png").as_slice()) }))
         .route("/manifest-pwa.json", get(|| async { axum::response::Json(serde_json::json!({"name":"鹿蕊 Litmus","short_name":"鹿蕊","start_url":"/","display":"standalone","background_color":"#22252d","theme_color":"#22252d"})) }))
         .route("/sw.js", get(|| async {
-    // 壳版本 = index.html 内容哈希（构建期自动）：改前端必出新缓存键，忘 bump 也不再吃旧壳。
+    // 壳版本 = 壳内容哈希（构建期自动）：改前端必出新缓存键，忘 bump 也不再吃旧壳。
     let body = SW_SRC.replace("__SHELL_VERSION__", shell_version());
     ([("content-type", "application/javascript; charset=utf-8"), ("cache-control", "no-cache")], body).into_response()
 }))
@@ -331,25 +332,6 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/conflow/conversations", get(conflow_conversations))
         .route("/conflow/digest", post(conflow_digest))
         .with_state(state)
-}
-
-/// 内嵌的 Web 客户端（单文件，无构建步骤）。开发期禁止缓存，避免看到旧版。
-async fn app() -> impl IntoResponse {
-    // 内联 tokens.css：省掉一次跨洋往返（无 CDN 时每次往返 ~0.8s）
-    static PAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    let html = PAGE.get_or_init(|| {
-        include_str!("../web/index.html").replace(
-            "<link rel=\"stylesheet\" href=\"assets/tokens.css\">",
-            &format!(
-                "<style>{}</style>",
-                include_str!("../web/tokens.css").replace("url(\"fonts/", "url(\"/assets/fonts/")
-            ),
-        )
-    });
-    (
-        [(header::CACHE_CONTROL, "no-cache, must-revalidate")],
-        axum::response::Html(html.as_str()),
-    )
 }
 
 async fn tokens_css() -> impl IntoResponse {

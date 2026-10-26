@@ -1,10 +1,11 @@
-//! 壳的工艺纪律（docs/spec/design-system.md「图标与字体纪律」）。
+//! 壳的工艺纪律（docs/spec/design-system.md「图标与字体纪律」）。0.14 起唯一的壳是知识场（field.html）。
 //!
 //! - 字号只走五级 token：<style> 与静态标记里不许出现裸 px 字号；
 //! - chrome 不直出 emoji：静态标记里没有象形符号（键盘符 ⌘⇧↩ 与箭头属排印，放行）；
-//! - 每个 data-ic / iconSvg('名') 都能在 IC 图标表里找到，不会渲染成空方块。
+//! - 若壳用 IC 图标表，每个 data-ic / iconSvg('名') 都要能找到（知识场内联 SVG，没有图标表时跳过）；
+//! - 毛玻璃只有两档、圆角只走 token（7px 以内的节点标记形状允许 1px / 2px）。
 
-const INDEX: &str = include_str!("../web/index.html");
+const INDEX: &str = include_str!("../web/field.html");
 
 fn shell() -> &'static str {
     let end = INDEX.find("<script data-cfasync").expect("主脚本标记");
@@ -74,7 +75,7 @@ fn chrome_markup_has_no_emoji() {
 #[test]
 fn every_icon_reference_exists() {
     let js = main_script();
-    let start = js.find("const IC={").expect("IC 图标表");
+    let Some(start) = js.find("const IC={") else { return };
     let end = start + js[start..].find("\n};").expect("IC 结束");
     let table = &js[start..end];
     let names: Vec<&str> = table
@@ -157,7 +158,7 @@ fn radii_come_from_the_token_scale() {
             let decl: String = tail.chars().take_while(|&c| c != ';' && c != '}' && c != '"' && c != '\'').collect();
             let ok = decl.split_whitespace().all(|v| {
                 let v = v.trim_end_matches("!important");
-                v.is_empty() || v == "0" || v == "50%" || v == "inherit" || v.starts_with("var(--r-")
+                v.is_empty() || v == "0" || v == "50%" || v == "inherit" || v == "1px" || v == "2px" || v.starts_with("var(--r-")
             });
             if !ok {
                 bad.push(format!("L{}: border-radius:{decl}", i + 1));

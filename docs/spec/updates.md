@@ -11,7 +11,7 @@
 | 更新器插件 | `desktop/Cargo.toml` → `tauri-plugin-updater` |
 | 更新源 / 公钥 | `desktop/tauri.conf.json` → `plugins.updater` |
 | 后端命令 | `desktop/src/lib.rs` → `desktop_check_update` / `desktop_install_update` / `desktop_app_version` |
-| 前端入口 | `server/web/index.html` → 「设置 · 关于」页的「检查更新」块 |
+| 前端入口 | 知识场 `/更新`，或桌面菜单「检查更新」（`server/web/field.html` 的 `openUpdate`） |
 | 构建开关 | `desktop/tauri.conf.json` → `bundle.createUpdaterArtifacts = true` |
 
 流程：`关于` → `检查更新` → 命中新版本则显示版本号与说明 → `下载并安装` → 下载完成后 `app.restart()` 重启加载新版。
@@ -42,7 +42,7 @@ cargo tauri signer generate -w ~/.tauri/thirdc-updater.key
 
 ### 发布流程
 
-推 `v*` 标签（并先 bump `Cargo.toml` / `tauri.conf.json` / `index.html` 的版本号），
+推 `v*` 标签（版本号唯一来源是 `Cargo.toml`），
 `.github/workflows/desktop.yml` 经 `tauri-action` 完成：构建 → 签名 → 建 Release →
 生成 `latest.json`（含各平台签名与下载地址）。客户端按 `latest.json` 比对版本。
 

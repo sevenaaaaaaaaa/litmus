@@ -16,7 +16,7 @@
    iOS ─────┘                                                                 │
 ```
 
-- 业务只写一次：内核（Rust）+ 前端（`server/web/index.html`）。
+- 业务只写一次：内核（Rust）+ 前端（`server/web/field.html`，知识场）。
 - 各端差异**只**存在于「外壳」：窗口/权限/进程/系统集成。
 - 桌面端不复制前端：webview 直接加载本地 daemon（`http://127.0.0.1:{随机端口}/?token=`）。
 

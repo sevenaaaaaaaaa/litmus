@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 const TOKENS: &str = include_str!("../web/tokens.css");
-const INDEX: &str = include_str!("../web/index.html");
+const INDEX: &str = include_str!("../web/field.html");
 
 // ───────────── 解析 tokens.css ─────────────
 
@@ -406,12 +406,12 @@ fn color_literals(hay: &str) -> Vec<String> {
 fn zero_hex_in_tokens_and_shell_chrome() {
     let t = color_literals(&strip_comments(TOKENS));
     assert!(t.is_empty(), "tokens.css 出现非 oklch 色值：{t:?}");
-    // index.html：<style> + 静态标记（到主脚本为止）。主脚本里的导出管线面向不支持 oklch 的外部渲染器
+    // field.html：<style> + 静态标记（到主脚本为止）。主脚本里的导出管线面向不支持 oklch 的外部渲染器
     // （公众号内联、导出 HTML 代码高亮），属于"出口格式"，不在壳的配色契约内。
     let end = INDEX.find("<script data-cfasync").expect("主脚本标记");
     let shell = strip_comments(&INDEX[..end]);
     let s = color_literals(&shell);
-    assert!(s.is_empty(), "index.html 壳（样式与标记）出现非 oklch 色值：{s:?}");
+    assert!(s.is_empty(), "field.html 壳（样式与标记）出现非 oklch 色值：{s:?}");
 }
 
 #[test]

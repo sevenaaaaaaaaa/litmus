@@ -7,7 +7,7 @@ ThirdC 客户端不是自造一套视觉，而是**沿用同一份契约**，保
 
 ```
 server/web/tokens.css   设计契约：颜色（全 oklch）、字体、圆角、阴影、缓动、明暗模式
-server/web/index.html   <style> 只放本页独有部件
+server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳）
 ```
 
 硬规则：
@@ -130,7 +130,7 @@ server/web/index.html   <style> 只放本页独有部件
 
 ### 图标：一套线性家族
 
-- 唯一来源是 `index.html` 里的 `IC` 表 + `iconSvg(name, size)`：24 网格、圆端点圆拐角、`currentColor`；
+- （经典壳时代）唯一来源是 `index.html` 里的 `IC` 表 + `iconSvg(name, size)`；知识场的图标是内联 SVG：24 网格、圆端点圆拐角、`currentColor`；
   笔画统一由 `--icon-stroke: 2`（tokens.css）控制，`svg.ic` 与各容器的 `svg{stroke-width}` 都读它。
 - 静态标记写 `<i data-ic="名" data-ics="尺寸">`，启动时注水；动态 HTML 直接拼 `iconSvg()`。
 - 本次补齐 31 个图标（x / check / more / cmd / chevL / chevR / expand / spark / graph / quote / link / edit / move /

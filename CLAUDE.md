@@ -2,13 +2,13 @@
 
 ## 项目简介
 
-鹿蕊 Litmus（开发代号 `thirdc`，林下 Understory 出品）：本地优先的「知识操作系统」。数据是磁盘上的普通 Markdown/HTML/附件，Rust 内核负责存储与索引，`thirdc serve` 为守护进程，提供 Web UI（五模式：Flow 画布 / Feynman / Memo / Agent / Studio）、HTTP API + MCP、CLI、Tauri 桌面/移动客户端、浏览器扩展。远端 `github.com/sevenaaaaaaaaa/litmus`，许可 AGPL-3.0。
+鹿蕊 Litmus（开发代号 `thirdc`，林下 Understory 出品）：本地优先的「知识操作系统」。数据是磁盘上的普通 Markdown/HTML/附件，Rust 内核负责存储与索引，`thirdc serve` 为守护进程，提供 Web UI（知识场 `server/web/field.html`：整库按意思铺开，一行输入问 / 找 / 记 / 令 / 办）、HTTP API + MCP、CLI、Tauri 桌面/移动客户端、浏览器扩展。远端 `github.com/sevenaaaaaaaaa/litmus`，许可 AGPL-3.0。
 
 ## 技术栈
 
 - Rust workspace（edition 2021，Rust 1.85+），`Cargo.lock`；axum + tokio、rusqlite（bundled）、automerge、reqwest（rustls）
 - 桌面/移动：Tauri v2（`desktop/`，productName `Litmus`，自更新走 GitHub Releases `latest.json`）
-- 前端：纯静态 `server/web/`（无 Node 构建）
+- 前端：纯静态 `server/web/`（无 Node 构建）；唯一的壳是 `field.html`（0.14 起经典 `index.html` 退役）
 - 浏览器扩展：`extension/`（Chrome/Safari）、`extension-firefox/`
 
 ## 目录结构
@@ -34,7 +34,8 @@ docker compose up -d                       # 7700 端口
 # 测试（同 CI kernel.yml）
 cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser
 cargo check -p kernel-md -p kernel-a2ui --target wasm32-unknown-unknown
-cargo test -p thirdc-server --test craft --test palette   # 前端壳工艺/配色纪律（改 server/web 必跑）
+cargo test -p thirdc-server --test craft --test palette --test field   # 前端壳工艺/配色纪律（改 server/web 必跑）
+node --test server/tests/field.mjs        # 壳里的纯函数
 bash scripts/perf-check.sh                 # 性能预算门禁
 
 # 桌面 / 移动
