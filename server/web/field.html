@@ -267,6 +267,42 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 .legend i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ink-3)}
 #help .close{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px))}
 
+/* 通用面板（回收站 / 最近 / 设置 / 移动） */
+#panel{position:fixed;inset:0;z-index:75;background:oklch(var(--paper-c) / .55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px}
+#panel .pbox{width:min(560px,100%);max-height:78vh;overflow:auto;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);box-sizing:border-box}
+#panel header{display:flex;align-items:center;gap:10px;padding:14px 14px 10px 20px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--sheet)}
+#panel header b{flex:1;font:600 var(--fs-4)/1.4 var(--f-display)}
+#p-body{padding:12px 20px 18px;font-size:var(--fs-3);line-height:1.65}
+#p-body .row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--rule)}
+#p-body .row .grow{flex:1;min-width:0}
+#p-body .row .grow span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#p-body .row small{font:400 var(--fs-1) var(--f-mono);color:var(--ink-2)}
+#p-body .empty{color:var(--ink-2);padding:18px 0}
+#p-body label{display:block;font:500 var(--fs-1) var(--f-mono);color:var(--ink-2);margin:12px 0 6px;letter-spacing:.04em}
+#p-body input[type=text],#p-body input[type=password]{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);padding:9px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule);outline:none}
+#p-body input:focus{box-shadow:inset 0 0 0 1.5px oklch(var(--litmus-c) / .6)}
+#p-body .acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center}
+#p-body .hint{color:var(--ink-2);font-size:var(--fs-2);margin:8px 0 0}
+#p-body .ok{color:var(--litmus)}
+#p-body .bad{color:var(--acid)}
+#p-body .chips{display:flex;gap:6px;flex-wrap:wrap}
+/* 更多菜单与目录 */
+.pop{position:fixed;z-index:65;min-width:200px;max-width:min(320px,calc(100vw - 24px));max-height:60vh;overflow:auto;background:var(--sheet);border-radius:var(--r-md);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);padding:5px}
+.pop button{display:flex;width:100%;border:0;background:none;text-align:left;padding:8px 10px;border-radius:var(--r-sm);cursor:pointer;font-size:var(--fs-3);gap:10px;align-items:baseline}
+.pop button:hover{background:var(--litmus-wash)}
+.pop button.danger{color:var(--acid)}
+.pop hr{border:0;border-top:1px solid var(--rule);margin:4px 2px}
+.pop button.h3{padding-left:22px;color:var(--ink-2)}
+#links h5{font:500 var(--fs-1) var(--f-mono);color:var(--ink-2);margin:0 0 8px;letter-spacing:.06em}
+#links{border-top:1px solid var(--rule);margin-top:36px;padding-top:16px}
+#links .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+#links .chip{background:var(--paper)}
+#links .chip b{font-family:var(--f-mono)}
+#drop{position:fixed;inset:12px;z-index:90;border-radius:var(--r-lg);border:2px dashed var(--litmus);background:oklch(var(--litmus-c) / .06);display:none;place-items:center;pointer-events:none}
+#drop.on{display:grid}
+#drop p{font:600 var(--fs-5)/1.4 var(--f-display);color:var(--litmus);text-align:center}
+#verb[data-v="收"]{background:var(--litmus);color:var(--paper)}
+
 @media (max-width:720px){
   #sheet{width:100%;top:auto;height:86%;border-radius:var(--r-lg) var(--r-lg) 0 0;transform:translateY(104%)}
   body.reading #intent{transform:translateX(-50%);opacity:0;pointer-events:none}
@@ -327,7 +363,9 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 <aside id="sheet" aria-label="阅读">
   <header>
     <span class="tag" id="s-rg"></span><span class="path" id="s-path"></span><span id="s-save"></span>
+    <button class="btn" id="s-toc" title="目录">目录</button>
     <button class="btn" id="s-edit">编辑</button>
+    <button class="ib" id="s-more" aria-label="更多" title="更多"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
     <button class="ib" id="s-x" aria-label="关闭阅读（Esc）" title="Esc"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   </header>
   <div id="doc"></div>
@@ -339,6 +377,12 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
   <div class="nav"><button id="t-prev">上一站</button><button id="t-next">下一站</button><button id="t-open">展开阅读</button><button id="t-x">结束</button></div></div>
 
 <div id="toast" role="status"></div>
+
+<div id="panel" hidden><div class="pbox" role="dialog" aria-modal="true" aria-labelledby="p-title">
+  <header><b id="p-title"></b><button class="ib" id="p-x" aria-label="关闭"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header>
+  <div id="p-body"></div>
+</div></div>
+<div id="drop"><p>松手导入<br><small>Markdown、文本、HTML 直接存进库；Word、PDF、PPT、Excel、EPUB 会先转成 Markdown</small></p></div>
 
 <section id="help" aria-label="用法">
   <button class="ib close" id="help-x" aria-label="关闭"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
@@ -352,7 +396,9 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
       <div><kbd>问</kbd>问句或长句：显色，回车结晶出答案</div>
       <div><kbd>找</kbd>几个词：显色，回车打开最相关的一篇</div>
       <div><kbd>+</kbd>开头：记一笔，回车后它自己找位置</div>
-      <div><kbd>/</kbd>开头：指令，比如 /时间、/路径、/经典界面</div>
+      <div><kbd>/</kbd>开头：指令，比如 /新建、/最近、/回收站、/设置</div>
+      <div><kbd>网址</kbd>粘贴一个网址：回车收进库里</div>
+      <div><kbd>拖入</kbd>把文件拖到窗口上：导入成文档</div>
     </div>
 
     <h3>快捷键</h3>
@@ -373,7 +419,13 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
         <tr><td>Agent 对话、魔法</td><td>「问」结晶答案；划选正文后「解释给我听 / 考考我」</td></tr>
         <tr><td>Memo 随手记</td><td>「+」开头记一笔，存进 Notes/Memos/，自动落位</td></tr>
         <tr><td>学习 / 展示</td><td>点开阅读；⇧ 点选几篇或答案卡「沿来源走一遍」</td></tr>
-        <tr><td>发布、同步、设置、插件</td><td>暂时留在经典界面（/经典界面）</td></tr>
+        <tr><td>新建、重命名、移动、删除</td><td>/新建；阅读页右上角「⋯」里的重命名或移动、删除（可撤销）</td></tr>
+        <tr><td>回收站、最近、同步</td><td>/回收站、/最近、/同步</td></tr>
+        <tr><td>采集网页、导入文件</td><td>粘贴网址回车；把文件拖进窗口；/采集 加主题</td></tr>
+        <tr><td>导出</td><td>阅读页「⋯」：Markdown、Word、HTML、打印成 PDF</td></tr>
+        <tr><td>双链、目录</td><td>阅读页底部「链出 / 链入」；页头「目录」</td></tr>
+        <tr><td>AI 模型</td><td>/设置：接口地址、模型、密钥，可测试连通</td></tr>
+        <tr><td>发布、插件、设计规范、看板</td><td>暂时留在经典界面（/经典界面）</td></tr>
       </tbody>
     </table></div>
 
@@ -382,6 +434,8 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
       <span><i></i>文档</span><span><i style="border-radius:1px;transform:rotate(45deg)"></i>采集来的原文</span>
       <span><i style="background:none;box-shadow:inset 0 0 0 1.6px var(--ink-2)"></i>随手记</span>
       <span><i style="background:none;border-radius:1px;transform:rotate(45deg);box-shadow:inset 0 0 0 1.6px var(--litmus)"></i>收下的答案</span>
+      <span><i style="width:16px;height:1.5px;border-radius:1px;background:var(--ink-2)"></i>写下的链接</span>
+      <span><i style="width:16px;height:0;border-radius:0;background:none;border-top:1.5px dotted var(--ink-3)"></i>意思相近</span>
       <span><i style="background:var(--litmus)"></i>与此刻的意图相关</span><span><i style="background:var(--acid)"></i>刚记下，尚未沉淀</span>
     </div>
     <p class="lede" style="margin-top:28px"><button class="btn" id="help-classic">回到经典界面</button> <button class="btn" id="help-rebuild">整体重排一次</button></p>
@@ -444,7 +498,7 @@ function toks(s){
 }
 
 /* ───────── 模型 ───────── */
-let nodes = [], byPath = new Map(), order = [], regions = [], edges = [], epoch = -1;
+let nodes = [], byPath = new Map(), order = [], regions = [], edges = [], links = [], epoch = -1;
 let T0 = Date.now() - 30 * DAY, NDAYS = 30;
 let layout = 'sem';
 function mkNode(d){
@@ -470,7 +524,7 @@ function shortLabel(t){
 }
 function setNode(n, d){
   n.full = d.t || n.p.split('/').pop();
-  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y;
+  n.title = shortLabel(n.full); n.k = d.k; n.d = d.d; n.ex = d.ex || ''; n.r = d.r; n.sx0 = d.x; n.sy0 = d.y; n.m = d.m || 0;
   n.ts = Math.round((Date.parse(n.d) - T0) / DAY);
   n.el.dataset.k = n.k;
   n.el.querySelector('.t').textContent = n.title;
@@ -504,7 +558,8 @@ async function loadField(opts){
   nodes.filter(n => !seen.has(n.p)).forEach(n => { n.el.remove(); byPath.delete(n.p); });
   nodes = order.slice();
   edges = (data.edges || []).map(e => [order[e[0]], order[e[1]], e[2]]).filter(e => e[0] && e[1]);
-  nodes.forEach(n => { n.pri = 0; }); edges.forEach(([a, b]) => { a.pri++; b.pri++; });
+  links = (data.links || []).map(l => [order[l[0]], order[l[1]]]).filter(l => l[0] && l[1]);
+  nodes.forEach(n => { n.pri = 0; }); edges.forEach(([a, b]) => { a.pri++; b.pri++; }); links.forEach(([a, b]) => { a.pri += 2; b.pri += 2; });
   buildRegions();
   measure(fresh.length === nodes.length ? nodes : fresh);
   nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; });
@@ -517,6 +572,7 @@ async function loadField(opts){
   $('veil').hidden = nodes.length > 0;
   if (!nodes.length){ $('veil-p').innerHTML = '<b>这片纸还是空的</b>在下面写一句话，以 + 开头，回车后它就成为第一篇。'; $('veil').hidden = false; }
   field.classList.toggle('big', nodes.length > 1500);
+  if (reading && byPath.get(reading.p) === reading && !editing) renderLinks(reading);
   kick();
   return fresh;
 }
@@ -600,7 +656,7 @@ function fit(list, instant){
   let [a, b, c, d] = bounds(list);
   if (layout === 'time' && list.length > 8){ a -= 220; b -= 30; }
   const padX = vw < 720 ? 24 : 90, top = 70, bottom = vw < 720 ? 150 : 170, sw = sheetW();
-  const s = Math.max(.05, Math.min(1.8, (vw - sw - padX * 2) / Math.max(1, c - a), (vh - top - bottom) / Math.max(1, d - b)));
+  const s = Math.max(.05, Math.min(list.length <= 3 ? 1.1 : 1.8, (vw - sw - padX * 2) / Math.max(1, c - a), (vh - top - bottom) / Math.max(1, d - b)));
   cam.ts = s; cam.tox = (vw - sw) / 2 - (a + c) / 2 * s; cam.toy = top + (vh - top - bottom) / 2 - (b + d) / 2 * s;
   if (instant){ cam.s = cam.ts; cam.ox = cam.tox; cam.oy = cam.toy; }
   kick();
@@ -754,7 +810,7 @@ function frame(t){
 }
 /* 标签避让：库大了标题必然互相压住。按「此刻相关度 → 关联数」排先后，网格查重，压住别人的只留点。 */
 function declutter(list, z, tsc){
-  if (nodes.length <= 300 && layout === 'sem'){ list.forEach(n => { if (n.muted){ n.muted = false; n.el.classList.remove('mute'); } }); return; }
+  if (nodes.length <= 300 && layout === 'sem' && z !== 'near'){ list.forEach(n => { if (n.muted){ n.muted = false; n.el.classList.remove('mute'); } }); return; }
   const H = z === 'near' ? 44 : 20, CW = 120, grid = new Map();
   list.sort((a, b) => (b.cur - a.cur) || (b.pri - a.pri));
   for (const n of list){
@@ -793,14 +849,26 @@ function draw(dots){
       ctx.fillRect(n.scx - 1.5, n.scy - 1.5, 3, 3);
     }
   }
+  /* 两种线：意思相近 = 淡点线（算出来的）；写下的链接 = 实线（人连的）。显色时两端都亮的线一起变蓝 */
   ctx.lineWidth = 1;
-  if (!dots || qActive) for (const [a, b] of edges){
-    const v = Math.min(a.vis, b.vis); if (v < .05) continue;
-    const lit = Math.min(a.cur, b.cur);
-    const base = dots ? 0 : (qActive ? .12 : .32) * v * (layout === 'time' ? 0 : 1);
-    if (!base && lit <= .06) continue;
-    if (base) curve(a, b, 'oklch(' + C.ink3 + ' / ' + base.toFixed(3) + ')', 1);
-    if (lit > .06) curve(a, b, 'oklch(' + C.lit + ' / ' + Math.min(.85, lit * 1.2).toFixed(3) + ')', 1 + lit * 1.2);
+  if (!dots || qActive){
+    ctx.setLineDash([1.5, 4]);
+    for (const [a, b] of edges){
+      const v = Math.min(a.vis, b.vis); if (v < .05) continue;
+      const lit = Math.min(a.cur, b.cur);
+      const base = dots ? 0 : (qActive ? .14 : .4) * v * (layout === 'time' ? 0 : 1);
+      if (!base && lit <= .06) continue;
+      if (base) curve(a, b, 'oklch(' + C.ink3 + ' / ' + base.toFixed(3) + ')', 1);
+      if (lit > .06) curve(a, b, 'oklch(' + C.lit + ' / ' + Math.min(.85, lit * 1.2).toFixed(3) + ')', 1 + lit * 1.2);
+    }
+    ctx.setLineDash([]);
+    for (const [a, b] of links){
+      const v = Math.min(a.vis, b.vis); if (v < .05) continue;
+      const lit = Math.min(a.cur, b.cur);
+      const base = dots ? 0 : (qActive ? .2 : .5) * v * (layout === 'time' ? .5 : 1);
+      if (base) curve(a, b, 'oklch(' + C.ink3 + ' / ' + base.toFixed(3) + ')', 1.2);
+      if (lit > .06) curve(a, b, 'oklch(' + C.lit + ' / ' + Math.min(.95, lit * 1.4).toFixed(3) + ')', 1.4 + lit * 1.4);
+    }
   }
   if (layout === 'time'){
     const yt = toScreen(0, timeBox[0])[1], yb = toScreen(0, timeBox[1])[1];
@@ -962,6 +1030,7 @@ async function openDoc(n){
   if (editing) await flushSave();
   if (reading) reading.el.classList.remove('cur');
   reading = n; n.el.classList.add('cur'); editing = false; setSave('saved');
+  pushRecent(n.p);
   $('s-rg').textContent = regions[n.r] ? regions[n.r].name : ''; $('s-path').textContent = n.p;
   $('s-edit').textContent = '编辑'; $('s-edit').hidden = false;
   $('doc').innerHTML = '<div class="inner"><h1>' + esc(n.full) + '</h1><div class="dmeta">' + esc(n.d) + '</div><div class="body"><span class="thinking"><i></i><i></i><i></i> 正在打开</span></div></div>';
@@ -979,6 +1048,7 @@ async function openDoc(n){
     if (reading !== n) return;
     $('doc').querySelector('.body').innerHTML = '<p>打不开这篇：' + esc(e.message || e) + '</p>';
   }
+  renderLinks(n);
   const nb = await nearP;
   if (reading !== n || !nb.length) return;
   const box = document.createElement('div'); box.id = 'near';
@@ -997,6 +1067,12 @@ function renderRead(d){
   const h = body.querySelector('h1'); if (h && h.textContent.trim() === reading.full.trim()) h.remove();
   body.querySelectorAll('a[href]').forEach(a => {
     const href = decodeURIComponent(a.getAttribute('href') || '');
+    if (a.dataset.wiki){
+      const t = resolveWiki(a.dataset.wiki);
+      if (t){ a.addEventListener('click', ev => { ev.preventDefault(); openDoc(t); }); a.title = t.p; }
+      else { a.addEventListener('click', ev => { ev.preventDefault(); toast('库里还没有「' + esc(a.dataset.wiki) + '」这篇'); }); a.style.opacity = .6; }
+      return;
+    }
     const p = a.dataset.doc || (href.startsWith('Notes/') ? href : null);
     if (p && byPath.has(p)){ a.addEventListener('click', ev => { ev.preventDefault(); openDoc(byPath.get(p)); }); }
     else if (/^https?:/.test(href)){ a.target = '_blank'; a.rel = 'noopener'; }
@@ -1008,6 +1084,15 @@ function bodyOf(html){
   doc.querySelectorAll('script,style,link,meta,title,noscript').forEach(e => e.remove());
   const main = doc.querySelector('article') || doc.querySelector('main') || doc.body;
   return main ? main.innerHTML : '';
+}
+/* [[目标]] → 文档：精确路径 → 补 .md → 文件名 → 标题（与内核 links_of 同一顺序） */
+function resolveWiki(raw){
+  const t = String(raw).split(/[|#^]/)[0].trim().toLowerCase(); if (!t) return null;
+  const tries = [t, t + '.md', 'notes/' + t, 'notes/' + t + '.md'];
+  for (const n of nodes){ if (tries.includes(n.p.toLowerCase())) return n; }
+  for (const n of nodes){ const stem = n.p.split('/').pop().replace(/\.(md|html?)$/i, '').toLowerCase(); if (stem === t) return n; }
+  for (const n of nodes){ if ((n.full || '').toLowerCase() === t) return n; }
+  return null;
 }
 function toggleEdit(){
   if (!reading || !docData || docData.format === 'html') return;
@@ -1100,6 +1185,10 @@ async function ask(qs){
     c.text = r.text; renderAnswer(el, r.text);
     el.querySelector('.from').textContent = r.mode === 'ai' ? '依据 ' + src.length + ' 篇写成 · 线连着每一处出处' : (r.note || '原文摘录');
     el.querySelector('[data-a="keep"]').disabled = false;
+    if (r.mode !== 'ai' && /没有配置模型/.test(r.note || '')){
+      const b = document.createElement('button'); b.className = 'btn'; b.textContent = '设置模型';
+      b.onclick = () => openSettings(); el.querySelector('.acts').appendChild(b);
+    }
   } catch(e){
     if (crystal !== c) return;
     el.querySelector('.a').innerHTML = '<p>' + esc(e.message || e) + '</p>';
@@ -1228,6 +1317,13 @@ const CMDS = [
   ['/今天', '把沉积条拖回今天', () => setNow(NDAYS)],
   ['/清空', '洗掉所有显色', () => { dissolveCrystal(); clearReaction(); }],
   ['/明暗', '切换明暗', toggleTheme],
+  ['/新建', '新建一篇文档（可接标题：/新建 周报）', () => newDoc('')],
+  ['/最近', '最近打开和最近改过的文档', openRecent],
+  ['/回收站', '找回删掉的文档', openTrash],
+  ['/同步', '把外部编辑器里的改动合进来', syncNow],
+  ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
+  ['/导入', '选择文件导入（也可以直接拖进窗口）', pickFiles],
+  ['/设置', '模型设置：接口地址、模型、密钥', openSettings],
   ['/重排', '整体重新计算一次布局', rebuild],
   ['/经典界面', '回到原来的界面（发布、同步、设置都在那里）', goClassic],
   ['/帮助', '用法与旧功能的位置', openHelp]
@@ -1237,6 +1333,7 @@ function intentOf(s){
   const t = s.trim();
   if (!t) return '找';
   if (/^[\/、]/.test(t)) return '令';
+  if (/^https?:\/\/\S+$/i.test(t)) return '收';
   if (/^[+＋]/.test(t) || /^记[\s:：]/.test(t)) return '记';
   if (/[?？]$/.test(t) || /^(为什么|为何|怎么|怎样|如何|什么|是否|能不能|可不可以|哪|谁|有没有|要不要|该不该|是不是)/.test(t) || /(吗|呢)$/.test(t) || t.length >= 14) return '问';
   return '找';
@@ -1245,7 +1342,8 @@ let inputT = 0, softT = 0;
 function onInput(){
   const s = q.value, v = intentOf(s);
   $('verb').dataset.v = v; $('verb').textContent = v;
-  $('go-t').textContent = !s.trim() ? '显色' : {找:'打开', 问:'结晶答案', 记:'落进场里', 令:'执行'}[v];
+  $('go-t').textContent = !s.trim() ? '显色' : {找:'打开', 问:'结晶答案', 记:'落进场里', 令:'执行', 收:'收进库里'}[v];
+  if (v === '收'){ hideCmds(); $('reading').innerHTML = '<span>回车：抓取这个网页，转成 Markdown 存进 Notes/Web/</span>'; hints(); return; }
   if (v === '令'){ showCmds(s.trim().slice(1)); $('reading').innerHTML = ''; hints(); return; }
   hideCmds(); clearTimeout(inputT);
   if (v === '记'){ previewMemo(s.replace(/^[+＋]|^记[\s:：]/, '').trim()); hints(); return; }
@@ -1281,6 +1379,7 @@ function hints(rel, v){
   }
 }
 function showCmds(f){
+  f = f.split(/\s+/)[0];
   const box = $('cmds'), list = CMDS.filter(c => c[0].slice(1).startsWith(f) || c[1].includes(f));
   cmdSel = Math.min(cmdSel, Math.max(0, list.length - 1));
   box.innerHTML = list.map((c, i) => '<button class="' + (i === cmdSel ? 'on' : '') + '" data-c="' + c[0] + '"><code>' + c[0] + '</code><span>' + esc(c[1]) + '</span></button>').join('') || '<button><span>没有这个指令</span></button>';
@@ -1292,8 +1391,13 @@ function runCmd(c){ if (!c) return; hideCmds(); q.value = ''; onInput(); q.blur(
 async function submit(){
   const s = q.value.trim(), v = intentOf(s);
   if (!s){ q.focus(); return; }
-  if (v === '令'){ runCmd(($('cmds')._list || [])[cmdSel]); return; }
+  if (v === '令'){
+    const m = s.match(/^[\/、](新建|采集)\s+(.+)$/);
+    if (m){ q.value = ''; onInput(); hideCmds(); if (m[1] === '新建') newDoc(m[2]); else collectTopic(m[2]); return; }
+    runCmd(($('cmds')._list || [])[cmdSel]); return;
+  }
   if (v === '记'){ const body = s.replace(/^[+＋]|^记[\s:：]/, '').trim(); q.value = ''; onInput(); capture(body); return; }
+  if (v === '收'){ q.value = ''; onInput(); collectUrl(s); return; }
   if (v === '问'){ ask(s); hints(); return; }
   const rel = query === s && lastRel.length ? lastRel : await react(s);
   if (rel.length) openDoc(rel[0].n); else toast('没有找到，换个说法，或者用问句再试');
@@ -1306,6 +1410,287 @@ q.addEventListener('keydown', e => {
   if (e.key === 'Escape'){ if (q.value){ e.stopPropagation(); q.value = ''; onInput(); } else q.blur(); }
 });
 $('go').onclick = submit;
+
+
+/* ───────── 接回来的功能：新建、移动、删除、导出、目录、双链、最近、回收站、同步、采集、导入、设置 ───────── */
+const encP = p => encodeURIComponent(p);
+let undoT = 0;
+function toastAct(html, label, fn, bad){
+  toast(html + ' <button class="btn" id="toast-act" style="margin-left:8px;padding:4px 10px">' + esc(label) + '</button>', bad);
+  const b = $('toast-act'); if (b) b.onclick = () => { $('toast').classList.remove('on'); fn(); };
+  clearTimeout(toastT); toastT = setTimeout(() => $('toast').classList.remove('on'), 7000);
+}
+/* 面板 */
+function openPanel(title, html){
+  closePop();
+  $('p-title').textContent = title; $('p-body').innerHTML = html; $('panel').hidden = false;
+  const f = $('p-body').querySelector('input'); if (f) setTimeout(() => f.focus(), 30);
+  return $('p-body');
+}
+function closePanel(){ $('panel').hidden = true; $('p-body').innerHTML = ''; }
+$('p-x').onclick = closePanel;
+$('panel').addEventListener('mousedown', e => { if (e.target === $('panel')) closePanel(); });
+/* 弹出菜单 */
+let popEl = null;
+function closePop(){ if (!popEl) return false; popEl.remove(); popEl = null; return true; }
+function openPop(anchor, items){
+  closePop();
+  const el = document.createElement('div'); el.className = 'pop';
+  items.forEach(it => {
+    if (it === '-'){ el.appendChild(document.createElement('hr')); return; }
+    const b = document.createElement('button'); b.textContent = it.label; if (it.cls) b.className = it.cls;
+    b.onclick = () => { closePop(); it.run(); }; el.appendChild(b);
+  });
+  document.body.appendChild(el); popEl = el;
+  const r = anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = Math.max(12, Math.min(vw - w - 12, r.right - w)) + 'px';
+  el.style.top = (r.bottom + 6 + h > vh - 12 ? Math.max(12, r.top - h - 6) : r.bottom + 6) + 'px';
+  return el;
+}
+document.addEventListener('mousedown', e => { if (popEl && !popEl.contains(e.target) && !e.target.closest('#s-more,#s-toc')) closePop(); });
+
+/* 最近打开（本机记忆，最多 30 条） */
+function recentList(){ try { return JSON.parse(localStorage.getItem('litmus_recent') || '[]'); } catch(e){ return []; } }
+function pushRecent(p){ try { const l = recentList().filter(x => x !== p); l.unshift(p); localStorage.setItem('litmus_recent', JSON.stringify(l.slice(0, 30))); } catch(e){} }
+function docRow(n, sub){ return '<div class="row"><div class="grow"><span>' + esc(n.full || n.title) + '</span><small>' + esc(sub || n.p) + '</small></div><button class="btn" data-open="' + esc(n.p) + '">打开</button></div>'; }
+function wireOpen(box){ box.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const n = byPath.get(b.dataset.open); closePanel(); if (n) openDoc(n); }); }
+function openRecent(){
+  const opened = recentList().map(p => byPath.get(p)).filter(Boolean).slice(0, 8);
+  const changed = nodes.slice().sort((a, b) => b.m - a.m).slice(0, 12);
+  const when = t => { const d = new Date(t * 1000); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+  const box = openPanel('最近', '<label>最近打开</label>' + (opened.length ? opened.map(n => docRow(n)).join('') : '<p class="empty">还没有在知识场里打开过文档</p>') +
+    '<label>最近改过</label>' + changed.map(n => docRow(n, when(n.m) + ' · ' + n.p)).join(''));
+  wireOpen(box);
+}
+
+/* 新建 */
+const safeFile = s => s.replace(/[\\/:*?"<>|？\n\r\t#]/g, '').trim().slice(0, 60);
+async function newDoc(title){
+  title = (title || '').trim();
+  if (!title){
+    const box = openPanel('新建文档', '<label for="nd-t">标题</label><input type="text" id="nd-t" placeholder="比如：十月复盘"><label for="nd-dir">放在</label><input type="text" id="nd-dir" value="Notes/"><p class="hint">标题就是文件名。区域不用选：写完以后它会自己落到意思最近的地方。</p><div class="acts"><button class="btn pri" id="nd-go">新建并开始写</button></div>');
+    const go = () => { const t = $('nd-t').value.trim(); if (!t){ $('nd-t').focus(); return; } const d = $('nd-dir').value.trim().replace(/\/*$/, '/'); closePanel(); createDoc(t, d); };
+    $('nd-go').onclick = go; box.querySelector('#nd-t').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+    return;
+  }
+  createDoc(title, 'Notes/');
+}
+async function createDoc(title, dir){
+  if (!dir.startsWith('Notes/')) dir = 'Notes/' + dir.replace(/^\/+/, '');
+  let path = dir + safeFile(title) + '.md';
+  for (let i = 2; byPath.has(path) && i < 99; i++) path = dir + safeFile(title) + ' ' + i + '.md';
+  try { await api('/doc?path=' + encP(path), {method:'PUT', body:'# ' + title + '\n\n', headers:{'content-type':'text/markdown'}}); }
+  catch(e){ toast('<b>没建成</b>：' + esc(e.message || e), true); return; }
+  await refreshNow();
+  const n = byPath.get(path);
+  if (n){ await openDoc(n); toggleEdit(); const ed = $('editor'); if (ed){ ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); } }
+}
+
+/* 阅读页：更多菜单 */
+$('s-more').onclick = () => {
+  if (!reading) return;
+  const n = reading, isMd = /\.md$/i.test(n.p);
+  openPop($('s-more'), [
+    {label:'重命名或移动…', run:() => moveDoc(n)},
+    {label:'复制文件路径', run:() => copyText(n.p)},
+    '-',
+    ...(isMd ? [{label:'导出为 Markdown', run:() => exportDoc(n, 'md')}, {label:'导出为 Word（.docx）', run:() => exportDoc(n, 'docx')}] : []),
+    {label:'导出为 HTML', run:() => exportDoc(n, 'html')},
+    {label:'打印 / 存成 PDF', run:() => exportDoc(n, 'print')},
+    '-',
+    {label:'在经典界面里打开', run:() => { try { localStorage.setItem('litmus_shell', 'classic'); } catch(e){} location.href = BASE + '/?doc=' + encP(n.p); }},
+    {label:'删除（移到回收站）', cls:'danger', run:() => deleteDoc(n)}
+  ]);
+};
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); toast('已复制 <b>' + esc(t) + '</b>'); }
+  catch(e){ openPanel('文件路径', '<input type="text" id="cp-t" readonly value="' + esc(t) + '"><p class="hint">按 ⌘C 复制。</p>'); setTimeout(() => $('cp-t') && $('cp-t').select(), 40); }
+}
+function moveDoc(n){
+  const box = openPanel('重命名或移动', '<label for="mv-to">新的位置</label><input type="text" id="mv-to" value="' + esc(n.p) + '"><p class="hint">改文件名就是重命名，改前面的文件夹就是移动。其他文档里指向它的 [[链接]] 会一起改好。</p><div class="acts"><button class="btn pri" id="mv-go">确定</button><span id="mv-err" class="bad"></span></div>');
+  const inp = $('mv-to'); const dot = inp.value.lastIndexOf('.'), sl = inp.value.lastIndexOf('/') + 1;
+  setTimeout(() => inp.setSelectionRange(sl, dot > sl ? dot : inp.value.length), 40);
+  const go = async () => {
+    let to = inp.value.trim();
+    if (!to.startsWith('Notes/')){ $('mv-err').textContent = '要放在 Notes/ 下面'; return; }
+    if (!/\.(md|html?)$/i.test(to)) to += n.p.match(/\.[^.]+$/)[0];
+    if (to === n.p){ closePanel(); return; }
+    if (byPath.has(to)){ $('mv-err').textContent = '那里已经有一篇同名文档'; return; }
+    if (editing) await flushSave();
+    try { await api('/doc/move', {method:'POST', json:{from:n.p, to}}); }
+    catch(e){ $('mv-err').textContent = e.message || String(e); return; }
+    closePanel(); await closeDoc(); await refreshNow();
+    const m = byPath.get(to); if (m){ openDoc(m); flash(m); }
+    toast('已移到 <b>' + esc(to) + '</b>');
+  };
+  $('mv-go').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+}
+async function deleteDoc(n){
+  if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还没存上</b>，先别删', true); return; } }
+  try { await api('/doc?path=' + encP(n.p), {method:'DELETE'}); }
+  catch(e){ toast('<b>没删掉</b>：' + esc(e.message || e), true); return; }
+  editing = false; document.body.classList.remove('reading'); reading = null; clearReaction();
+  await refreshNow();
+  toastAct('已移到回收站：<b>' + esc(n.full || n.title) + '</b>', '撤销', async () => {
+    try { await api('/trash/restore', {method:'POST', json:{path:n.p}}); await refreshNow(); const m = byPath.get(n.p); if (m){ flash(m); toast('已找回'); } }
+    catch(e){ toast('<b>没找回来</b>：' + esc(e.message || e) + '。可以在 /回收站 里再试', true); }
+  });
+}
+async function exportDoc(n, fmt){
+  if (editing) await flushSave();
+  const url = location.origin + BASE + '/export/' + fmt + '?path=' + encP(n.p) + '&token=' + encodeURIComponent(token);
+  try {
+    if (fmt === 'print'){
+      if (DESK){ await window.__TAURI_INTERNALS__.invoke('desktop_print_url', {url}); toast('已打开打印窗口：在左下角选「PDF → 存储为 PDF」'); return; }
+      const w = window.open(url + '&auto=1', '_blank'); if (!w) throw new Error('浏览器拦截了新窗口，请允许弹出窗口');
+      toast('已打开打印版：在打印对话框里选「另存为 PDF」'); return;
+    }
+    const res = await fetch(url, {headers:{authorization:'Bearer ' + token}});
+    if (!res.ok) throw new Error((await res.text()).slice(0, 160));
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') || ''; const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const name = m ? decodeURIComponent(m[1]) : n.p.split('/').pop().replace(/\.(md|html?)$/i, '') + '.' + fmt;
+    if (DESK){
+      const buf = new Uint8Array(await blob.arrayBuffer()); let b64 = ''; for (let i = 0; i < buf.length; i += 0x8000) b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      const saved = await window.__TAURI_INTERNALS__.invoke('desktop_save_download', {name, dataB64:btoa(b64)});
+      window.__TAURI_INTERNALS__.invoke('desktop_reveal_path', {p:saved}).catch(() => {});
+      toast('已保存到「下载」：<b>' + esc(String(saved).split('/').pop()) + '</b>'); return;
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('已下载 <b>' + esc(name) + '</b>');
+  } catch(e){ toast('<b>导出失败</b>：' + esc(e.message || e), true); }
+}
+
+/* 目录 */
+$('s-toc').onclick = () => {
+  const hs = [...$('doc').querySelectorAll('.body h1,.body h2,.body h3')];
+  if (!hs.length){ toast('这篇没有小标题'); return; }
+  openPop($('s-toc'), hs.slice(0, 60).map(h => ({label:h.textContent.trim().slice(0, 40), cls:h.tagName === 'H3' ? 'h3' : '', run:() => h.scrollIntoView({behavior:reduce ? 'auto' : 'smooth', block:'start'})})));
+};
+
+/* 双链：写下的链接，链出 / 链入 */
+function renderLinks(n){
+  const old = $('links'); if (old) old.remove();
+  const out = links.filter(l => l[0] === n).map(l => l[1]), inn = links.filter(l => l[1] === n).map(l => l[0]);
+  if (!out.length && !inn.length) return;
+  const chip = m => '<button class="chip" data-open="' + esc(m.p) + '"><span>' + esc(m.title) + '</span></button>';
+  const box = document.createElement('div'); box.id = 'links';
+  box.innerHTML = (out.length ? '<h5>链出 · ' + out.length + '</h5><div class="chips">' + out.map(chip).join('') + '</div>' : '') +
+    (inn.length ? '<h5>链入 · ' + inn.length + '</h5><div class="chips">' + inn.map(chip).join('') + '</div>' : '');
+  box.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openDoc(byPath.get(b.dataset.open)));
+  const inner = $('doc').querySelector('.inner'); if (inner) inner.appendChild(box);
+}
+
+/* 回收站 */
+async function openTrash(){
+  const box = openPanel('回收站', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let d; try { d = await api('/trash'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const es = d.entries || [];
+  box.innerHTML = (es.length ? es.map(x => '<div class="row"><div class="grow"><span>' + esc(x.path.split('/').pop().replace(/\.md$/, '')) + '</span><small>' + esc(x.path) + (x.days_left != null ? ' · 还会保留 ' + x.days_left + ' 天' : '') + '</small></div><button class="btn" data-restore="' + esc(x.path) + '">找回</button></div>').join('')
+    : '<p class="empty">回收站是空的。</p>') + '<p class="hint">删掉的文档在这里保留 ' + (d.retention_days || 30) + ' 天，之后自动清掉。</p>';
+  box.querySelectorAll('[data-restore]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/trash/restore', {method:'POST', json:{path:b.dataset.restore}}); b.closest('.row').remove(); await refreshNow(); const m = byPath.get(b.dataset.restore); if (m) flash(m); toast('已找回 <b>' + esc(b.dataset.restore) + '</b>'); }
+    catch(e){ b.disabled = false; toast('<b>没找回来</b>：' + esc(e.message || e), true); }
+  });
+}
+
+/* 同步外部改动 */
+async function syncNow(){
+  toast('正在合入外部改动…');
+  try { let total = 0, r; do { r = await api('/sync', {method:'POST'}); total += r.changed || 0; } while (r.more); await refreshNow(); toast(total ? '合入了 <b>' + total + '</b> 篇改动' : '库和磁盘上的文件一致，没有新改动'); }
+  catch(e){ toast('<b>同步失败</b>：' + esc(e.message || e), true); }
+}
+
+/* 收：网页、主题、文件 */
+async function collectUrl(url){
+  toast('正在抓取网页…');
+  try {
+    const r = await api('/ingest/web', {method:'POST', json:{url}});
+    await refreshNow(); const n = byPath.get(r.rel);
+    if (n){ flash(n); focusOn(n.gx, n.gy, Math.max(cam.ts, .7), (vw - sheetW()) / 2, vh * .42); }
+    toastAct('收进来了：<b>' + esc(r.title || r.rel) + '</b>', '打开', () => n && openDoc(n));
+  } catch(e){ toast('<b>没抓下来</b>：' + esc(e.message || e) + '。可以换个网址，或者把正文复制进来用 + 记一笔', true); }
+}
+function collectTopic(topic){
+  if (!topic){
+    const box = openPanel('按主题采集', '<label for="ct-t">主题</label><input type="text" id="ct-t" placeholder="比如：向量数据库"><p class="hint">从维基、HN、arXiv 等公开来源找几篇相关资料，转成 Markdown 存进库里，并落到场上。</p><div class="acts"><button class="btn pri" id="ct-go">开始采集</button></div>');
+    const go = () => { const t = $('ct-t').value.trim(); if (!t) return; closePanel(); collectTopic(t); };
+    $('ct-go').onclick = go; box.querySelector('#ct-t').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+    return;
+  }
+  toast('正在采集「<b>' + esc(topic) + '</b>」，通常要十几秒…');
+  api('/ingest/topic', {method:'POST', json:{topic, limit:5}}).then(async r => {
+    const got = r.imported || []; await refreshNow();
+    const ns = got.map(x => byPath.get(x.rel)).filter(Boolean);
+    if (ns.length){ paint(ns.map(n => ({n, norm:1})), {soft:true}); fit(ns); }
+    toast(ns.length ? '采到 <b>' + ns.length + '</b> 篇，已经亮出来了' : '没有采到相关内容，换个说法试试', !ns.length);
+  }).catch(e => toast('<b>采集失败</b>：' + esc(e.message || e), true));
+}
+const TEXT_EXT = /\.(md|markdown|txt|html?)$/i, CONV_EXT = /\.(docx|doc|odt|pptx|xlsx|epub|rtf|pdf)$/i;
+function pickFiles(){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true;
+  inp.accept = '.md,.markdown,.txt,.html,.htm,.docx,.odt,.pptx,.xlsx,.epub,.rtf,.pdf';
+  inp.onchange = () => importFiles([...inp.files]); inp.click();
+}
+async function importFiles(files){
+  const ok = [], bad = [];
+  for (const f of files){
+    try {
+      if (TEXT_EXT.test(f.name)){
+        let text = await f.text(); const isHtml = /\.html?$/i.test(f.name);
+        const base = safeFile(f.name.replace(/\.[^.]+$/, '')), ext = isHtml ? '.html' : '.md';
+        if (/\.txt$/i.test(f.name) && !/^#\s/m.test(text)) text = '# ' + base + '\n\n' + text;
+        let path = 'Notes/导入/' + base + ext;
+        for (let i = 2; byPath.has(path) && i < 99; i++) path = 'Notes/导入/' + base + ' ' + i + ext;
+        await api('/doc?path=' + encP(path), {method:'PUT', body:text, headers:{'content-type':isHtml ? 'text/html' : 'text/markdown'}});
+        ok.push(path);
+      } else if (CONV_EXT.test(f.name)){
+        const buf = new Uint8Array(await f.arrayBuffer()); let b64 = '';
+        for (let i = 0; i < buf.length; i += 0x8000) b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        const r = await api('/ingest/file', {method:'POST', json:{name:f.name, content_base64:btoa(b64)}});
+        ok.push(r.rel);
+      } else bad.push(f.name + '（不支持这种格式）');
+    } catch(e){ bad.push(f.name + '（' + (e.message || e) + '）'); }
+  }
+  if (ok.length){ await refreshNow(); const ns = ok.map(p => byPath.get(p)).filter(Boolean); if (ns.length){ paint(ns.map(n => ({n, norm:1})), {soft:true}); fit(ns); } }
+  if (bad.length) toast((ok.length ? '导入了 <b>' + ok.length + '</b> 篇；' : '') + '没导入：' + esc(bad.join('、')), true);
+  else if (ok.length) toast('导入了 <b>' + ok.length + '</b> 篇，已经落到场上');
+}
+let dragDepth = 0;
+addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ dragDepth++; $('drop').classList.add('on'); } });
+addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').classList.remove('on'); });
+addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+addEventListener('drop', e => { if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on'); importFiles([...e.dataTransfer.files]); });
+q.addEventListener('paste', e => {
+  const t = (e.clipboardData && e.clipboardData.getData('text') || '').trim();
+  if (!q.value && /^https?:\/\/\S+$/i.test(t)){ e.preventDefault(); q.value = t; onInput(); }
+});
+
+/* 设置：模型 */
+async function openSettings(){
+  const box = openPanel('模型设置', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let a = {}; try { a = await api('/field/ai'); } catch(e){}
+  const presets = [['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], ['通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'], ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'], ['本机 Ollama', 'http://localhost:11434/v1', 'qwen2.5']];
+  box.innerHTML = '<p class="hint" style="margin-top:0">问答结晶、解释、考考我都用这里的模型。任何兼容 OpenAI 接口的服务都可以。</p>' +
+    '<div class="chips">' + presets.map((p, i) => '<button class="chip" data-pre="' + i + '"><span>' + esc(p[0]) + '</span></button>').join('') + '</div>' +
+    '<label for="ai-url">接口地址</label><input type="text" id="ai-url" value="' + esc(a.base_url || '') + '" placeholder="https://api.deepseek.com/v1">' +
+    '<label for="ai-model">模型</label><input type="text" id="ai-model" value="' + esc(a.model || '') + '" placeholder="deepseek-chat">' +
+    '<label for="ai-key">密钥</label><input type="password" id="ai-key" placeholder="' + (a.has_key ? '已保存，留空表示不改' : a.key_from_env ? '已从环境变量 THIRDC_AI_API_KEY 读取' : 'sk-…（本机 Ollama 可留空）') + '">' +
+    '<p class="hint">密钥写进库根目录的 thirdc.toml，只在这台电脑上。更稳妥的做法是设环境变量 THIRDC_AI_API_KEY，这里留空。</p>' +
+    '<div class="acts"><button class="btn pri" id="ai-save">保存并测试</button><span id="ai-msg"></span></div>';
+  box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
+  $('ai-save').onclick = async () => {
+    const msg = $('ai-msg'); msg.className = ''; msg.textContent = '正在保存…'; $('ai-save').disabled = true;
+    try {
+      await api('/field/ai', {method:'POST', json:{base_url:$('ai-url').value, model:$('ai-model').value, api_key:$('ai-key').value}});
+      msg.textContent = '已保存，正在测试连通…';
+      const t = await api('/field/ai/test', {method:'POST'});
+      msg.className = 'ok'; msg.textContent = '连通了，' + (t.ms / 1000).toFixed(1) + ' 秒回了「' + t.reply + '」';
+    } catch(e){ msg.className = 'bad'; msg.textContent = e.message || String(e); }
+    finally { $('ai-save').disabled = false; }
+  };
+}
 
 /* ───────── 视图、主题、帮助 ───────── */
 function setLayout(l){
@@ -1339,6 +1724,8 @@ document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); q.focus(); q.select(); return; }
   const inInput = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
   if (e.key === 'Escape'){
+    if (closePop()) return;
+    if (!$('panel').hidden){ closePanel(); return; }
     if (inInput && document.activeElement !== q){ document.activeElement.blur(); return; }
     if (ring.classList.contains('on')) return hideRing();
     if ($('help').classList.contains('on')) return $('help').classList.remove('on');
@@ -1351,7 +1738,7 @@ document.addEventListener('keydown', e => {
   }
   if (tourState){ if (e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); $('t-next').click(); } if (e.key === 'ArrowLeft') stepTour(-1); return; }
   if (inInput || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
-  if ($('help').classList.contains('on')) return;
+  if ($('help').classList.contains('on') || !$('panel').hidden) return;
   if (e.key === '/'){ e.preventDefault(); q.focus(); q.value = '/'; onInput(); return; }
   if (e.key === 'f' || e.key === 'F'){ fit(); return; }
   if (e.key === 't' || e.key === 'T'){ setLayout(layout === 'sem' ? 'time' : 'sem'); return; }
@@ -1382,7 +1769,7 @@ loadField().then(() => {
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
-window.__field = {get nodes(){ return nodes; }, react, ask, capture, openDoc, setLayout, fit, cam};
+window.__field = {get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>

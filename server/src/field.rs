@@ -29,6 +29,8 @@ pub struct DocMeta {
     pub kind: &'static str,
     pub date: String,
     pub excerpt: String,
+    /// 文件修改时间（unix 秒）：「最近」列表用
+    pub mtime: i64,
 }
 
 pub struct Cached {
@@ -240,7 +242,7 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .map(|p| {
                 let (title, text) = &texts[p];
                 let mtime = stats.get(p).map(|s| s.0).unwrap_or(0);
-                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text) }
+                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime }
             })
             .collect();
         // 派生层落盘：只存坐标（可删可重建）
@@ -257,12 +259,14 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
         for &r in &f.region {
             count[r] += 1;
         }
+        let links = links_of(&f.vectors.paths, &meta, &texts);
         let body = json!({
             "epoch": epoch,
+            "links": links.iter().map(|(a, b)| json!([a, b])).collect::<Vec<_>>(),
             "regions": f.region_names.iter().zip(count.iter()).map(|(n, c)| json!({"name": n, "count": c})).collect::<Vec<_>>(),
             "docs": meta.iter().enumerate().map(|(i, m)| json!({
                 "p": m.path, "t": m.title, "k": m.kind, "d": m.date, "ex": m.excerpt,
-                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i],
+                "x": round1(f.pos[i].0), "y": round1(f.pos[i].1), "r": f.region[i], "m": m.mtime,
             })).collect::<Vec<_>>(),
             "edges": f.edges.iter().map(|(a, b, w)| json!([a, b, (w * 1000.0).round() / 1000.0])).collect::<Vec<_>>(),
         });
@@ -274,6 +278,150 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
     let built = Arc::new(built);
     cache().lock().unwrap().insert(root, built.clone());
     Ok(built)
+}
+
+/// 文档之间真实写下的链接：`[[目标]]`（可带 |别名 #标题 ^块）与 `](Notes/...)`。
+/// 目标按 精确路径 → 补 .md → 文件名 → 标题 依次解析；解析不到的不画线。返回去重后的 (源, 目标) 下标。
+pub fn links_of(paths: &[String], meta: &[DocMeta], texts: &HashMap<String, (String, String)>) -> Vec<(usize, usize)> {
+    let mut by_key: HashMap<String, usize> = HashMap::new();
+    for (i, p) in paths.iter().enumerate() {
+        by_key.entry(p.to_lowercase()).or_insert(i);
+        let name = p.rsplit('/').next().unwrap_or(p);
+        let stem = name.trim_end_matches(".md").trim_end_matches(".html").trim_end_matches(".htm");
+        by_key.entry(stem.to_lowercase()).or_insert(i);
+    }
+    for (i, m) in meta.iter().enumerate() {
+        by_key.entry(m.title.to_lowercase()).or_insert(i);
+    }
+    let resolve = |t: &str| -> Option<usize> {
+        let t = t.trim().trim_start_matches("./");
+        let l = t.to_lowercase();
+        by_key
+            .get(&l)
+            .or_else(|| by_key.get(&format!("{l}.md")))
+            .or_else(|| by_key.get(&format!("notes/{l}")))
+            .or_else(|| by_key.get(&format!("notes/{l}.md")))
+            .copied()
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for (i, p) in paths.iter().enumerate() {
+        let Some((_, text)) = texts.get(p) else { continue };
+        let mut rest = text.as_str();
+        while let Some(a) = rest.find("[[") {
+            let after = &rest[a + 2..];
+            let Some(b) = after.find("]]") else { break };
+            let raw = &after[..b];
+            if !raw.contains('\n') {
+                let name = raw.split(['|', '#', '^']).next().unwrap_or("");
+                if let Some(j) = resolve(name) {
+                    if j != i {
+                        seen.insert((i, j));
+                    }
+                }
+            }
+            rest = &after[b + 2..];
+        }
+        let mut rest = text.as_str();
+        while let Some(a) = rest.find("](") {
+            let after = &rest[a + 2..];
+            let Some(b) = after.find(')') else { break };
+            let target = after[..b].split('#').next().unwrap_or("");
+            if target.starts_with("Notes/") || target.ends_with(".md") {
+                let dec = target.replace("%20", " ");
+                if let Some(j) = resolve(&dec) {
+                    if j != i {
+                        seen.insert((i, j));
+                    }
+                }
+            }
+            rest = &after[b + 1..];
+        }
+    }
+    seen.into_iter().collect()
+}
+
+// ───────── 模型设置：只改 thirdc.toml 的 [ai] 表 ─────────
+
+/// 当前模型配置（密钥只回是否已设，不回明文）。
+pub async fn ai_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let ai = st.kernel.lock().unwrap().vault.config.ai.clone().unwrap_or_default();
+    Json(json!({
+        "configured": !ai.base_url.is_empty() && !ai.model.is_empty(),
+        "base_url": ai.base_url,
+        "model": ai.model,
+        "has_key": !ai.api_key.is_empty(),
+        "key_from_env": ai.api_key.is_empty() && std::env::var("THIRDC_AI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false),
+    }))
+    .into_response()
+}
+
+/// 把 [ai] 的 base_url / model / api_key 写回 thirdc.toml。
+/// 用 toml_edit 原地改：用户手写的注释、其他表与排版都保留；api_key 传空串表示「不改」。
+pub fn write_ai_config(cfg_path: &std::path::Path, base_url: &str, model: &str, api_key: Option<&str>) -> Result<(), String> {
+    let raw = std::fs::read_to_string(cfg_path).map_err(|e| format!("读不到 thirdc.toml：{e}"))?;
+    let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("thirdc.toml 格式有误：{e}"))?;
+    if !doc.contains_key("ai") {
+        doc["ai"] = toml_edit::table();
+    }
+    let t = doc["ai"].as_table_mut().ok_or("thirdc.toml 里的 ai 不是一个表")?;
+    t["base_url"] = toml_edit::value(base_url);
+    t["model"] = toml_edit::value(model);
+    if let Some(k) = api_key {
+        t["api_key"] = toml_edit::value(k);
+    } else if !t.contains_key("api_key") {
+        t["api_key"] = toml_edit::value("");
+    }
+    let tmp = cfg_path.with_extension("tmp");
+    std::fs::write(&tmp, doc.to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, cfg_path).map_err(|e| e.to_string())
+}
+
+pub async fn ai_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let base_url = req.get("base_url").and_then(|v| v.as_str()).unwrap_or("").trim().trim_end_matches('/').to_string();
+    let model = req.get("model").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let key = req.get("api_key").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return err(StatusCode::BAD_REQUEST, "接口地址要以 http:// 或 https:// 开头，例如 https://api.deepseek.com/v1").into_response();
+    }
+    if model.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "请填写模型名，例如 deepseek-chat").into_response();
+    }
+    let mut k = st.kernel.lock().unwrap();
+    let cfg_path = k.vault.root.join("thirdc.toml");
+    if let Err(e) = write_ai_config(&cfg_path, &base_url, &model, key.as_deref()) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let mut ai = k.vault.config.ai.clone().unwrap_or_default();
+    ai.base_url = base_url;
+    ai.model = model;
+    if let Some(key) = key {
+        ai.api_key = key;
+    }
+    k.vault.config.ai = Some(ai);
+    Json(json!({ "ok": true })).into_response()
+}
+
+/// 用当前配置发一句最短的话，确认地址、模型、密钥都对。
+pub async fn ai_test(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let ai = st.kernel.lock().unwrap().vault.config.ai.clone();
+    let Some(cfg) = ai.filter(|c| !c.base_url.is_empty()) else {
+        return err(StatusCode::CONFLICT, "还没有配置模型").into_response();
+    };
+    let t0 = std::time::Instant::now();
+    match thirdc_mcp::agent::complete(&cfg, "只回复两个字：好的", "测试").await {
+        Ok(t) => Json(json!({ "ok": true, "reply": t.chars().take(40).collect::<String>(), "ms": t0.elapsed().as_millis() as u64 })).into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, format!("连不上：{e}")).into_response(),
+    }
 }
 
 fn round1(x: f32) -> f64 {
@@ -662,6 +810,45 @@ mod api_tests {
         for (p, xy) in &pa {
             assert_eq!(pb[p], *xy, "{p} 被挪动了");
         }
+    }
+
+    #[tokio::test]
+    async fn links_and_ai_settings() {
+        let (app, token, dir) = app();
+        seed(&app, &token).await;
+        let (st, _) = call(&app, &token, "PUT", &format!("/doc?path={}", urlenc("Notes/索引.md")), "# 索引\n\n见 [[冲突处理]] 与 [[Notes/发布/部署.md|部署]]，还有 [站点](Notes/发布/站点.md)。").await;
+        assert_eq!(st, 200);
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let docs = d["docs"].as_array().unwrap();
+        let idx = |p: &str| docs.iter().position(|x| x["p"] == p).unwrap() as u64;
+        let links: Vec<(u64, u64)> = d["links"].as_array().unwrap().iter().map(|l| (l[0].as_u64().unwrap(), l[1].as_u64().unwrap())).collect();
+        let src = idx("Notes/索引.md");
+        for t in ["Notes/同步/冲突.md", "Notes/发布/部署.md", "Notes/发布/站点.md"] {
+            assert!(links.contains(&(src, idx(t))), "缺链接 → {t}：{links:?}");
+        }
+        assert!(docs[0]["m"].as_i64().unwrap() > 0);
+
+        // 模型设置：写回 thirdc.toml 只动 [ai]，原有内容与注释保留
+        let cfg = dir.path().join("thirdc.toml");
+        let before = std::fs::read_to_string(&cfg).unwrap();
+        std::fs::write(&cfg, format!("# 我的注释\n{before}")).unwrap();
+        let (st, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"ftp://x","model":"m"}"#).await;
+        assert_eq!(st, 400);
+        let (st, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"https://api.example.com/v1/","model":"demo-chat","api_key":"sk-test"}"#).await;
+        assert_eq!(st, 200);
+        let after = std::fs::read_to_string(&cfg).unwrap();
+        assert!(after.starts_with("# 我的注释"), "注释被抹掉了");
+        assert!(after.contains("[ai]") && after.contains("demo-chat") && after.contains("https://api.example.com/v1\""));
+        let (_, g) = call(&app, &token, "GET", "/field/ai", "").await;
+        assert_eq!(g["configured"], true);
+        assert_eq!(g["has_key"], true);
+        assert!(g.get("api_key").is_none(), "不回明文密钥");
+        // 再存一次不带密钥：原密钥保留
+        let (_, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"https://api.example.com/v1","model":"demo-2"}"#).await;
+        assert!(std::fs::read_to_string(&cfg).unwrap().contains("sk-test"));
+        // 重新打开库：配置能被内核读回
+        let v = kernel_core::Vault::open(dir.path()).unwrap();
+        assert_eq!(v.config.ai.unwrap().model, "demo-2");
     }
 
     #[tokio::test]

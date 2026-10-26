@@ -193,6 +193,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/place", post(field::place))
         .route("/field/crystal", post(field::crystal))
         .route("/field/note", post(field::note))
+        .route("/field/ai", get(field::ai_get).post(field::ai_put))
+        .route("/field/ai/test", post(field::ai_test))
         .route("/sticky.html", get(|| async {
             ([("content-type","text/html; charset=utf-8"),("cache-control","no-cache")], include_str!("../web/sticky.html"))
         }))
