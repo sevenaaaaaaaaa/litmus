@@ -68,6 +68,9 @@ pub struct Source {
     /// 只接最近的 N 个（按修改时间）。第一次接入时给个上限，先用起来；之后可以放开（None = 全部）。
     #[serde(default)]
     pub limit: Option<usize>,
+    /// 对接（github / notion / sanity / openflow / mflow）的设置：仓库、项目、地址、发回去的位置……密钥不在这里，在 /凭证。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conf: Option<Value>,
 }
 
 fn yes() -> bool {
@@ -90,6 +93,9 @@ pub struct Item {
     pub hash: String,
     #[serde(default)]
     pub note: Option<String>,
+    /// 远端版本标记（GitHub blob sha、Sanity _rev、Notion 编辑时间……）：没变就不再抓正文
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -124,6 +130,14 @@ fn save_index(root: &Path, ix: &Index) {
         let _ = std::fs::rename(&tmp, d.join("index.json"));
     }
 }
+pub const MAX_TEXT_PUB: usize = MAX_TEXT;
+pub fn put_text_pub(root: &Path, text: &str) -> String {
+    put_text(root, text)
+}
+pub fn secret_pub(root: &Path, name: &str) -> Option<String> {
+    secret(root, name)
+}
+
 fn text_path(root: &Path, hash: &str) -> PathBuf {
     dir(root).join("text").join(format!("{hash}.txt"))
 }
@@ -533,7 +547,7 @@ fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl)
         let Some((title, text, kind, note)) = extract_file(p) else { continue };
         let text: String = text.chars().take(MAX_TEXT).collect();
         let hash = put_text(root, &format!("# {title}\n\n{text}"));
-        out.push(Item { key, src: s.id.clone(), title: title.chars().take(120).collect(), kind, loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note });
+        out.push(Item { key, src: s.id.clone(), title: title.chars().take(120).collect(), kind, loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note, etag: None });
         ctl.maybe_flush(&out, false);
         // 抽 PDF、认截图要起外部程序：每个之间喘口气，别把风扇吹起来
         if cls >= 2 {
@@ -601,7 +615,7 @@ fn scan_agent(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl) 
             body.push_str(&format!("**{}**：{}\n\n", if role == "user" { "问" } else { "答" }, text.chars().take(2000).collect::<String>()));
         }
         let hash = put_text(root, &format!("# {title}\n\n{body}"));
-        out.push(Item { key, src: s.id.clone(), title, kind: "agent".into(), loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note: None });
+        out.push(Item { key, src: s.id.clone(), title, kind: "agent".into(), loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note: None, etag: None });
     }
     Ok(out)
 }
@@ -655,7 +669,7 @@ fn scan_mcp(root: &Path, st: &Arc<AppState>, s: &Source) -> Result<Vec<Item>, St
         let title = r.get("name").or_else(|| r.get("title")).and_then(|t| t.as_str()).unwrap_or(uri).to_string();
         let hash = put_text(root, &format!("# {title}\n\n{}", text.chars().take(MAX_TEXT).collect::<String>()));
         let id = kernel_core::Cas::hash_hex(uri.as_bytes())[..16].to_string();
-        out.push(Item { key: format!("ext:{}/{id}", s.id), src: s.id.clone(), title, kind: "mcp".into(), loc: uri.to_string(), date: ymd_of(now_secs() as i64), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None });
+        out.push(Item { key: format!("ext:{}/{id}", s.id), src: s.id.clone(), title, kind: "mcp".into(), loc: uri.to_string(), date: ymd_of(now_secs() as i64), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None, etag: None });
     }
     if out.is_empty() {
         return Err(format!("{name} 没有提供资源（resources/list 为空）"));
@@ -715,7 +729,7 @@ fn scan_rest(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
         let date = pick(it, &fdate).map(|d| d.chars().take(10).collect()).unwrap_or_else(|| ymd_of(now_secs() as i64));
         let hash = put_text(root, &format!("# {title}\n\n{}", text.chars().take(MAX_TEXT).collect::<String>()));
         let key_id = kernel_core::Cas::hash_hex(id.as_bytes())[..16].to_string();
-        out.push(Item { key: format!("ext:{}/{key_id}", s.id), src: s.id.clone(), title: title.chars().take(120).collect(), kind: "rest".into(), loc: url.clone(), date, mtime: now_secs() as i64, size: text.len() as u64, hash, note: None });
+        out.push(Item { key: format!("ext:{}/{key_id}", s.id), src: s.id.clone(), title: title.chars().take(120).collect(), kind: "rest".into(), loc: url.clone(), date, mtime: now_secs() as i64, size: text.len() as u64, hash, note: None, etag: None });
     }
     Ok(out)
 }
@@ -822,7 +836,7 @@ fn scan_google(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
                     let text = client.get(format!("{}/files/{id}/export?mimeType=text/markdown", google_base("drive"))).bearer_auth(&token).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.text().ok()).unwrap_or_default();
                     let title = f["name"].as_str().unwrap_or("文档").to_string();
                     let hash = put_text(root, &format!("# {title}\n\n{}", text.chars().take(MAX_TEXT).collect::<String>()));
-                    out.push(Item { key: format!("ext:{}/drive-{id}", s.id), src: s.id.clone(), title, kind: "drive".into(), loc: f["webViewLink"].as_str().unwrap_or("").to_string(), date: f["modifiedTime"].as_str().unwrap_or("").chars().take(10).collect(), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None });
+                    out.push(Item { key: format!("ext:{}/drive-{id}", s.id), src: s.id.clone(), title, kind: "drive".into(), loc: f["webViewLink"].as_str().unwrap_or("").to_string(), date: f["modifiedTime"].as_str().unwrap_or("").chars().take(10).collect(), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None, etag: None });
                 }
             }
             "gmail" => {
@@ -836,7 +850,7 @@ fn scan_google(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
                     let text = format!("发件人：{}\n日期：{}\n\n{}", header("From"), header("Date"), gmail_text(&full["payload"]));
                     let ms: i64 = full["internalDate"].as_str().and_then(|x| x.parse().ok()).unwrap_or(0);
                     let hash = put_text(root, &format!("# {}\n\n{}", if title.is_empty() { "（无主题）" } else { &title }, text.chars().take(MAX_TEXT).collect::<String>()));
-                    out.push(Item { key: format!("ext:{}/mail-{id}", s.id), src: s.id.clone(), title: if title.is_empty() { "（无主题）".into() } else { title }, kind: "mail".into(), loc: format!("https://mail.google.com/mail/u/0/#all/{id}"), date: ymd_of(ms / 1000), mtime: ms / 1000, size: text.len() as u64, hash, note: None });
+                    out.push(Item { key: format!("ext:{}/mail-{id}", s.id), src: s.id.clone(), title: if title.is_empty() { "（无主题）".into() } else { title }, kind: "mail".into(), loc: format!("https://mail.google.com/mail/u/0/#all/{id}"), date: ymd_of(ms / 1000), mtime: ms / 1000, size: text.len() as u64, hash, note: None, etag: None });
                 }
             }
             "calendar" => {
@@ -853,7 +867,7 @@ fn scan_google(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
                     let people = e.get("attendees").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|x| x["email"].as_str()).collect::<Vec<_>>().join("、")).unwrap_or_default();
                     let text = format!("时间：{when}\n地点：{}\n参与：{people}\n\n{}", e["location"].as_str().unwrap_or(""), e["description"].as_str().unwrap_or(""));
                     let hash = put_text(root, &format!("# {title}\n\n{text}"));
-                    out.push(Item { key: format!("ext:{}/event-{id}", s.id), src: s.id.clone(), title, kind: "event".into(), loc: e["htmlLink"].as_str().unwrap_or("").to_string(), date: when.chars().take(10).collect(), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None });
+                    out.push(Item { key: format!("ext:{}/event-{id}", s.id), src: s.id.clone(), title, kind: "event".into(), loc: e["htmlLink"].as_str().unwrap_or("").to_string(), date: when.chars().take(10).collect(), mtime: now_secs() as i64, size: text.len() as u64, hash, note: None, etag: None });
                 }
             }
             _ => {}
@@ -977,8 +991,8 @@ pub async fn upsert(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
         return Json(json!({ "ok": true })).into_response();
     }
     let Ok(mut s) = serde_json::from_value::<Source>(req.get("source").cloned().unwrap_or(json!({}))) else { return err(StatusCode::BAD_REQUEST, "来源格式不对").into_response() };
-    if !matches!(s.kind.as_str(), "folder" | "agent" | "mcp" | "google" | "rest") {
-        return err(StatusCode::BAD_REQUEST, "kind 只能是 folder / agent / mcp / google / rest").into_response();
+    if !matches!(s.kind.as_str(), "folder" | "agent" | "mcp" | "google" | "rest") && !super::connectors::KINDS.contains(&s.kind.as_str()) {
+        return err(StatusCode::BAD_REQUEST, "kind 只能是 folder / agent / mcp / google / rest / github / notion / sanity / openflow / mflow").into_response();
     }
     if s.kind == "folder" {
         let p = expand(s.path.as_deref().unwrap_or(""));
@@ -1070,7 +1084,7 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
             "mcp" => scan_mcp(&root, &st2, &s),
             "google" => scan_google(&root, &s),
             "rest" => scan_rest(&root, &s),
-            _ => Err("不认识的来源".into()),
+            _ => super::connectors::scan(&root, &s, &prev).unwrap_or_else(|| Err("不认识的来源".into())),
         };
         let stopped = scans().lock().unwrap().get(&s.id).map(|x| x.stop).unwrap_or(false);
         let r = r.map(|items| items.into_iter().filter(|i| !excluded.contains(&i.key)).collect::<Vec<_>>());
@@ -1254,7 +1268,7 @@ pub async fn add_connection(State(st): State<Arc<AppState>>, h: HeaderMap, body:
     }
     {
         let mut k = st.kernel.lock().unwrap();
-        let c = kernel_core::ConnectionConfig { name: name.clone(), command, args, env: Default::default() };
+        let c = kernel_core::ConnectionConfig { name: name.clone(), command, args, env: Default::default(), url: None, headers: Default::default() };
         k.vault.config.connections.retain(|x| x.name != name);
         k.vault.config.connections.push(c);
     }

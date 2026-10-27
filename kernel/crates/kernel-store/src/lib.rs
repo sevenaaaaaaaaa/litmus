@@ -311,8 +311,15 @@ impl AiConfig {
 pub struct ConnectionConfig {
     /// 连接名（导入路径与去重键的一部分）。
     pub name: String,
-    /// 启动命令，如 npx / uvx / 本地二进制。
+    /// 启动命令，如 npx / uvx / 本地二进制（填了 url 就不用）。
+    #[serde(default)]
     pub command: String,
+    /// 远程 MCP（Streamable HTTP）地址，如 https://example.com/mcp。填了就不起子进程。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// 远程 MCP 的请求头（鉴权等）；值可写 `{{secret:名字}}`，连接时从凭证库取。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub headers: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]

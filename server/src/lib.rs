@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 mod field;
+mod connectors;
 mod curate;
 mod field_tools;
 mod jobs;
@@ -219,6 +220,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/digest/reject", post(jobs::digest_reject))
         .route("/jobs", get(jobs::jobs))
         .route("/field/curate", get(curate::get).post(curate::start))
+        .route("/connectors", get(connectors::list))
+        .route("/connectors/test", post(connectors::test))
+        .route("/connectors/publish", post(connectors::publish))
         .route("/field/curate/config", post(curate::set_config))
         .route("/field/curate/apply", post(curate::apply))
         .route("/field/curate/undo", post(curate::undo))

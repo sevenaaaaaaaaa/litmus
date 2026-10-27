@@ -616,6 +616,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
         <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
+        <tr><td>GitHub、Notion、Sanity、OpenFlow、MFlow</td><td>/数据源 → 手动添加：接进来（原处索引）；阅读页「更多」→ 发到…：发回去（GitHub 提交、Notion 新建子页面、Sanity 草稿、OpenFlow 草稿文章、MFlow 选题队列），都要确认</td></tr>
         <tr><td>清理会话、过程文档</td><td>/筛选，或「帮我把会话和过程文档剔除」：规则先分、拿不准的交给 AI，出清单你改判后再删；库里的进回收站，库外的不再上场、原件不动，可整批撤销</td></tr>
         <tr><td>上手引导、这一版的新东西</td><td>/上手 重新走一遍；/新东西 再看这一版多了什么</td></tr>
         <tr><td>后台进度</td><td>左上角「鹿蕊」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
@@ -1866,6 +1867,7 @@ $('s-more').onclick = () => {
     {label:'阅读风格…', run:pickStyle},
     '-',
     {label:'发布为公开网页', run:() => publishDoc(n)},
+    ...(isMd ? [{label:'发到 GitHub / Notion / Sanity / OpenFlow / MFlow…', run:() => sendOut(n)}] : []),
     {label:'加密分享…', run:() => shareDoc(n)},
     '-',
     {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
@@ -2328,6 +2330,7 @@ async function openPlugins(){
   box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
   box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
   box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.all); s.limit = null; b.disabled = true; try { await api('/sources', {method:'POST', json:{source:s}}); await api('/sources/' + s.id + '/scan', {method:'POST'}); pollJobs(true); } catch(e){ toast(esc(e.message), true); } openSources(); });
+  box.querySelectorAll('[data-ct]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '测试中…'; try { const t = await api('/connectors/test', {method:'POST', json:{id:b.dataset.ct}}); toast((t.ok ? '' : '<b>没连通</b>：') + esc(t.message), !t.ok); } catch(e){ toast(esc(e.message), true); } b.disabled = false; b.textContent = '测试'; });
   box.querySelectorAll('[data-dg]').forEach(b => b.onclick = () => startDigest({source:b.dataset.dg, limit:10}));
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; }
@@ -3139,14 +3142,15 @@ async function localizeUrl(url){
 
 
 /* ═══════════ G3 数据源：库外的内容原处索引，导入才进库 ═══════════ */
-const SRC_KIND = {folder:'文件夹', agent:'agent 会话', mcp:'连接器', google:'Google', rest:'JSON 接口'};
-const EXT_KIND = {md:'Markdown', txt:'文本', html:'网页', docx:'Word', pptx:'PPT', xlsx:'Excel', pdf:'PDF', epub:'EPUB', img:'截图', agent:'agent 会话', mcp:'连接器资源', mail:'邮件', event:'日程', drive:'Drive 文档', rest:'接口条目'};
-let srcPoll = 0;
+const SRC_KIND = {folder:'文件夹', agent:'agent 会话', mcp:'连接器', google:'Google', rest:'JSON 接口', github:'GitHub', notion:'Notion', sanity:'Sanity', openflow:'OpenFlow', mflow:'MFlow'};
+const EXT_KIND = {md:'Markdown', txt:'文本', html:'网页', docx:'Word', pptx:'PPT', xlsx:'Excel', pdf:'PDF', epub:'EPUB', img:'截图', agent:'agent 会话', mcp:'连接器资源', mail:'邮件', event:'日程', drive:'Drive 文档', rest:'接口条目', notion:'Notion 页面', sanity:'Sanity 文档', article:'文章', skill:'技能'};
+let srcPoll = 0, CONN = {presets:[], targets:[]};
+const openSourcesSoon = () => setTimeout(() => openSources(), 2500);
 async function openSources(first){
   const box = openPanel(first ? '把你的知识接进来' : '数据源', '<span class="thinking"><i></i><i></i><i></i> 正在看这台电脑上有什么</span>');
   $('panel').querySelector('.pbox').style.width = 'min(860px,100%)';
   let cur, det;
-  try { [cur, det] = await Promise.all([api('/sources'), api('/sources/detect')]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  try { [cur, det, CONN] = await Promise.all([api('/sources'), api('/sources/detect'), api('/connectors').catch(() => ({presets:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   const have = cur.sources || [];
   const added = c => have.some(s => s.kind === c.kind && (c.path ? s.path === c.path : c.connection ? s.connection === c.connection : c.kind === 'google' || c.kind === 'rest' ? false : s.agent === c.agent));
   const cands = (det.candidates || []).filter(c => !added(c));
@@ -3157,13 +3161,13 @@ async function openSources(first){
     const status = sc.running ? '<span class="thinking"><i></i><i></i><i></i> ' + (sc.paused ? '已暂停 ' : '') + esc(sc.phase || '扫描中') + ' ' + (sc.seen || 0) + (sc.total ? ' / ' + sc.total : '') + '</span>' : sc.error ? '<span class="bad">' + esc(sc.error) + '</span>' : sc.finished ? s.items + ' 篇 · ' + new Date(sc.finished * 1000).toLocaleString() : '还没扫描';
     return '<div class="row"><div class="grow"><span>' + esc(s.name) + ' <em class="kind">' + (SRC_KIND[s.kind] || s.kind) + '</em>' + (s.enabled ? '' : ' <em class="kind">已停用</em>') + '</span><small>' + esc(s.path || s.connection || (s.services || []).join(' · ') || (s.rest && s.rest.url) || '') + '</small><small>' + status + '</small></div><div class="oacts">' +
       (s.kind === 'google' && !s.authorized ? '<button class="btn pri" data-gauth="' + esc(s.id) + '">连接 Google</button>' : '<button class="btn" data-scan="' + esc(s.id) + '"' + (sc.running ? ' disabled' : '') + '>' + (sc.finished ? '重新扫描' : '扫描') + '</button>') +
-      (s.limit && !sc.running ? '<button class="btn" data-all="' + esc(s.id) + '" title="现在只接了最近的 ' + s.limit + ' 个">全部接进来</button>' : '') + (s.items ? '<button class="btn" data-dg="' + esc(s.id) + '">让 AI 学一批</button>' : '') + '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
+      (s.limit && !sc.running ? '<button class="btn" data-all="' + esc(s.id) + '" title="现在只接了最近的 ' + s.limit + ' 个">全部接进来</button>' : '') + ((CONN.presets || []).some(p => p.kind === s.kind) ? '<button class="btn" data-ct="' + esc(s.id) + '">测试</button>' : '') + (s.items ? '<button class="btn" data-dg="' + esc(s.id) + '">让 AI 学一批</button>' : '') + '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
   };
   box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .litmus/local/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
     (have.length ? '<label>已接入 · ' + have.length + '</label>' + have.map(row).join('') : '') +
     (cands.length ? '<label>可以接入</label>' + cands.map((c, i) => '<label class="row chk"><input type="checkbox" data-ci="' + i + '"' + (first && i === firstPick ? ' checked' : '') + '><div class="grow"><span>' + esc(c.name) + ' <em class="kind">' + (SRC_KIND[c.kind] || c.kind) + '</em></span><small>' + esc(c.path || c.connection || '') + (c.count ? ' · 约 ' + c.count + ' 个' : '') + ' · ' + esc(c.why || '') + '</small></div></label>').join('') : '') +
-    '<details class="more"><summary>手动添加</summary>' +
-      '<div class="addf"><select id="sa-k" class="sel"><option value="folder">本地文件夹</option><option value="agent">agent 会话（Claude Code / Codex）</option><option value="mcp">连接器（MCP，比如 LinkTo）</option><option value="google">Google（Drive / Gmail / Calendar）</option><option value="rest">任意 JSON 接口</option></select>' +
+    '<details class="more"' + (have.length ? '' : '') + '><summary>手动添加（文件夹、GitHub、Notion、Sanity、OpenFlow、MFlow、连接器、JSON 接口…）</summary>' +
+      '<div class="addf"><select id="sa-k" class="sel"><option value="folder">本地文件夹</option><option value="agent">agent 会话（Claude Code / Codex）</option><option value="mcp">连接器（MCP，比如 LinkTo）</option><option value="google">Google（Drive / Gmail / Calendar）</option><option value="rest">任意 JSON 接口</option><option value="github">GitHub（仓库里的文档）</option><option value="notion">Notion（官方 MCP）</option><option value="sanity">Sanity</option><option value="openflow">OpenFlow</option><option value="mflow">MFlow</option></select>' +
       '<div id="sa-f"></div></div></details>' +
     (have.length ? '<p class="hint">接进来的会话、过程文档太多？<button class="btn" id="sa-cur">筛一遍</button>（留下文档、报告、方案、教程、课程、harness、skills，剔除会话和过程文档）</p>' : '') +
     '<p class="hint">' + (cur.tools && !cur.tools.tesseract && !/Mac/.test(navigator.platform) ? '截图里的文字要用 tesseract 识别；没装时截图只按文件名收录。' : '') + (cur.tools && !cur.tools.pdftotext ? ' PDF 要用 pdftotext（brew install poppler）。' : '') + '</p>' +
@@ -3171,6 +3175,31 @@ async function openSources(first){
     '<div class="acts">' + (cands.length ? '<button class="btn pri" id="sa-go">接入勾选的并扫描</button>' : '') + (first ? '<button class="btn" id="sa-skip">以后再说</button>' : '') + '<span id="sa-msg"></span></div>';
   const form = () => {
     const k = $('sa-k').value, f = $('sa-f');
+    const pre = (CONN.presets || []).find(p => p.kind === k);
+    if (pre){
+      f.innerHTML = '<p class="hint" style="margin-top:0">' + esc(pre.about) + '</p>' +
+        pre.fields.map(([n, l]) => '<input type="text" data-cf="' + n + '" placeholder="' + esc(l) + '" value="' + esc((pre.defaults || {})[n] || '') + '" style="margin-top:8px">').join('') +
+        '<input type="password" id="sa-sec" placeholder="' + esc(pre.secret_hint) + '" style="margin-top:8px"><p class="hint">存进 /凭证（名字 ' + esc(pre.secret) + '，只在这台设备）；已经存过就留空。</p>' +
+        (pre.write.length ? '<details class="more"><summary>发回去的位置（可选，之后发的时候也能改）</summary>' + pre.write.map(([n, l]) => '<input type="text" data-cw="' + n + '" placeholder="' + esc(l) + '" style="margin-top:8px">').join('') + '</details>' : '<p class="hint">' + (k === 'mflow' ? '发回去 = 进 MFlow 的选题队列。' : '') + '</p>') +
+        '<input type="text" id="sa-name" placeholder="叫它什么（可选）" value="' + esc(pre.name) + '" style="margin-top:8px"><div class="acts"><button class="btn" id="sa-add">添加并扫描</button><span id="sa-cm"></span></div>';
+      $('sa-add').onclick = async () => {
+        const conf = {}, write = {};
+        f.querySelectorAll('[data-cf]').forEach(i => { if (i.value.trim()) conf[i.dataset.cf] = i.value.trim(); });
+        f.querySelectorAll('[data-cw]').forEach(i => { if (i.value.trim()) write[i.dataset.cw] = i.value.trim(); });
+        if (Object.keys(write).length) conf.write = write;
+        const sec = $('sa-sec').value.trim();
+        if (sec){ try { await api('/secrets', {method:'POST', json:{name:pre.secret, value:sec, note:pre.name + ' 对接'}}); } catch(e){ toast('<b>凭证没存上</b>：' + esc(e.message || e), true); return; } }
+        const m = $('sa-cm'); m.className = ''; m.textContent = '正在接入…';
+        try {
+          const r = await api('/sources', {method:'POST', json:{source:{kind:k, name:$('sa-name').value.trim() || pre.name, conf}}});
+          const t = await api('/connectors/test', {method:'POST', json:{id:r.source.id}});
+          if (!t.ok){ m.className = 'bad'; m.textContent = '加上了，但没连通：' + t.message + '（改好凭证或设置后点「测试」）'; openSourcesSoon(); return; }
+          await api('/sources/' + r.source.id + '/scan', {method:'POST'}); pollJobs(true);
+          toast(esc(t.message) + '；在后台扫描，左上角看进度'); openSources();
+        } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); }
+      };
+      return;
+    }
     f.innerHTML = k === 'folder' ? '<input type="text" id="sa-path" placeholder="文件夹路径，比如 ~/Downloads 或 ~/InputFlow/docs"><input type="text" id="sa-ext" placeholder="只要这些扩展名（可选，逗号分隔）：md, pdf, docx, png" style="margin-top:8px">'
       : k === 'agent' ? '<select id="sa-agent" class="sel"><option value="claude">Claude Code（~/.claude/projects）</option><option value="codex">Codex（~/.codex/sessions）</option></select>'
       : k === 'mcp' ? '<input type="text" id="sa-conn" placeholder="连接名，比如 linkto"><input type="text" id="sa-cmd" placeholder="启动命令（新连接才填），比如 linkto mcp 或 npx -y @linkto/mcp" style="margin-top:8px"><p class="hint">填了启动命令会写进 litmus.toml 的 [[connections]]（原有内容保留）；已经配过的连接只填名字。读的是它提供的资源（resources）。</p>'
@@ -3440,6 +3469,39 @@ document.addEventListener('pointerdown', e => { const p = $('jobs-pop'); if (p &
 $('jobs').onclick = toggleJobsPop;
 loadAiInfo();
 pollJobs();
+
+
+/* ═══════════ 发回去：把库里的一篇发到对接的服务（都先进草稿或新建，确认才发） ═══════════ */
+const SEND_NOTE = {github:'提交到仓库（同一篇再发会更新同一个文件）', notion:'在指定页面下新建一个子页面', sanity:'写成草稿（drafts.），不会直接上线；再发会替换同一份草稿', openflow:'新建一篇草稿文章；勾上「直接发布」才会上线', mflow:'进 MFlow 的选题队列（服务器要开机器写入）'};
+async function sendOut(n){
+  let c; try { c = await api('/connectors'); } catch(e){ toast(esc(e.message), true); return; }
+  CONN = c;
+  const ts = c.targets || [];
+  if (!ts.length){ toast('还没有可以发去的对接：先在 /数据源 里加 GitHub、Notion、Sanity、OpenFlow 或 MFlow'); openSources(); return; }
+  const ob = (c.outbound || {})[n.p] || {};
+  const box = openPanel('发到外面：' + n.full,
+    '<p class="hint" style="margin-top:0">选一个对接。发出去的是这篇的 Markdown（转成对方的格式）；不会动库里的原文。</p>' +
+    ts.map((t, i) => '<label class="row chk"><input type="radio" name="so" value="' + i + '"' + (i ? '' : ' checked') + '><div class="grow"><span>' + esc(t.name) + ' <em class="kind">' + esc(SRC_KIND[t.kind] || t.kind) + '</em></span><small>' + esc(SEND_NOTE[t.kind] || '') + '</small>' + (ob[t.id] ? '<small>上次发过：' + new Date(ob[t.id].at * 1000).toLocaleString() + (ob[t.id].url ? ' · ' + esc(ob[t.id].url) : '') + '</small>' : '') + '</div></label>').join('') +
+    '<div id="so-f"></div><div class="acts"><button class="btn pri" id="so-go">发出去</button><button class="btn" id="so-x">算了</button><span id="so-m"></span></div>');
+  const fields = () => {
+    const t = ts[+box.querySelector('input[name=so]:checked').value], pre = (c.presets || []).find(p => p.kind === t.kind) || {write:[]};
+    $('so-f').innerHTML = pre.write.map(([k, l]) => '<label>' + esc(l) + '</label><input type="text" data-so="' + k + '" value="' + esc((t.write || {})[k] || '') + '">').join('') + (t.kind === 'openflow' ? '<label class="row chk"><input type="checkbox" id="so-pub"><div class="grow"><span>直接发布</span><small>不勾就只建草稿，去 OpenFlow 后台看过再发</small></div></label>' : '');
+  };
+  box.querySelectorAll('input[name=so]').forEach(r => r.onchange = fields); fields();
+  $('so-x').onclick = closePanel;
+  $('so-go').onclick = async () => {
+    const t = ts[+box.querySelector('input[name=so]:checked').value], opts = {};
+    box.querySelectorAll('[data-so]').forEach(i => { if (i.value.trim()) opts[i.dataset.so] = i.value.trim(); });
+    if ($('so-pub') && $('so-pub').checked) opts.publish = true;
+    const b = $('so-go'); if (b.dataset.sure !== String(t.id)){ b.dataset.sure = t.id; b.textContent = '确认发到 ' + t.name; return; }
+    b.disabled = true; const m = $('so-m'); m.className = ''; m.textContent = '正在发…';
+    try {
+      const r = await api('/connectors/publish', {method:'POST', json:{id:t.id, path:n.p, confirm:true, opts}});
+      closePanel();
+      toastAct('发到 <b>' + esc(t.name) + '</b> 了' + (r.draft || r.published === false ? '（草稿）' : '') + (r.updated ? '，更新了上次那份' : ''), r.url && /^https?:/.test(r.url) ? '打开' : '好', () => { if (r.url && /^https?:/.test(r.url)) window.open(r.url, '_blank', 'noopener'); });
+    } catch(e){ b.disabled = false; m.className = 'bad'; m.textContent = e.message || String(e); }
+  };
+}
 
 /* ═══════════ 筛选：留下知识，剔除会话和过程文档（规则先分、拿不准的交给 AI，先出清单再执行） ═══════════ */
 const CUR_RE = /(剔除|清理|清掉|删掉|去掉|筛掉|筛选|过滤).{0,16}(过程|会话|session|对话记录|没用)|(过程|会话|session|对话记录).{0,16}(剔除|清理|清掉|删掉|去掉|筛掉|过滤)|(保留|留下).{0,30}(剔除|删掉|去掉)/i;

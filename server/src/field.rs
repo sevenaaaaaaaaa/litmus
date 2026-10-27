@@ -1789,6 +1789,194 @@ mod api_tests {
         assert_eq!(c["agreed"], false);
     }
 
+    /// 一个假的「外面」：GitHub / Sanity / MFlow 的 REST，加 OpenFlow 风格的 HTTP MCP（回 SSE）。
+    async fn mock_outside() -> (String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+        use axum::{extract::Path as P, extract::Query as Q, http::HeaderMap as H, routing::{get, post}, Router};
+        use base64::Engine;
+        let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let g1 = got.clone();
+        let g2 = got.clone();
+        let g3 = got.clone();
+        let g4 = got.clone();
+        let b64 = |s: &str| base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
+        let (r1, r2) = (b64("# 仓库说明\n\n这是 README。"), b64("# 设计规范\n\n全 oklch。"));
+        let app = Router::new()
+            .route("/gh/user", get(|| async { axum::Json(serde_json::json!({"login": "me"})) }))
+            .route("/gh/user/repos", get(|| async { axum::Json(serde_json::json!([{"full_name": "me/proj", "fork": false, "archived": false}, {"full_name": "me/fork", "fork": true}])) }))
+            .route("/gh/repos/me/proj", get(|| async { axum::Json(serde_json::json!({"default_branch": "main", "pushed_at": "2026-10-20T08:00:00Z"})) }))
+            .route("/gh/repos/me/proj/git/trees/main", get(|| async { axum::Json(serde_json::json!({"tree": [
+                {"path": "README.md", "type": "blob", "sha": "s1", "size": 20}, {"path": "docs/design.md", "type": "blob", "sha": "s2", "size": 20},
+                {"path": "src/main.rs", "type": "blob", "sha": "s3", "size": 20}, {"path": "src/deep/notes.md", "type": "blob", "sha": "s4", "size": 20}]})) }))
+            .route("/gh/repos/me/proj/git/blobs/{sha}", get(move |P(sha): P<String>| { let (a, b) = (r1.clone(), r2.clone()); async move { axum::Json(serde_json::json!({"content": if sha == "s1" { a } else { b }})) } }))
+            .route("/gh/repos/me/proj/contents/{*path}", get(|| async { (axum::http::StatusCode::NOT_FOUND, "{}") }).put(move |P(path): P<String>, h: H, body: axum::body::Bytes| { let g = g1.clone(); async move {
+                let v: Value = serde_json::from_slice(&body).unwrap();
+                g.lock().unwrap().push(serde_json::json!({"to": "github", "path": path, "auth": h.get("authorization").map(|x| x.to_str().unwrap().to_string()), "body": v}));
+                axum::Json(serde_json::json!({"content": {"html_url": format!("https://github.com/me/proj/blob/main/{path}")}})) } }))
+            .route("/sanity/v2024-01-01/data/query/production", get(|Q(q): Q<std::collections::HashMap<String, String>>| async move {
+                if q.get("query").map(|x| x.starts_with("count(")).unwrap_or(false) { return axum::Json(serde_json::json!({"result": 1})); }
+                axum::Json(serde_json::json!({"result": [{"_id": "page-1", "_type": "compositePage", "_rev": "r1", "_updatedAt": "2026-10-21T00:00:00Z", "title": "AI 绘图落地页",
+                    "sections": [{"_type": "hero", "body": [{"_type": "block", "style": "normal", "markDefs": [], "children": [{"_type": "span", "text": "一句话生成海报", "marks": []}]}]}]}]})) }))
+            .route("/sanity/v2024-01-01/data/mutate/production", post(move |body: axum::body::Bytes| { let g = g2.clone(); async move {
+                g.lock().unwrap().push(serde_json::json!({"to": "sanity", "body": serde_json::from_slice::<Value>(&body).unwrap()}));
+                axum::Json(serde_json::json!({"results": [{"id": "x"}]})) } }))
+            .route("/mflow/api/kb/tree", get(|h: H| async move {
+                if h.get("x-mflow-token").map(|x| x.to_str().unwrap()) != Some("mf-tok") { return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"error": "需要 X-MFlow-Token"}))); }
+                (axum::http::StatusCode::OK, axum::Json(serde_json::json!([{"name": "产品知识库", "files": 1}, {"name": "空的", "files": 0}]))) }))
+            .route("/mflow/api/kb/list", get(|| async { axum::Json(serde_json::json!([{"path": "insight-data/Knowledge Base/产品介绍.md", "name": "产品介绍.md", "date": "2026-10-01"}])) }))
+            .route("/mflow/api/reports", get(|| async { axum::Json(serde_json::json!({"SEO 周报": [{"path": "insight-data/reports/weekly/w43.md", "name": "w43.md", "date": "2026-10-25"}], "会话日志": [{"path": "harness/sessions/s.md", "date": "2026-10-26"}]})) }))
+            .route("/mflow/api/content/raw", get(|Q(q): Q<std::collections::HashMap<String, String>>| async move { let p = q.get("path").cloned().unwrap_or_default(); axum::Json(serde_json::json!({"text": if p.contains("w43") { "# 第 43 周 SEO 周报\n\n点击 +12%。" } else { "# 产品介绍\n\nMFlow 是 GEO Agent。" }})) }))
+            .route("/mflow/api/item/upsert", post(move |body: axum::body::Bytes| { let g = g3.clone(); async move {
+                g.lock().unwrap().push(serde_json::json!({"to": "mflow", "body": serde_json::from_slice::<Value>(&body).unwrap()}));
+                axum::Json(serde_json::json!({"ok": true})) } }))
+            .route("/of/mcp", post(move |h: H, body: axum::body::Bytes| { let g = g4.clone(); async move {
+                if h.get("x-api-key").map(|x| x.to_str().unwrap()) != Some("of-key") {
+                    return (axum::http::StatusCode::UNAUTHORIZED, r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"API Key 无效"}}"#.to_string());
+                }
+                let m: Value = serde_json::from_slice(&body).unwrap();
+                let id = m["id"].clone();
+                let text = |v: Value| serde_json::json!({"content": [{"type": "text", "text": v.to_string()}]});
+                let res = match m["method"].as_str().unwrap_or("") {
+                    "initialize" => serde_json::json!({"protocolVersion": "2024-11-05", "serverInfo": {"name": "openflow"}, "capabilities": {"tools": {}}}),
+                    "tools/list" => serde_json::json!({"tools": [{"name": "articles_list"}, {"name": "article_get"}, {"name": "skills_list"}, {"name": "article_create"}, {"name": "article_publish"}]}),
+                    "tools/call" => {
+                        let a = &m["params"]["arguments"];
+                        match m["params"]["name"].as_str().unwrap_or("") {
+                            "articles_list" => text(if a["status"] == "draft" { serde_json::json!([]) } else { serde_json::json!([{"id": "art_1", "title": "增长复盘方法", "slug": "growth-review", "category": "insight", "status": "published", "updated_at": "2026-10-22 10:00:00"}]) }),
+                            "article_get" => text(serde_json::json!({"id": "art_1", "title": "增长复盘方法", "slug": "growth-review", "content": "<h2>先看目标</h2><p>每周对比目标与实际。</p>", "category": "insight", "status": "published", "updated_at": "2026-10-22 10:00:00"})),
+                            "skills_list" => text(serde_json::json!([{"id": "sk1", "title": "周报生成", "type": "prompt", "description": "按模板写周报"}])),
+                            "article_create" => { g.lock().unwrap().push(serde_json::json!({"to": "openflow", "args": a})); text(serde_json::json!({"ok": true, "id": "article_new"})) }
+                            _ => text(serde_json::json!({"error": "unknown"})),
+                        }
+                    }
+                    _ => return (axum::http::StatusCode::ACCEPTED, String::new()),
+                };
+                (axum::http::StatusCode::OK, format!("data: {}\n\n", serde_json::json!({"jsonrpc": "2.0", "id": id, "result": res})))
+            } }));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        (format!("http://{addr}"), got)
+    }
+
+    const NOTION_MOCK: &str = r#"
+import json, sys
+def out(m): sys.stdout.write(json.dumps(m, ensure_ascii=False) + "\n"); sys.stdout.flush()
+for line in sys.stdin:
+    m = json.loads(line)
+    mid, meth = m.get("id"), m.get("method")
+    if meth == "initialize": out({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2025-06-18", "serverInfo": {"name": "notion-mock"}, "capabilities": {}}})
+    elif meth == "tools/list": out({"jsonrpc": "2.0", "id": mid, "result": {"tools": [{"name": "API-post-search"}, {"name": "API-get-block-children"}, {"name": "API-post-page"}, {"name": "API-patch-block-children"}]}})
+    elif meth == "tools/call":
+        n, a = m["params"]["name"], m["params"].get("arguments", {})
+        if n == "API-post-search": r = {"results": [{"object": "page", "id": "11111111-2222-3333-4444-555555555555", "url": "https://www.notion.so/p1", "last_edited_time": "2026-10-23T00:00:00.000Z", "properties": {"Name": {"type": "title", "title": [{"plain_text": "读书笔记：增长黑客"}]}}}], "has_more": False}
+        elif n == "API-get-block-children": r = {"results": [{"type": "heading_2", "heading_2": {"rich_text": [{"plain_text": "要点"}]}}, {"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"plain_text": "北极星指标"}]}}]}
+        elif n == "API-post-page":
+            sys.stderr.write(json.dumps(a, ensure_ascii=False))
+            open(__file__ + ".got", "w").write(json.dumps(a, ensure_ascii=False))
+            r = {"object": "page", "id": "new-page-id", "url": "https://www.notion.so/new"}
+        else: r = {}
+        out({"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": json.dumps(r, ensure_ascii=False)}]}})
+"#;
+
+    #[tokio::test]
+    async fn connectors_read_in_and_publish_back() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        let (base, got) = mock_outside().await;
+        for (n, v) in [("github_token", "gh-tok"), ("sanity_token", "sa-tok"), ("mflow_token", "mf-tok"), ("openflow_api_key", "of-key"), ("notion_token", "nt-tok")] {
+            let (st, _) = call(&app, &token, "POST", "/secrets", &serde_json::json!({"name": n, "value": v}).to_string()).await;
+            assert_eq!(st, 200);
+        }
+        let script = root.join("notion_mock.py");
+        std::fs::write(&script, NOTION_MOCK).unwrap();
+        let (_, pres) = call(&app, &token, "GET", "/connectors", "").await;
+        assert_eq!(pres["presets"].as_array().unwrap().len(), 5);
+        let srcs = [
+            serde_json::json!({"kind": "github", "name": "GitHub", "conf": {"api_base": format!("{base}/gh"), "write": {"repo": "me/proj", "dir": "docs/litmus"}}}),
+            serde_json::json!({"kind": "sanity", "name": "Sanity", "conf": {"project": "p1", "api_base": format!("{base}/sanity"), "write": {"type": "post"}}}),
+            serde_json::json!({"kind": "mflow", "name": "MFlow", "conf": {"url": format!("{base}/mflow")}}),
+            serde_json::json!({"kind": "openflow", "name": "OpenFlow", "conf": {"url": format!("{base}/of/mcp"), "site": "https://nownexts.com"}}),
+            serde_json::json!({"kind": "notion", "name": "Notion", "conf": {"command": "python3", "args": [script.to_string_lossy()], "write": {"parent": "https://www.notion.so/x/父页面-aaaaaaaabbbbccccddddeeeeeeeeeeee"}}}),
+        ];
+        let mut ids = Vec::new();
+        for s in &srcs {
+            let (st, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": s}).to_string()).await;
+            assert_eq!(st, 200, "{r}");
+            let id = r["source"]["id"].as_str().unwrap().to_string();
+            let (_, t) = call(&app, &token, "POST", "/connectors/test", &serde_json::json!({"id": id}).to_string()).await;
+            assert_eq!(t["ok"], true, "{s} → {t}");
+            let (st, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+            assert_eq!(st, 200);
+            ids.push(id);
+        }
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        let (_, list) = call(&app, &token, "GET", "/sources", "").await;
+        for s in list["sources"].as_array().unwrap() {
+            assert!(s["scan"]["error"].is_null(), "{}：{}", s["name"], s["scan"]);
+        }
+        let n = |name: &str| list["sources"].as_array().unwrap().iter().find(|s| s["name"] == name).unwrap()["items"].as_u64().unwrap();
+        assert_eq!(n("GitHub"), 2, "README + docs/design.md，跳过 fork、代码和深处的 md");
+        assert_eq!(n("Sanity"), 1);
+        assert_eq!(n("MFlow"), 2, "知识库 1 + 周报 1，会话日志不要");
+        assert_eq!(n("OpenFlow"), 2, "文章 1 + 技能 1");
+        assert_eq!(n("Notion"), 1);
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let titles: Vec<&str> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").map(|x| x["t"].as_str().unwrap()).collect();
+        for t in ["仓库说明", "设计规范", "AI 绘图落地页", "产品介绍", "第 43 周 SEO 周报", "增长复盘方法", "周报生成", "读书笔记：增长黑客"] {
+            assert!(titles.contains(&t), "{t} 不在场上：{titles:?}");
+        }
+        // 正文转好了
+        let key = d["docs"].as_array().unwrap().iter().find(|x| x["t"] == "增长复盘方法").unwrap()["p"].as_str().unwrap().to_string();
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&key)), "").await;
+        assert!(e["source"].as_str().unwrap().contains("每周对比目标与实际"), "{e}");
+        let key = d["docs"].as_array().unwrap().iter().find(|x| x["t"] == "AI 绘图落地页").unwrap()["p"].as_str().unwrap().to_string();
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&key)), "").await;
+        assert!(e["source"].as_str().unwrap().contains("一句话生成海报"), "{e}");
+        // 发回去：没确认不发
+        std::fs::create_dir_all(root.join("Notes/方案")).unwrap();
+        std::fs::write(root.join("Notes/方案/同步方案.md"), "# 同步方案\n\n冲突时 **两边都保留**。\n\n- 离线可写\n- 回来再合").unwrap();
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        let (st, _) = call(&app, &token, "POST", "/connectors/publish", &serde_json::json!({"id": ids[0], "path": "Notes/方案/同步方案.md"}).to_string()).await;
+        assert_eq!(st, 400);
+        for id in &ids {
+            let (st, r) = call(&app, &token, "POST", "/connectors/publish", &serde_json::json!({"id": id, "path": "Notes/方案/同步方案.md", "confirm": true}).to_string()).await;
+            assert_eq!(st, 200, "{id}：{r}");
+        }
+        let got = got.lock().unwrap().clone();
+        let gh = got.iter().find(|g| g["to"] == "github").unwrap();
+        assert_eq!(gh["path"], "docs/litmus/同步方案.md");
+        assert_eq!(gh["auth"], "Bearer gh-tok");
+        assert!(gh["body"]["content"].as_str().is_some());
+        let sa = got.iter().find(|g| g["to"] == "sanity").unwrap();
+        let doc = &sa["body"]["mutations"][0]["createOrReplace"];
+        assert!(doc["_id"].as_str().unwrap().starts_with("drafts.litmus-"), "Sanity 只写草稿：{doc}");
+        assert_eq!(doc["_type"], "post");
+        assert_eq!(doc["title"], "同步方案");
+        assert_eq!(doc["body"][0]["children"][1]["marks"][0], "strong", "正文不重复标题：{doc}");
+        let of = got.iter().find(|g| g["to"] == "openflow").unwrap();
+        assert_eq!(of["args"]["status"], "draft");
+        assert!(of["args"]["content"].as_str().unwrap().contains("<strong>两边都保留</strong>"), "{of}");
+        let mf = got.iter().find(|g| g["to"] == "mflow").unwrap();
+        assert_eq!(mf["body"]["topic"], "同步方案");
+        let np: Value = serde_json::from_str(&std::fs::read_to_string(format!("{}.got", script.display())).unwrap()).unwrap();
+        assert_eq!(np["parent"]["page_id"], "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        assert_eq!(np["properties"]["title"]["title"][0]["text"]["content"], "同步方案");
+        assert_eq!(np["children"][1]["type"], "bulleted_list_item");
+        // 发过的记下来
+        let ob: Value = serde_json::from_str(&std::fs::read_to_string(root.join(".litmus/local/outbound.json")).unwrap()).unwrap();
+        assert_eq!(ob["Notes/方案/同步方案.md"].as_object().unwrap().len(), 5);
+        // 换错的 OpenFlow 密钥：测连接说清楚是鉴权
+        let (_, _) = call(&app, &token, "POST", "/secrets", r#"{"name":"openflow_api_key","value":"wrong"}"#).await;
+        let (_, t) = call(&app, &token, "POST", "/connectors/test", &serde_json::json!({"id": ids[3]}).to_string()).await;
+        assert_eq!(t["ok"], false);
+        assert!(t["message"].as_str().unwrap().contains("鉴权") && t["message"].as_str().unwrap().contains("API Key 无效"), "{t}");
+    }
+
     #[tokio::test]
     async fn curate_asks_the_model_only_about_unsure_docs() {
         let (app, token, dir) = app();

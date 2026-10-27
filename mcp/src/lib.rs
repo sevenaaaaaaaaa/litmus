@@ -1134,6 +1134,8 @@ for line in sys.stdin:
             command: "python3".into(),
             args: vec![script.to_string_lossy().into_owned()],
             env: Default::default(),
+            url: None,
+            headers: Default::default(),
         };
         Fixture {
             _dir: dir,
