@@ -1650,6 +1650,12 @@ mod api_tests {
         })
         .await;
         let (_, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        // 巡检要把内容发给模型：没看隐私告知、没同意不开始
+        let (st, r) = call(&app, &token, "POST", "/field/patrol", "{}").await;
+        assert_eq!(st, 428, "{r}");
+        assert_eq!(r["needs_consent"], true);
+        let (st, _) = call(&app, &token, "POST", "/field/consent", r#"{"agree":true}"#).await;
+        assert_eq!(st, 200);
         let (st, r) = call(&app, &token, "POST", "/field/patrol", "{}").await;
         assert_eq!(st, 200, "{r}");
         assert!(r["calls"].as_u64().unwrap() >= 3, "71 篇缺标签：至少 3 批（每批 30）：{r}");
@@ -1670,6 +1676,117 @@ mod api_tests {
         assert_eq!(st, 200, "{rf}");
         assert!(rf["markdown"].as_str().unwrap().contains("2025-04") && rf["changes"].as_str().unwrap().contains("发布日期"));
         assert!(rf["before"].as_str().unwrap().contains("预计 2025-02"), "不写盘，原文还在");
+    }
+
+    #[tokio::test]
+    async fn onboarding_consent_background_scan_and_ai_digest() {
+        let (app, token, dir) = app();
+        // 新库：第一次用 → 边用边引导
+        let (_, o) = call(&app, &token, "GET", "/field/onboarding", "").await;
+        assert_eq!(o["mode"], "first", "{o}");
+        assert_eq!(o["existing"], false);
+        let (_, o) = call(&app, &token, "POST", "/field/onboarding", r#"{"step":"note"}"#).await;
+        assert!(o["state"]["steps"]["note"].as_u64().is_some());
+        assert!(dir.path().join(".litmus/onboarding.json").is_file(), "引导进度随库同步");
+        let (_, _) = call(&app, &token, "POST", "/field/onboarding", r#"{"dismiss":true,"seen":true}"#).await;
+        let (_, o) = call(&app, &token, "GET", "/field/onboarding", "").await;
+        assert_eq!(o["mode"], "none", "{o}");
+
+        // 数据源：只接最近的 2 个；后台扫描，进度在 /jobs
+        let outside = tempfile::tempdir().unwrap();
+        let o = outside.path();
+        let long = "这是一份足够长的资料，讲的是同步冲突怎么处理：两边都保留，同名不同内容另存冲突副本，绝不静默覆盖。设备离线也能继续写，回来再合并。";
+        for (i, name) in ["旧的.md", "中间.md", "最新.md"].iter().enumerate() {
+            let f = o.join(name);
+            std::fs::write(&f, format!("# {name}\n\n{long}")).unwrap();
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(86_400 * (10 - i as u64 * 3));
+            std::fs::File::options().write(true).open(&f).unwrap().set_modified(t).unwrap();
+        }
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "folder", "name": "下载", "path": o.to_string_lossy(), "limit": 2}}).to_string()).await;
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (st, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        assert_eq!(st, 200);
+        let mut j = Value::Null;
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            j = call(&app, &token, "GET", "/jobs", "").await.1;
+            if j["busy"] == false && j["jobs"].as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+                break;
+            }
+        }
+        let scan = &j["jobs"][0];
+        assert_eq!(scan["kind"], "scan", "{j}");
+        assert_eq!(scan["state"], "done", "{j}");
+        assert_eq!(scan["total"], 0, "完成后 total 归零，看 items");
+        assert_eq!(scan["items"], 2, "只接最近的 2 个：{j}");
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let titles: Vec<&str> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").map(|x| x["t"].as_str().unwrap()).collect();
+        assert!(titles.contains(&"最新.md") && titles.contains(&"中间.md") && !titles.contains(&"旧的.md"), "{titles:?}");
+
+        // AI 学习：没配模型 → 估算里说没配；配了但没同意 → 428；同意后后台学，学成的等确认
+        let (_, e) = call(&app, &token, "POST", "/field/digest", r#"{"dry":true}"#).await;
+        assert_eq!(e["configured"], false);
+        assert_eq!(e["count"], 2);
+        let base = mock_json_llm(|sys, user| {
+            if sys.contains("学成一篇学习笔记") {
+                let t = user.split('《').nth(1).and_then(|x| x.split('》').next()).unwrap_or("?");
+                serde_json::json!({"title": format!("{t} 的要点"), "summary": "冲突时两边都保留。", "points": ["同名不同内容另存冲突副本", "离线也能写"], "use": "设计同步时参考", "tags": ["同步"]}).to_string()
+            } else {
+                "?".into()
+            }
+        })
+        .await;
+        let (_, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        let (_, e) = call(&app, &token, "POST", "/field/digest", r#"{"dry":true}"#).await;
+        assert_eq!(e["configured"], true);
+        assert_eq!(e["local"], true, "127.0.0.1 上的模型算本机");
+        assert_eq!(e["agreed"], false);
+        assert!(e["sent_chars"].as_u64().unwrap() > 100);
+        let (st, r) = call(&app, &token, "POST", "/field/digest", "{}").await;
+        assert_eq!(st, 428, "{r}");
+        let (_, c) = call(&app, &token, "POST", "/field/consent", r#"{"agree":true}"#).await;
+        assert_eq!(c["agreed"], true);
+        let (st, r) = call(&app, &token, "POST", "/field/digest", r#"{"limit":5}"#).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["total"], 2);
+        let mut g = Value::Null;
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            g = call(&app, &token, "GET", "/field/digest", "").await.1;
+            if g["job"]["running"] == false {
+                break;
+            }
+        }
+        let drafts = g["drafts"].as_array().unwrap().clone();
+        assert_eq!(drafts.len(), 2, "{g}");
+        assert!(!dir.path().join("Notes/学习").exists(), "确认之前不进库");
+        let (_, j) = call(&app, &token, "GET", "/jobs", "").await;
+        assert_eq!(j["pending"], 2);
+        assert!(j["jobs"].as_array().unwrap().iter().any(|x| x["kind"] == "digest" && x["items"] == 2), "{j}");
+        // 收下一篇：进 Notes/学习/，带出处，排进复习；另一篇不要
+        let (st, a) = call(&app, &token, "POST", "/field/digest/accept", &serde_json::json!({"ids": [drafts[0]["id"]]}).to_string()).await;
+        assert_eq!(st, 200, "{a}");
+        let path = a["paths"][0].as_str().unwrap().to_string();
+        assert!(path.starts_with("Notes/学习/") && path.ends_with(" 的要点.md"), "{path}");
+        let md = std::fs::read_to_string(dir.path().join(&path)).unwrap();
+        assert!(md.contains("tags: [学习, 同步]") && md.contains("origin: /") && md.contains("最新.md") && md.contains("## 要点"), "{md}");
+        let learn = std::fs::read_to_string(dir.path().join(".litmus/learn.json")).unwrap();
+        assert!(learn.contains(&path));
+        let (_, _) = call(&app, &token, "POST", "/field/digest/reject", &serde_json::json!({"ids": [drafts[1]["id"]]}).to_string()).await;
+        let (_, g) = call(&app, &token, "GET", "/field/digest", "").await;
+        assert_eq!(g["drafts"].as_array().unwrap().len(), 0);
+        assert_eq!(g["learned"], 2);
+        // 都学过了：不会再学同一版原文
+        let (st, _) = call(&app, &token, "POST", "/field/digest", "{}").await;
+        assert_eq!(st, 400);
+        // 换了服务商：同意作废，要重新问
+        let (_, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"https://api.example.com/v1","model":"m"}"#).await;
+        let (_, c) = call(&app, &token, "GET", "/field/consent", "").await;
+        assert_eq!(c["agreed"], false);
+        assert_eq!(c["host"], "api.example.com");
+        // 撤回
+        let (_, c) = call(&app, &token, "POST", "/field/consent", r#"{"agree":false}"#).await;
+        assert_eq!(c["agreed"], false);
     }
 
     #[tokio::test]

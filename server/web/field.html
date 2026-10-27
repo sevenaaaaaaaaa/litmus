@@ -415,6 +415,60 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
   .chip{flex:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* H 上手与后台 */
+#jobs{display:flex;align-items:center;gap:7px;border:0;cursor:pointer;margin-left:4px;padding:4px 10px 4px 6px;border-radius:var(--r-pill);background:var(--veil);box-shadow:inset 0 0 0 1px var(--rule);color:var(--ink-2);--p:0}
+#jobs[hidden]{display:none}
+#jobs .jr{width:14px;height:14px;border-radius:50%;flex:none;background:conic-gradient(var(--litmus) calc(var(--p) * 1%),var(--rule) 0);-webkit-mask:radial-gradient(circle,transparent 4px,black 4.5px);mask:radial-gradient(circle,transparent 4px,black 4.5px)}
+#jobs.idle .jr{background:var(--acid)}
+#jobs.paused .jr{background:conic-gradient(var(--ink-3) calc(var(--p) * 1%),var(--rule) 0)}
+#jobs:not(.idle):not(.paused) .jr{animation:jspin 2.4s linear infinite}
+@keyframes jspin{to{transform:rotate(1turn)}}
+#jobs.pulse{animation:jpulse var(--dur-5) var(--ease-spring) 3}
+@keyframes jpulse{50%{box-shadow:inset 0 0 0 1px var(--litmus),0 0 0 6px oklch(var(--litmus-c) / .18)}}
+#jobs-pop{width:min(340px,calc(100vw - 24px));max-width:none;padding:8px}
+#jobs-pop .job{padding:8px;border-radius:var(--r-sm)}
+#jobs-pop .job + .job{box-shadow:0 -1px 0 var(--rule)}
+#jobs-pop .jh{display:flex;flex-direction:column;gap:2px}
+#jobs-pop .jh b{font:600 var(--fs-2)/1.4 var(--f-ui)}
+#jobs-pop .jh small,#jobs-pop .job > small{font:400 var(--fs-1)/1.4 var(--f-mono);color:var(--ink-2)}
+#jobs-pop .jbar{height:4px;border-radius:var(--r-pill);background:var(--rule);margin:7px 0 2px;overflow:hidden}
+#jobs-pop .jbar i{display:block;height:100%;background:var(--litmus);border-radius:inherit;transition:width var(--dur-4) var(--ease-spring)}
+#jobs-pop .job.paused .jbar i{background:var(--ink-3)}
+#jobs-pop .ja{display:flex;gap:6px;margin-top:6px}
+#jobs-pop .ja .btn{padding:4px 10px;font-size:var(--fs-1)}
+#jobs-pop .wide{width:100%;margin-top:6px}
+#coach{position:fixed;z-index:35;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(52px + env(safe-area-inset-bottom,0px));width:min(320px,calc(100vw - 32px));box-sizing:border-box;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);padding:14px 16px 12px;transform:translateY(16px);opacity:0;pointer-events:none;transition:transform var(--dur-4) var(--ease-spring),opacity var(--dur-3)}
+#coach.on{transform:none;opacity:1;pointer-events:auto}
+#coach.on.tuck{transform:translateY(16px);opacity:0;pointer-events:none}
+#coach header{display:flex;align-items:center;gap:8px}
+#coach header b{font:600 var(--fs-2)/1.3 var(--f-mono);letter-spacing:.06em;color:var(--litmus)}
+#coach header span{flex:1;font:400 var(--fs-1)/1.3 var(--f-mono);color:var(--ink-2)}
+#coach h4{margin:10px 0 4px;font:600 var(--fs-4)/1.35 var(--f-display)}
+#coach p{margin:4px 0 0;font:400 var(--fs-2)/1.6 var(--f-ui);color:var(--ink-2)}
+#coach .acts{display:flex;gap:6px;margin-top:12px}
+#coach .btn.g{background:none;color:var(--ink-2)}
+#coach .dots{display:flex;gap:5px;margin-top:12px}
+#coach .dots i{width:6px;height:6px;border-radius:50%;background:var(--rule)}
+#coach .dots i.on{background:var(--ink-3)}
+#coach .dots i.cur{background:var(--litmus)}
+#coach .wn{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:min(46vh,360px);overflow:auto}
+#coach .wn li{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+#coach .wn b{font:600 var(--fs-3)/1.4 var(--f-display)}
+#coach .wn span{font:400 var(--fs-2)/1.55 var(--f-ui);color:var(--ink-2)}
+#coach .wn .btn{padding:4px 10px;font-size:var(--fs-1);margin-top:2px}
+@media (max-width:760px){#coach{bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+.privacy{margin:14px 0 4px;padding:12px 14px;border-radius:var(--r-md);background:oklch(var(--litmus-c) / .07);box-shadow:inset 0 0 0 1px oklch(var(--litmus-c) / .22)}
+.privacy > b{font:600 var(--fs-2)/1.4 var(--f-ui)}
+.privacy ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font:400 var(--fs-2)/1.6 var(--f-ui);color:var(--ink-2)}
+.privacy li b{color:var(--ink)}
+.draft{padding:12px 0;box-shadow:0 -1px 0 var(--rule)}
+.draft .dh{display:flex;flex-direction:column;gap:2px}
+.draft .dh b{font:600 var(--fs-4)/1.4 var(--f-display)}
+.draft .dh small{font:400 var(--fs-1)/1.4 var(--f-mono);color:var(--ink-2)}
+.draft p{margin:6px 0;font:400 var(--fs-3)/1.6 var(--f-ui)}
+.draft pre{white-space:pre-wrap;font:400 var(--fs-2)/1.6 var(--f-ui);background:var(--paper);padding:10px 12px;border-radius:var(--r-md);max-height:260px;overflow:auto}
+.draft summary{cursor:pointer;font-size:var(--fs-2);color:var(--ink-2)}
+.chip.on{background:var(--ink);color:var(--paper);box-shadow:none}
 </style>
 </head>
 <body>
@@ -428,6 +482,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 <div class="chrome" id="brand">
   <svg viewBox="182 182 664 664" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="62" stroke-linecap="round" stroke-linejoin="round"><path d="M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262"/></g><g fill="currentColor"><circle id="m1" cx="318" cy="272" r="48"/><circle id="m2" cx="418" cy="262" r="48"/><circle id="m3" cx="588" cy="232" r="48"/><circle id="m4" cx="708" cy="262" r="48"/></g></svg>
   <b>鹿蕊</b><span id="vault"></span>
+  <button id="jobs" hidden aria-haspopup="true"><i class="jr" aria-hidden="true"></i><span id="jobs-t"></span></button>
 </div>
 
 <div class="chrome" id="lens">
@@ -544,6 +599,9 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
         <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
+        <tr><td>上手引导、这一版的新东西</td><td>/上手 重新走一遍；/新东西 再看这一版多了什么</td></tr>
+        <tr><td>后台进度</td><td>左上角「鹿蕊」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
+        <tr><td>AI 学习</td><td>/数据源 每个来源的「让 AI 学一批」、库外文档上的「让 AI 学」或 /AI学习；学成的在 /待收下，确认后才进 Notes/学习/</td></tr>
         <tr><td>社区插件、网页本地化</td><td>/插件 里的社区插件一键装；粘贴网址回车，正文和图片一起存进库</td></tr>
       </tbody>
     </table></div>
@@ -616,7 +674,7 @@ async function api(path, opts){
   const text = await res.text(); let data;
   try { data = text ? JSON.parse(text) : {}; } catch(_){ data = {raw:text}; }
   if (res.status === 401){ try { localStorage.removeItem('litmus_token'); } catch(e){} location.replace(BASE + '/'); throw new Error('登录已失效'); }
-  if (!res.ok) throw Object.assign(new Error(data.error || (res.status + ' ' + res.statusText)), {status:res.status});
+  if (!res.ok) throw Object.assign(new Error(data.error || (res.status + ' ' + res.statusText)), {status:res.status, data});
   return data;
 }
 
@@ -1499,6 +1557,7 @@ async function capture(text){
   try {
     await api('/doc?path=' + encodeURIComponent(path), {method:'PUT', body:fm + '\n' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' ' + text + '\n', headers:{'content-type':'text/markdown'}});
   } catch(e){ toast('<b>没记上</b>：' + esc(e.message || e) + '。文字还在输入框里', true); q.value = '+ ' + text; onInput(); return; }
+  onbDone('note');
   /* 先按落位预告放一个临时节点，从输入行飞过去；后台刷新后由内核坐标接管（同一路径、同一节点） */
   const [sx, sy] = toWorld(vw / 2, vh - 110);
   if (!byPath.has(path) && pl && pl.x != null){
@@ -1590,6 +1649,11 @@ const CMDS = [
   ['/备份', '加密备份的状态与立即备份', openBackup],
   ['/设置', '模型设置：接口地址、模型、密钥', openSettings],
   ['/重排', '整体重新计算一次布局', rebuild],
+  ['/进度', '后台在做的事：接入、AI 学习、巡检（可暂停、停下）', () => { if ($('jobs').hidden) flashJobs(); toggleJobsPop(); }],
+  ['/待收下', 'AI 学成、等你确认的学习笔记', openDigest],
+  ['/AI学习', '让 AI 把接进来的内容学成笔记（你确认后才进库）', () => startDigest({limit:10})],
+  ['/上手', '重新走一遍上手引导', async () => { await api('/field/onboarding', {method:'POST', json:{reset:true}}).catch(() => {}); onb = null; await initOnboarding(); }],
+  ['/新东西', '这一版多了什么', async () => { const o = await api('/field/onboarding').catch(() => null); if (o && o.whatsnew){ onb = o; renderWhatsNew(o.whatsnew); } else toast('这一版没有新东西的说明'); }],
   ['/帮助', '用法与旧功能的位置', openHelp]
 ];
 let cmdSel = 0;
@@ -1669,7 +1733,8 @@ async function submit(){
   if (v === '收'){ q.value = ''; onInput(); collectUrl(s); return; }
   if (v === '办'){ q.value = ''; onInput(); q.blur(); runAgent(s.replace(AGENT_RE, '').trim() || s); return; }
   if (v === '标'){ const rel = showTag(s); if (rel.length) fit(rel.map(x => x.n)); else toast('没有文档带 ' + esc(s)); return; }
-  if (v === '问'){ ask(s); hints(); return; }
+  if (v === '问'){ onbDone('ask'); ask(s); hints(); return; }
+  onbDone('ask');
   const rel = query === s && lastRel.length ? lastRel : await react(s);
   if (rel.length) openDoc(rel[0].n); else toast('没有找到，换个说法，或者用问句再试');
 }
@@ -1960,7 +2025,12 @@ async function openSettings(){
     '<label for="ai-model">模型</label><input type="text" id="ai-model" value="' + esc(a.model || '') + '" placeholder="deepseek-chat">' +
     '<label for="ai-key">密钥</label><input type="password" id="ai-key" placeholder="' + (a.has_key ? '已保存，留空表示不改' : a.key_from_env ? '已从环境变量 LITMUS_AI_API_KEY 读取' : 'sk-…（本机 Ollama 可留空）') + '">' +
     '<p class="hint">密钥写进库根目录的 litmus.toml，只在这台电脑上。更稳妥的做法是设环境变量 LITMUS_AI_API_KEY，这里留空。</p>' +
-    '<div class="acts"><button class="btn pri" id="ai-save">保存并测试</button><span id="ai-msg"></span></div>';
+    '<div class="acts"><button class="btn pri" id="ai-save">保存并测试</button><span id="ai-msg"></span></div>' +
+    '<p class="hint" id="ai-consent"></p>';
+  loadAiInfo().then(i => { const el = $('ai-consent'); if (!el || !i || !i.configured) return;
+    el.innerHTML = i.agreed ? '隐私：已同意 AI 学习、巡检把选中的内容发给 <b>' + esc(i.host) + '</b>（' + (i.at ? new Date(i.at * 1000).toLocaleDateString() : '') + '）。<button class="btn" id="ai-revoke">撤回同意</button>' : '隐私：AI 学习、巡检开始前会先告诉你发什么、发给 ' + esc(i.host) + '，你同意才开始。';
+    const rv = $('ai-revoke'); if (rv) rv.onclick = async () => { aiInfo = await api('/field/consent', {method:'POST', json:{agree:false}}).catch(() => aiInfo); toast('撤回了：下次用 AI 学习、巡检前会再问你'); openSettings(); };
+  });
   box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
   $('ai-save').onclick = async () => {
     const msg = $('ai-msg'); msg.className = ''; msg.textContent = '正在保存…'; $('ai-save').disabled = true;
@@ -2237,6 +2307,8 @@ async function openPlugins(){
     '<div id="pl-index"><p class="hint">正在读社区插件索引…</p></div><label for="pl-url">从 GitHub 安装</label><input type="text" id="pl-url" placeholder="https://github.com/作者/仓库"><p class="hint">仓库根或一层子目录里有 manifest.json 就行，一个仓库可以带多个插件。启用后，插件的命令和视图会出现在 / 指令里。</p><div class="acts"><button class="btn pri" id="pl-go">安装</button><span id="pl-msg"></span></div>');
   box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
   box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
+  box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.all); s.limit = null; b.disabled = true; try { await api('/sources', {method:'POST', json:{source:s}}); await api('/sources/' + s.id + '/scan', {method:'POST'}); pollJobs(true); } catch(e){ toast(esc(e.message), true); } openSources(); });
+  box.querySelectorAll('[data-dg]').forEach(b => b.onclick = () => startDigest({source:b.dataset.dg, limit:10}));
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; }
     await api('/plugins/remove', {method:'POST', json:{name:b.dataset.del}}).catch(e => toast(esc(e.message), true)); openPlugins();
@@ -2644,7 +2716,10 @@ async function renderPatrol(p){
   el.innerHTML = '<span>' + (p.finished ? '上次巡检：' + esc(p.scope) + '，' + new Date(p.finished * 1000).toLocaleString() + (p.error ? '（' + esc(p.error) + '）' : '') + '。' : '还没做过 AI 巡检。') + (est ? ' 这个范围有 ' + est.docs + ' 篇缺标签或标题太短、' + est.stale + ' 篇疑似过时，约 ' + est.calls + ' 次模型调用。' : '') + '</span>' +
     (est && est.calls ? '<button class="btn pri" id="pt-go">AI 巡检这个范围</button>' : '');
   if ($('pt-go')) $('pt-go').onclick = async () => {
-    try { await api('/field/patrol', {method:'POST', json:{scope:scopeQuery()}}); renderPatrol(await api('/field/patrol')); }
+    try {
+      if (!(await ensureConsent('这个范围里文档的标题和开头一段（缺标签、标题太短的那些），以及疑似过时文档的正文片段。', 'AI 巡检之前'))) return;
+      await api('/field/patrol', {method:'POST', json:{scope:scopeQuery()}}); pollJobs(true); renderPatrol(await api('/field/patrol'));
+    }
     catch(e){ toast('<b>没开始</b>：' + esc(e.message || e), true); if (e.status === 409 && /设置/.test(e.message || '')) openSettings(); }
   };
 }
@@ -3055,20 +3130,23 @@ async function openSources(first){
   const have = cur.sources || [];
   const added = c => have.some(s => s.kind === c.kind && (c.path ? s.path === c.path : c.connection ? s.connection === c.connection : c.kind === 'google' || c.kind === 'rest' ? false : s.agent === c.agent));
   const cands = (det.candidates || []).filter(c => !added(c));
+  /* 第一次：只替你勾一个（最像知识的那个文件夹），先少接一点 */
+  const firstPick = Math.max(0, cands.findIndex(c => c.kind === 'folder'));
   const row = s => {
     const sc = s.scan || {};
-    const status = sc.running ? '<span class="thinking"><i></i><i></i><i></i> 扫描中 ' + (sc.seen || 0) + '</span>' : sc.error ? '<span class="bad">' + esc(sc.error) + '</span>' : sc.finished ? s.items + ' 篇 · ' + new Date(sc.finished * 1000).toLocaleString() : '还没扫描';
+    const status = sc.running ? '<span class="thinking"><i></i><i></i><i></i> ' + (sc.paused ? '已暂停 ' : '') + esc(sc.phase || '扫描中') + ' ' + (sc.seen || 0) + (sc.total ? ' / ' + sc.total : '') + '</span>' : sc.error ? '<span class="bad">' + esc(sc.error) + '</span>' : sc.finished ? s.items + ' 篇 · ' + new Date(sc.finished * 1000).toLocaleString() : '还没扫描';
     return '<div class="row"><div class="grow"><span>' + esc(s.name) + ' <em class="kind">' + (SRC_KIND[s.kind] || s.kind) + '</em>' + (s.enabled ? '' : ' <em class="kind">已停用</em>') + '</span><small>' + esc(s.path || s.connection || (s.services || []).join(' · ') || (s.rest && s.rest.url) || '') + '</small><small>' + status + '</small></div><div class="oacts">' +
       (s.kind === 'google' && !s.authorized ? '<button class="btn pri" data-gauth="' + esc(s.id) + '">连接 Google</button>' : '<button class="btn" data-scan="' + esc(s.id) + '"' + (sc.running ? ' disabled' : '') + '>' + (sc.finished ? '重新扫描' : '扫描') + '</button>') +
-      '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
+      (s.limit && !sc.running ? '<button class="btn" data-all="' + esc(s.id) + '" title="现在只接了最近的 ' + s.limit + ' 个">全部接进来</button>' : '') + (s.items ? '<button class="btn" data-dg="' + esc(s.id) + '">让 AI 学一批</button>' : '') + '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
   };
   box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .litmus/local/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
     (have.length ? '<label>已接入 · ' + have.length + '</label>' + have.map(row).join('') : '') +
-    (cands.length ? '<label>可以接入</label>' + cands.map((c, i) => '<label class="row chk"><input type="checkbox" data-ci="' + i + '"' + (first && (c.kind === 'folder' || c.kind === 'agent') ? ' checked' : '') + '><div class="grow"><span>' + esc(c.name) + ' <em class="kind">' + (SRC_KIND[c.kind] || c.kind) + '</em></span><small>' + esc(c.path || c.connection || '') + (c.count ? ' · 约 ' + c.count + ' 个' : '') + ' · ' + esc(c.why || '') + '</small></div></label>').join('') : '') +
+    (cands.length ? '<label>可以接入</label>' + cands.map((c, i) => '<label class="row chk"><input type="checkbox" data-ci="' + i + '"' + (first && i === firstPick ? ' checked' : '') + '><div class="grow"><span>' + esc(c.name) + ' <em class="kind">' + (SRC_KIND[c.kind] || c.kind) + '</em></span><small>' + esc(c.path || c.connection || '') + (c.count ? ' · 约 ' + c.count + ' 个' : '') + ' · ' + esc(c.why || '') + '</small></div></label>').join('') : '') +
     '<details class="more"><summary>手动添加</summary>' +
       '<div class="addf"><select id="sa-k" class="sel"><option value="folder">本地文件夹</option><option value="agent">agent 会话（Claude Code / Codex）</option><option value="mcp">连接器（MCP，比如 LinkTo）</option><option value="google">Google（Drive / Gmail / Calendar）</option><option value="rest">任意 JSON 接口</option></select>' +
       '<div id="sa-f"></div></div></details>' +
     '<p class="hint">' + (cur.tools && !cur.tools.tesseract && !/Mac/.test(navigator.platform) ? '截图里的文字要用 tesseract 识别；没装时截图只按文件名收录。' : '') + (cur.tools && !cur.tools.pdftotext ? ' PDF 要用 pdftotext（brew install poppler）。' : '') + '</p>' +
+    (cands.length ? '<label class="row chk"><input type="checkbox" id="sa-lim" checked><div class="grow"><span>先只接最近的 300 个</span><small>每个来源先接最近改过的 300 个，用顺了再点「全部接进来」。扫描在后台低优先级进行，不卡你写东西。</small></div></label>' : '') +
     '<div class="acts">' + (cands.length ? '<button class="btn pri" id="sa-go">接入勾选的并扫描</button>' : '') + (first ? '<button class="btn" id="sa-skip">以后再说</button>' : '') + '<span id="sa-msg"></span></div>';
   const form = () => {
     const k = $('sa-k').value, f = $('sa-f');
@@ -3097,10 +3175,11 @@ async function openSources(first){
       catch(e){ fails.push(s.name + '：' + (e.message || e)); }
     }
     await api('/sources', {method:'POST', json:{onboarded:true}}).catch(() => {});
+    if (fails.length < list.length){ onbDone('source'); pollJobs(true); toast('在后台扫描，左上角看进度；扫到的会一批批出现在场上'); }
     if (fails.length) toast('<b>' + fails.length + ' 个没接上</b>：' + esc(fails[0]), true);
     openSources();
   };
-  if ($('sa-go')) $('sa-go').onclick = () => addSources([...box.querySelectorAll('input[data-ci]:checked')].map(c => { const x = cands[+c.dataset.ci]; return {kind:x.kind, name:x.name, path:x.path || null, exts:x.exts || [], recursive:x.recursive !== false, agent:x.agent || null, connection:x.connection || null, services:x.services || []}; }));
+  if ($('sa-go')) $('sa-go').onclick = () => addSources([...box.querySelectorAll('input[data-ci]:checked')].map(c => { const x = cands[+c.dataset.ci]; return {kind:x.kind, name:x.name, path:x.path || null, exts:x.exts || [], recursive:x.recursive !== false, agent:x.agent || null, connection:x.connection || null, services:x.services || [], limit:$('sa-lim') && $('sa-lim').checked ? 300 : null}; }));
   if ($('sa-skip')) $('sa-skip').onclick = async () => { await api('/sources', {method:'POST', json:{onboarded:true}}).catch(() => {}); closePanel(); toast('之后想接，输入 /数据源'); };
   box.querySelectorAll('[data-scan]').forEach(b => b.onclick = async () => { b.disabled = true; try { await api('/sources/' + b.dataset.scan + '/scan', {method:'POST'}); } catch(e){ toast(esc(e.message), true); } openSources(); });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次（原文件不动）'; b.classList.add('danger'); return; } await api('/sources/' + b.dataset.del, {method:'DELETE'}).catch(e => toast(esc(e.message), true)); await refreshNow(); openSources(); });
@@ -3115,8 +3194,223 @@ async function openSources(first){
   if (have.some(s => s.scan && s.scan.running)) srcPoll = setTimeout(async () => { if ($('panel').hidden) { refreshNow(); return; } const r = await api('/sources').catch(() => null); if (r && !r.sources.some(s => s.scan && s.scan.running)){ await refreshNow(); } openSources(); }, 2000);
   else if (have.length) refreshSoon();
 }
-/* 第一次打开：库里有东西但还没接过来源，引导一次 */
-setTimeout(async () => { try { const r = await api('/sources'); if (!r.onboarded && $('panel').hidden && nodes.length) openSources(true); } catch(e){} }, 2500);
+/* ═══════════ H 上手与后台：边用边引导、这一版的新东西、隐私告知、后台进度、AI 学习 ═══════════ */
+let onb = null, onbBusy = false;
+const ONB_STEPS = [
+  {id:'note', h:'记下第一条', p:'在下面这一行输入 <b>+</b> 开头的一句话，回车。它会自己在场上找到位置。', act:'帮我开个头', run:() => { q.value = '+ '; q.focus(); onInput(); }},
+  {id:'ask', h:'问它一句', p:'输入一个问题，比如「我最近记了什么？」。相关的知识会在场上变蓝；回车结晶出答案。', act:'填一个问题', run:() => { q.value = '我最近记了什么？'; q.focus(); onInput(); }},
+  {id:'source', h:'接一个来源，先少接一点', p:'下载、文稿、截图、各项目里的 md、Agent 会话……都能<b>留在原处</b>接进来。先只挑一个、只接最近的 300 个，用顺了再放开；扫描在后台慢慢做，不会卡住你。', act:'挑一个来源', run:() => openSources(true)},
+  {id:'digest', h:'让 AI 学一小批（可选）', p:'从接进来的里挑 10 篇，AI 在后台学成「要点 + 出处」的学习笔记，<b>你确认后才进库</b>。开始前会讲清发什么、发给谁。', act:'学 10 篇', run:() => startDigest({limit:10})},
+  {id:'progress', h:'进度在左上角', p:'扫描和学习都在后台做，可以接着写东西。左上角「鹿蕊」旁边的小条随时看进度、暂停、停下；学成的笔记也在那里等你收下。', act:'知道了', run:() => { flashJobs(); onbDone('progress'); }},
+];
+async function initOnboarding(){
+  try { onb = await api('/field/onboarding'); } catch(e){ return; }
+  if (onb.mode === 'first'){
+    /* 老库第一次见到引导：前两步早就会了 */
+    if (onb.existing && !(onb.state.steps || {}).note){ onb = Object.assign(onb, await api('/field/onboarding', {method:'POST', json:{steps:['note', 'ask']}}).catch(() => ({}))); }
+    try { const s = await api('/sources'); if ((s.sources || []).length) await onbDone('source', true); } catch(e){}
+    renderCoach();
+  } else if (onb.mode === 'whatsnew' && onb.whatsnew) renderWhatsNew(onb.whatsnew);
+}
+function onbSteps(){ return (onb && onb.state && onb.state.steps) || {}; }
+async function onbDone(id, quiet){
+  if (!onb || onb.mode !== 'first' || onbSteps()[id]) return;
+  onb.state.steps = Object.assign({}, onbSteps(), {[id]:Date.now() / 1000 | 0});
+  api('/field/onboarding', {method:'POST', json:{step:id}}).catch(() => {});
+  if (!quiet) renderCoach();
+}
+function coachEl(){ let el = $('coach'); if (!el){ el = document.createElement('aside'); el.id = 'coach'; el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); } return el; }
+function hideCoach(){ const el = $('coach'); if (el) el.classList.remove('on'); }
+function renderCoach(){
+  const st = onbSteps(), left = ONB_STEPS.filter(s => !st[s.id]), el = coachEl();
+  if (!left.length){
+    el.innerHTML = '<header><b>上手完成</b><button class="ib" id="co-x" aria-label="关闭">' + X_SVG + '</button></header><p>以后有新版本，这里会告诉你多了什么。想重来一遍，输入 /上手。</p>';
+    el.classList.add('on'); $('co-x').onclick = finishOnboarding; setTimeout(finishOnboarding, 6000); return;
+  }
+  const s = left[0], i = ONB_STEPS.indexOf(s);
+  let p = s.p, act = s.act, run = s.run;
+  if (s.id === 'digest' && aiInfo && !aiInfo.configured){ p = 'AI 学习要先配一个模型（DeepSeek、通义、OpenAI 或本机 Ollama 都行）。不配也不影响别的，可以跳过。'; act = '去配模型'; run = openSettings; }
+  el.innerHTML = '<header><b>上手</b><span>' + (i + 1) + ' / ' + ONB_STEPS.length + '</span><button class="ib" id="co-x" aria-label="不用引导了" title="不用引导了">' + X_SVG + '</button></header>' +
+    '<h4>' + esc(s.h) + '</h4><p>' + p + '</p>' +
+    '<div class="acts"><button class="btn pri" id="co-go">' + esc(act) + '</button><button class="btn g" id="co-skip">' + (s.id === 'progress' ? '' : '跳过') + '</button></div>' +
+    '<div class="dots">' + ONB_STEPS.map(x => '<i class="' + (st[x.id] ? 'on' : x === s ? 'cur' : '') + '"></i>').join('') + '</div>';
+  if (s.id === 'progress') $('co-skip').remove();
+  el.classList.add('on');
+  $('co-go').onclick = () => run();
+  const sk = $('co-skip'); if (sk) sk.onclick = () => onbDone(s.id);
+  $('co-x').onclick = () => { finishOnboarding(); toast('不打扰了。想重来，输入 /上手'); };
+}
+async function finishOnboarding(){
+  hideCoach(); if (!onb || onb.mode !== 'first') return;
+  onb.mode = 'none'; await api('/field/onboarding', {method:'POST', json:{dismiss:true, seen:true}}).catch(() => {});
+}
+function renderWhatsNew(w){
+  const el = coachEl(), cmd = c => CMDS.find(x => x[0] === c);
+  el.innerHTML = '<header><b>' + esc(w.version.replace(/\.0$/, '')) + ' 的新东西</b><span>' + esc(w.theme || '') + '</span><button class="ib" id="co-x" aria-label="关闭">' + X_SVG + '</button></header>' +
+    (w.intro ? '<p>' + esc(w.intro) + '</p>' : '') +
+    '<ul class="wn">' + (w.items || []).map((it, i) => { const c = (it.cmds || []).find(cmd); return '<li><b>' + esc(it.title) + '</b><span>' + esc(it.body || '') + '</span>' + (c ? '<button class="btn" data-try="' + i + '" data-c="' + esc(c) + '">试试 ' + esc(c) + '</button>' : '') + '</li>'; }).join('') + '</ul>' +
+    '<div class="acts"><button class="btn pri" id="co-ok">好的</button><button class="btn g" id="co-log">完整的更新日志</button></div>';
+  el.classList.add('on');
+  const seen = () => { hideCoach(); if (onb) onb.mode = 'none'; api('/field/onboarding', {method:'POST', json:{seen:true, dismiss:true}}).catch(() => {}); };
+  $('co-ok').onclick = seen; $('co-x').onclick = seen;
+  $('co-log').onclick = () => { seen(); window.open('https://github.com/sevenaaaaaaaaa/litmus/blob/main/CHANGELOG.md', '_blank', 'noopener'); };
+  el.querySelectorAll('[data-try]').forEach(b => b.onclick = () => { const c = cmd(b.dataset.c); if (c) runCmd(c); });
+}
+const X_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+/* 阅读、编辑、面板打开时把卡片收起来，不挡着 */
+setInterval(() => { const el = $('coach'); if (el) el.classList.toggle('tuck', !!(reading || editing || !$('panel').hidden || document.body.classList.contains('touring'))); }, 600);
+
+/* ───────── 隐私告知：发什么、发给谁、存在哪 ───────── */
+let aiInfo = null;
+async function loadAiInfo(){ try { aiInfo = await api('/field/consent'); } catch(e){} return aiInfo; }
+function privacyHtml(info, what){
+  const where = info.local ? '你的模型跑在这台电脑或局域网里（<b>' + esc(info.host) + '</b>），内容不离开你自己的机器。' : '会发给 <b>' + esc(info.host) + '</b>（模型 ' + esc(info.model || '') + '），由这家服务商按它自己的条款处理。';
+  return '<div class="privacy"><b>开始之前，说清楚</b><ul>' +
+    '<li><b>会发出去的</b>：' + what + where + '</li>' +
+    '<li><b>不会发出去的</b>：没选中的笔记、原文件本身、令牌和凭证。</li>' +
+    '<li><b>学成的东西存在哪</b>：先放在这台设备的待确认区，你点「收下」才进库；进库后会随库同步到你的其他设备和服务器。原件始终留在原处。</li>' +
+    '<li>同意只针对 ' + esc(info.host) + '；换了服务商会再问一次。随时可以在 /设置 里撤回。</li></ul></div>';
+}
+/* 同意了才往下走；没配模型就引去 /设置。返回是否可以开始。 */
+async function ensureConsent(what, title){
+  const info = await loadAiInfo();
+  if (!info || !info.configured){ toast('要先配一个模型'); openSettings(); return false; }
+  if (info.agreed) return true;
+  return new Promise(res => {
+    const box = openPanel(title || '隐私告知', privacyHtml(info, what) + '<div class="acts"><button class="btn pri" id="cs-ok">同意，开始</button><button class="btn" id="cs-no">先不了</button></div>');
+    $('cs-ok').onclick = async () => { try { aiInfo = await api('/field/consent', {method:'POST', json:{agree:true}}); closePanel(); res(true); } catch(e){ toast(esc(e.message || e), true); res(false); } };
+    $('cs-no').onclick = () => { closePanel(); res(false); };
+  });
+}
+
+/* ───────── AI 学习：学成笔记，确认后入库 ───────── */
+async function startDigest(o){
+  o = o || {};
+  let est; try { est = await api('/field/digest', {method:'POST', json:Object.assign({dry:true}, o)}); } catch(e){ toast(esc(e.message || e), true); return; }
+  if (!est.configured){ toast('AI 学习要先配一个模型'); openSettings(); return; }
+  if (!est.count){ toast(o.keys ? '这篇正文太短，或者已经学过了' : '没有要学的了：都学过了，或者还没接数据源（/数据源）', true); return; }
+  const many = !o.keys, lims = [10, 30, 100, 500];
+  const box = openPanel('让 AI 学' + (o.keys ? '这一篇' : '一批'),
+    '<p class="lede" style="margin-top:0">AI 在后台一篇篇读，学成「要点 + 出处」的学习笔记，放进待确认区。你看过点「收下」才进库，收下的会排进复习。原件不动。</p>' +
+    (many ? '<label for="dg-n">这一批学几篇（最近的在前）</label><div class="chips" id="dg-n">' + lims.map(n => '<button class="chip' + (n === (o.limit || 10) ? ' on' : '') + '" data-n="' + n + '"><span>' + n + ' 篇</span></button>').join('') + '</div><p class="hint" id="dg-est"></p>' : '<p class="hint">' + esc((est.titles || [])[0] || '') + '</p>') +
+    privacyHtml(est, '选中的这 <b id="dg-cnt">' + est.count + '</b> 篇的文字（每篇最多 ' + (est.chars || 6000) + ' 字，合计约 <b id="dg-chars">' + est.sent_chars + '</b> 字）。') +
+    '<div class="acts"><button class="btn pri" id="dg-go">' + (est.agreed ? '开始学' : '同意，开始学') + '</button><button class="btn" id="dg-x">先不了</button><span id="dg-msg"></span></div>');
+  let lim = Math.min(o.limit || 10, 500);
+  const upd = async () => { try { const e = await api('/field/digest', {method:'POST', json:Object.assign({}, o, {dry:true, limit:lim})}); $('dg-cnt').textContent = e.count; $('dg-chars').textContent = e.sent_chars; $('dg-est').textContent = e.count < lim ? '这个范围里还没学过的只有 ' + e.count + ' 篇。' : '学完一批再学下一批：每批都可以先看看质量。'; } catch(_){} };
+  if (many){ upd(); box.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { lim = +b.dataset.n; box.querySelectorAll('[data-n]').forEach(x => x.classList.toggle('on', x === b)); upd(); }); }
+  $('dg-x').onclick = closePanel;
+  $('dg-go').onclick = async () => {
+    $('dg-go').disabled = true;
+    try {
+      if (!est.agreed) aiInfo = await api('/field/consent', {method:'POST', json:{agree:true}});
+      const r = await api('/field/digest', {method:'POST', json:Object.assign({}, o, {limit:lim})});
+      closePanel(); onbDone('digest'); pollJobs(true);
+      toast('在后台学 ' + r.total + ' 篇，左上角看进度；学成的会等你收下');
+    } catch(e){ $('dg-go').disabled = false; const m = $('dg-msg'); m.className = 'bad'; m.textContent = e.message || String(e); }
+  };
+}
+async function openDigest(){
+  const box = openPanel('待收下的学习笔记', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(760px,100%)';
+  let d; try { d = await api('/field/digest'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const ds = d.drafts || [], job = d.job;
+  box.innerHTML = (job && job.running ? '<p class="hint" style="margin-top:0">还在学：' + job.done + ' / ' + job.total + (job.current ? ' · ' + esc(job.current) : '') + '。学成一篇就出现在这里。</p>' : '') +
+    (ds.length ? '<div class="acts" style="margin-top:0"><button class="btn pri" id="dg-all">全部收下（' + ds.length + '）</button><button class="btn" id="dg-none">全部不要</button></div>' +
+      ds.map(x => '<div class="draft" data-id="' + esc(x.id) + '"><div class="dh"><b>' + esc(x.title) + '</b><small>学自「' + esc(x.orig) + '」· ' + esc(x.src) + (x.date ? ' · ' + esc(x.date) : '') + '</small></div><p>' + esc(x.summary) + '</p>' +
+        '<details><summary>看全文</summary><pre>' + esc(x.md.replace(/^---\n[\s\S]*?\n---\n/, '')) + '</pre></details>' +
+        '<div class="acts"><button class="btn pri" data-ok="' + esc(x.id) + '">收下</button><button class="btn" data-no="' + esc(x.id) + '">不要</button></div></div>').join('')
+      : '<p class="empty">没有等你收下的。' + (d.learned ? '已经学过 ' + d.learned + ' 篇。' : '') + '</p><div class="acts"><button class="btn pri" id="dg-more">再学一批</button></div>');
+  const accept = async ids => {
+    try { const r = await api('/field/digest/accept', {method:'POST', json:{ids}}); await refreshNow(); pollJobs(true);
+      const m = r.paths.length === 1 ? byPath.get(r.paths[0]) : null;
+      if (m){ flash(m); toastAct('收进库了：<b>' + esc(r.paths[0]) + '</b>，明天提醒你复习', '打开', () => openDoc(m)); } else toast('收进库了 ' + r.paths.length + ' 篇（Notes/学习/），明天开始排进复习');
+      r.paths.forEach(p => { const n = byPath.get(p); if (n) flash(n); });
+      openDigest();
+    } catch(e){ toast('<b>没收进去</b>：' + esc(e.message || e), true); }
+  };
+  const reject = async ids => { await api('/field/digest/reject', {method:'POST', json:{ids}}).catch(e => toast(esc(e.message), true)); pollJobs(true); openDigest(); };
+  box.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => { b.disabled = true; accept([b.dataset.ok]); });
+  box.querySelectorAll('[data-no]').forEach(b => b.onclick = () => reject([b.dataset.no]));
+  if ($('dg-all')) $('dg-all').onclick = () => accept(ds.map(x => x.id));
+  if ($('dg-none')) $('dg-none').onclick = () => reject(ds.map(x => x.id));
+  if ($('dg-more')) $('dg-more').onclick = () => startDigest({limit:10});
+}
+
+/* ───────── 后台进度：左上角一个小条 ───────── */
+let jobsT = 0, jobsLast = null, jobsRev = null, fieldRefT = 0, fieldRefAt = 0, lastInput = 0;
+document.addEventListener('keydown', () => { lastInput = Date.now(); }, true);
+document.addEventListener('pointerdown', () => { lastInput = Date.now(); }, true);
+async function pollJobs(now){
+  clearTimeout(jobsT);
+  if (document.hidden && !now){ jobsT = setTimeout(pollJobs, 30000); return; }
+  let j; try { j = await api('/jobs'); } catch(e){ jobsT = setTimeout(pollJobs, 30000); return; }
+  const wasBusy = jobsLast && jobsLast.busy;
+  jobsLast = j; renderJobs(j);
+  /* 库外内容一批批进来：场跟着一批批出现。扫描进行中最多 10 秒刷一次，打字、拖动、阅读编辑时让路 */
+  if (jobsRev !== null && j.rev !== jobsRev) scheduleFieldRefresh(j.busy ? 10000 : 1200);
+  if (wasBusy && !j.busy) scheduleFieldRefresh(800);
+  jobsRev = j.rev;
+  jobsT = setTimeout(pollJobs, j.busy ? 2000 : j.jobs.length || j.pending ? 15000 : 30000);
+}
+function scheduleFieldRefresh(gap){
+  clearTimeout(fieldRefT);
+  const wait = Math.max(0, fieldRefAt + gap - Date.now(), lastInput + 1500 - Date.now());
+  fieldRefT = setTimeout(() => {
+    if (editing || dragging() || Date.now() - lastInput < 1500){ scheduleFieldRefresh(2000); return; }
+    fieldRefAt = Date.now();
+    (window.requestIdleCallback || (f => setTimeout(f, 1)))(() => refreshNow().catch(() => {}), {timeout:3000});
+  }, wait);
+}
+function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
+function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检'};
+function renderJobs(j){
+  const b = $('jobs'); if (!b) return;
+  const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
+  /* 刚做完的留几秒，让人看到「做完了」 */
+  const fresh = j.jobs.filter(x => (x.state === 'done' || x.state === 'error') && x.finished && Date.now() / 1000 - x.finished < 8);
+  if (!live.length && !j.pending && fresh.length){
+    b.hidden = false; b.classList.add('idle'); b.classList.remove('paused'); b.style.setProperty('--p', 100);
+    const x = fresh[0]; $('jobs-t').textContent = (x.state === 'error' ? '没做完 · ' : '做完了 · ') + JOB_VERB[x.kind] + (x.items ? ' ' + x.items : '');
+    clearTimeout(renderJobs.t); renderJobs.t = setTimeout(() => renderJobs(jobsLast), 8200); if (jobsPopOpen()) renderJobsPop(); return;
+  }
+  if (!live.length && !j.pending){ b.hidden = true; if (jobsPopOpen()) renderJobsPop(); return; }
+  b.hidden = false;
+  let label, pct = 0;
+  if (live.length === 1){ const x = live[0]; pct = jobPct(x); label = (x.state === 'paused' ? '已暂停 · ' : '') + JOB_VERB[x.kind] + ' ' + (x.total ? x.done + '/' + x.total : x.done || '…'); }
+  else if (live.length > 1){ const d = live.reduce((a, x) => a + x.done, 0), t = live.reduce((a, x) => a + (x.total || x.done), 0); pct = t ? Math.round(d / t * 100) : 0; label = live.length + ' 项 · ' + pct + '%'; }
+  else { pct = 100; label = j.pending + ' 篇待收下'; }
+  if (live.length && j.pending) label += ' · ' + j.pending + ' 待收';
+  b.style.setProperty('--p', pct); b.classList.toggle('idle', !live.length); b.classList.toggle('paused', live.length > 0 && live.every(x => x.state === 'paused'));
+  $('jobs-t').textContent = label; b.title = '后台进度：点开看详情';
+  if (jobsPopOpen()) renderJobsPop();
+}
+function jobsPopOpen(){ const p = $('jobs-pop'); return p && !p.hidden; }
+function renderJobsPop(){
+  const p = $('jobs-pop'), j = jobsLast; if (!p || !j) return;
+  const rows = j.jobs.map(x => '<div class="job ' + x.state + '"><div class="jh"><b>' + esc(x.title) + '</b><small>' +
+      ({running:'', paused:'已暂停 · ', done:'做完了 · ', error:'没做完 · '}[x.state] || '') + (x.phase && (x.state === 'running' || x.state === 'paused') ? esc(x.phase) + ' · ' : '') + (x.total ? x.done + ' / ' + x.total : x.done ? x.done + '' : '准备中') + (x.kind === 'digest' && x.items ? ' · 学成 ' + x.items : '') + '</small></div>' +
+      (x.state === 'running' || x.state === 'paused' ? '<div class="jbar"><i style="width:' + jobPct(x) + '%"></i></div>' : '') +
+      (x.error ? '<small class="bad">' + esc(x.error) + '</small>' : '') +
+      ((x.can || []).length ? '<div class="ja">' + (x.can.includes('pause') ? (x.state === 'paused' ? '<button class="btn" data-ja="resume" data-jid="' + esc(x.id) + '">继续</button>' : '<button class="btn" data-ja="pause" data-jid="' + esc(x.id) + '">暂停</button>') : '') + '<button class="btn" data-ja="stop" data-jid="' + esc(x.id) + '">停下</button></div>' : '') + '</div>').join('');
+  p.innerHTML = (rows || '<p class="hint" style="margin:6px 8px">后台没有在做的事。</p>') +
+    (j.pending ? '<button class="btn pri wide" id="jp-review">' + j.pending + ' 篇学习笔记等你收下</button>' : '') +
+    '<p class="hint" style="margin:8px 8px 4px">后台用低优先级慢慢做，不影响你写东西。关掉 App 会停下，做完的都留着。</p>';
+  p.querySelectorAll('[data-ja]').forEach(btn => btn.onclick = async e => { e.stopPropagation(); btn.disabled = true; try { await api('/jobs/' + encodeURIComponent(btn.dataset.jid) + '/' + btn.dataset.ja, {method:'POST'}); } catch(err){ toast(esc(err.message), true); } pollJobs(true); });
+  if ($('jp-review')) $('jp-review').onclick = () => { p.hidden = true; openDigest(); };
+}
+function toggleJobsPop(){
+  let p = $('jobs-pop');
+  if (!p){ p = document.createElement('div'); p.id = 'jobs-pop'; p.className = 'pop'; p.hidden = true; document.body.appendChild(p); }
+  p.hidden = !p.hidden; if (p.hidden) return;
+  const r = $('jobs').getBoundingClientRect(); p.style.left = Math.max(8, r.left) + 'px'; p.style.top = (r.bottom + 6) + 'px';
+  renderJobsPop(); pollJobs(true);
+}
+function flashJobs(){ const b = $('jobs'); if (!b) return; if (b.hidden){ b.hidden = false; $('jobs-t').textContent = '后台进度'; b.classList.add('idle'); setTimeout(() => { if (jobsLast) renderJobs(jobsLast); }, 4000); } b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
+document.addEventListener('pointerdown', e => { const p = $('jobs-pop'); if (p && !p.hidden && !p.contains(e.target) && e.target.closest('#jobs') === null) p.hidden = true; });
+$('jobs').onclick = toggleJobsPop;
+loadAiInfo();
+pollJobs();
 
 /* 库外文档：只读打开，导入或学习 */
 async function openExt(n){
@@ -3127,13 +3421,14 @@ async function openExt(n){
 function extBanner(d){
   const fileLike = d.loc && d.loc.startsWith('/');
   return '<div class="extb"><b>库外</b><span>' + esc(d.src) + ' · ' + esc(EXT_KIND[d.kind] || d.kind) + ' · ' + esc(d.date || '') + '</span><small>' + esc(d.loc || '') + (fileLike && !d.exists ? '（原件已不在）' : '') + '</small>' + (d.note ? '<small class="bad">' + esc(d.note) + '</small>' : '') +
-    '<div class="acts">' + (fileLike && d.exists ? '<button class="btn pri" data-imp="move">移进库</button><button class="btn" data-imp="copy">复制进库</button>' : '<button class="btn pri" data-imp="copy">导入进库</button>') + '<button class="btn" data-imp="learn">先学习</button>' + (fileLike && d.exists && DESK ? '<button class="btn" data-imp="reveal">在访达中显示</button>' : (!fileLike && /^https?:/.test(d.loc || '') ? '<a class="btn" href="' + esc(d.loc) + '" target="_blank" rel="noopener">打开原处</a>' : '')) + '</div></div>';
+    '<div class="acts">' + (fileLike && d.exists ? '<button class="btn pri" data-imp="move">移进库</button><button class="btn" data-imp="copy">复制进库</button>' : '<button class="btn pri" data-imp="copy">导入进库</button>') + '<button class="btn" data-imp="learn">先学习</button><button class="btn" data-imp="digest">让 AI 学</button>' + (fileLike && d.exists && DESK ? '<button class="btn" data-imp="reveal">在访达中显示</button>' : (!fileLike && /^https?:/.test(d.loc || '') ? '<a class="btn" href="' + esc(d.loc) + '" target="_blank" rel="noopener">打开原处</a>' : '')) + '</div></div>';
 }
 function wireExtBanner(n, d){
   const el = $('doc').querySelector('.extb'); if (!el) return;
   el.querySelectorAll('[data-imp]').forEach(b => b.onclick = async () => {
     const how = b.dataset.imp;
     if (how === 'learn') return startLearn(n);
+    if (how === 'digest') return startDigest({keys:[n.p]});
     if (how === 'reveal') return window.__TAURI_INTERNALS__.invoke('desktop_reveal_path', {p:d.loc}).catch(e => toast(esc(e), true));
     b.disabled = true;
     try {
@@ -3241,10 +3536,12 @@ loadField().then(() => {
   }
   /* 深链：/?doc=Notes/… （浏览器扩展、托盘、旧书签）直接打开那篇 */
   const deep = params.get('doc'); if (deep && byPath.get(deep)) setTimeout(() => openDoc(byPath.get(deep)), 400);
+  /* 引导等场铺开、开场动画走完再出来 */
+  setTimeout(initOnboarding, nodes.length ? 1800 : 600);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence();
-window.__field = {openSources, saveLearning, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+window.__field = {openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>

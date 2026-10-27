@@ -505,6 +505,21 @@ fn patrols() -> &'static Mutex<HashMap<std::path::PathBuf, Patrol>> {
     P.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// 给后台任务一览用：正在跑的，或者上次的结果。
+pub fn patrol_snapshot(root: &std::path::Path) -> Option<Patrol> {
+    patrols().lock().unwrap().get(root).cloned()
+}
+
+pub fn patrol_request_stop(root: &std::path::Path) -> bool {
+    match patrols().lock().unwrap().get_mut(root) {
+        Some(p) if p.running => {
+            p.stop = true;
+            true
+        }
+        _ => false,
+    }
+}
+
 fn patrol_file(root: &std::path::Path) -> std::path::PathBuf {
     root.join(".litmus/local").join("patrol.json")
 }
@@ -567,6 +582,13 @@ pub async fn patrol_start(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
     let Some(cfg) = st.kernel.lock().unwrap().vault.config.ai.clone().filter(|c| !c.base_url.is_empty()) else {
         return err(StatusCode::CONFLICT, "巡检要用模型：先在 /设置 里配上").into_response();
     };
+    // 巡检会把文档的标题和摘录发给模型：先看过隐私告知、同意了才开始
+    if !super::jobs::consented(&root, &cfg) {
+        let mut v = json!({ "needs_consent": true, "error": "开始之前要先看一下隐私告知并同意" });
+        v["host"] = json!(cfg.base_url.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or(""));
+        v["model"] = json!(cfg.model);
+        return (StatusCode::PRECONDITION_REQUIRED, Json(v)).into_response();
+    }
     {
         let mut ps = patrols().lock().unwrap();
         if ps.get(&root).map(|p| p.running).unwrap_or(false) {

@@ -65,6 +65,9 @@ pub struct Source {
     pub enabled: bool,
     #[serde(default)]
     pub added: u64,
+    /// 只接最近的 N 个（按修改时间）。第一次接入时给个上限，先用起来；之后可以放开（None = 全部）。
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 fn yes() -> bool {
@@ -291,7 +294,127 @@ pub struct ScanState {
     pub items: usize,
     pub error: Option<String>,
     pub finished: u64,
+    /// 这一轮要处理的条目数（走完目录才知道；0 = 还在数）
+    #[serde(default)]
+    pub total: usize,
+    /// 当前阶段：「数文件」「文字」「文档」「PDF」「截图」……
+    #[serde(default)]
+    pub phase: String,
+    #[serde(default)]
+    pub paused: bool,
+    #[serde(default)]
+    pub started: u64,
+    #[serde(skip)]
+    pub stop: bool,
 }
+
+pub fn scans_snapshot() -> HashMap<String, ScanState> {
+    scans().lock().unwrap().clone()
+}
+
+/// 暂停 / 继续 / 停下一次扫描（做完手上这一个文件就生效）。
+pub fn scan_control(id: &str, action: &str) -> bool {
+    let mut sc = scans().lock().unwrap();
+    let Some(x) = sc.get_mut(id).filter(|x| x.running) else { return false };
+    match action {
+        "pause" => x.paused = true,
+        "resume" => x.paused = false,
+        "stop" => {
+            x.stop = true;
+            x.paused = false;
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// 扫描器与后台线程之间的那根线：报进度、问要不要停、分批把结果交出去（场上分批出现）。
+pub struct Ctl<'a> {
+    id: &'a str,
+    flush: &'a dyn Fn(&[Item]),
+    last: std::cell::Cell<std::time::Instant>,
+    flushed: std::cell::Cell<usize>,
+}
+
+impl<'a> Ctl<'a> {
+    fn set(&self, f: impl FnOnce(&mut ScanState)) {
+        if let Some(x) = scans().lock().unwrap().get_mut(self.id) {
+            f(x);
+        }
+    }
+    pub fn total(&self, n: usize) {
+        self.set(|x| x.total = n);
+    }
+    pub fn phase(&self, p: &str) {
+        self.set(|x| x.phase = p.to_string());
+    }
+    pub fn seen(&self, n: usize) {
+        self.set(|x| x.seen = n);
+    }
+    /// 暂停时在这里等；返回 false 表示该停了。
+    pub fn go(&self) -> bool {
+        loop {
+            let (stop, paused) = scans().lock().unwrap().get(self.id).map(|x| (x.stop, x.paused)).unwrap_or((true, false));
+            if stop {
+                return false;
+            }
+            if !paused {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+    /// 攒够了（隔 4 秒、多了至少一条）就交一批：写进索引、场上出现。
+    pub fn maybe_flush(&self, out: &[Item], force: bool) {
+        if out.len() > self.flushed.get() && (force || self.last.get().elapsed() >= std::time::Duration::from_secs(4)) {
+            (self.flush)(out);
+            self.flushed.set(out.len());
+            self.last.set(std::time::Instant::now());
+        }
+    }
+}
+
+/// 后台干重活的线程：调低优先级，前台（打字、翻页、铺场）永远先走。
+pub fn spawn_background(name: &str, f: impl FnOnce() + Send + 'static) {
+    let _ = std::thread::Builder::new().name(name.to_string()).spawn(move || {
+        lower_priority();
+        f();
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn lower_priority() {
+    extern "C" {
+        fn pthread_set_qos_class_self_np(qos: u32, rel: i32) -> i32;
+    }
+    // QOS_CLASS_UTILITY = 0x11：系统把它排在交互任务之后，也更省电
+    unsafe {
+        pthread_set_qos_class_self_np(0x11, 0);
+    }
+}
+#[cfg(target_os = "linux")]
+fn lower_priority() {
+    unsafe {
+        let tid = libc::syscall(libc::SYS_gettid) as libc::id_t;
+        libc::setpriority(libc::PRIO_PROCESS, tid, 10);
+    }
+}
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn lower_priority() {}
+
+/// 处理顺序：先文字（最快出结果），再 Office / 网页，再 PDF，最后截图（要 OCR，最慢）。
+fn cost_class(ext: &str) -> u8 {
+    if TEXT_EXTS.contains(&ext) {
+        0
+    } else if ext == "pdf" {
+        2
+    } else if IMG_EXTS.contains(&ext) {
+        3
+    } else {
+        1
+    }
+}
+const PHASES: [&str; 4] = ["文字", "文档", "PDF", "截图"];
 
 fn scans() -> &'static Mutex<HashMap<String, ScanState>> {
     static S: std::sync::OnceLock<Mutex<HashMap<String, ScanState>>> = std::sync::OnceLock::new();
@@ -303,20 +426,20 @@ fn skip_dir(name: &str) -> bool {
 }
 
 /// 文件夹：增量（同一路径、大小与修改时间没变就沿用上次抽出的文字）。
-fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, progress: &dyn Fn(usize)) -> Result<Vec<Item>, String> {
+/// 先把要处理的文件数出来（最近的在前，有上限就截断），再按「文字 → 文档 → PDF → 截图」分步处理，
+/// 每隔几秒交一批，场上一批一批出现，不用等全部扫完。
+fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl) -> Result<Vec<Item>, String> {
     let base = expand(s.path.as_deref().unwrap_or(""));
     if !base.is_dir() {
         return Err(format!("找不到文件夹 {}", base.display()));
     }
     let want: Vec<String> = if s.exts.is_empty() { TEXT_EXTS.iter().chain(DOC_EXTS.iter()).map(|x| x.to_string()).collect() } else { s.exts.iter().map(|x| x.to_ascii_lowercase()).collect() };
-    let mut out = Vec::new();
+    ctl.phase("数文件");
+    let mut cand: Vec<(PathBuf, std::fs::Metadata, String)> = Vec::new();
     let mut stack = vec![base.clone()];
-    let mut seen = 0usize;
     while let Some(d) = stack.pop() {
         let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        let mut entries: Vec<_> = rd.flatten().collect();
-        entries.sort_by_key(|e| e.file_name());
-        for e in entries {
+        for e in rd.flatten() {
             let p = e.path();
             let name = e.file_name().to_string_lossy().to_string();
             let Ok(meta) = e.metadata() else { continue };
@@ -333,24 +456,48 @@ fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, progress: 
             if !want.contains(&ext) || meta.len() > MAX_FILE_BYTES || meta.len() == 0 {
                 continue;
             }
-            seen += 1;
-            if seen % 50 == 0 {
-                progress(seen);
+            cand.push((p, meta, ext));
+            if cand.len() % 500 == 0 {
+                ctl.seen(cand.len());
             }
-            if out.len() >= MAX_FILES {
-                break;
-            }
-            let rel = p.strip_prefix(&base).unwrap_or(&p).to_string_lossy().to_string();
-            let key = format!("ext:{}/{}", s.id, rel);
-            let mtime = mtime_of(&meta);
-            if let Some(old) = prev.get(&key).filter(|o| o.mtime == mtime && o.size == meta.len()) {
-                out.push(old.clone());
-                continue;
-            }
-            let Some((title, text, kind, note)) = extract_file(&p) else { continue };
-            let text: String = text.chars().take(MAX_TEXT).collect();
-            let hash = put_text(root, &format!("# {title}\n\n{text}"));
-            out.push(Item { key, src: s.id.clone(), title: title.chars().take(120).collect(), kind, loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note });
+        }
+        if cand.len() > MAX_FILES * 4 {
+            break;
+        }
+    }
+    // 最近的在前；有上限（第一次接入）就只取最近的那些
+    cand.sort_by(|a, b| mtime_of(&b.1).cmp(&mtime_of(&a.1)).then_with(|| a.0.cmp(&b.0)));
+    cand.truncate(s.limit.unwrap_or(MAX_FILES).min(MAX_FILES));
+    cand.sort_by_key(|c| cost_class(&c.2));
+    ctl.total(cand.len());
+    let mut out = Vec::new();
+    let mut phase = u8::MAX;
+    for (n, (p, meta, ext)) in cand.iter().enumerate() {
+        if !ctl.go() {
+            break;
+        }
+        let cls = cost_class(ext);
+        if cls != phase {
+            ctl.maybe_flush(&out, true);
+            phase = cls;
+            ctl.phase(PHASES[cls as usize]);
+        }
+        ctl.seen(n + 1);
+        let rel = p.strip_prefix(&base).unwrap_or(p).to_string_lossy().to_string();
+        let key = format!("ext:{}/{}", s.id, rel);
+        let mtime = mtime_of(meta);
+        if let Some(old) = prev.get(&key).filter(|o| o.mtime == mtime && o.size == meta.len()) {
+            out.push(old.clone());
+            continue;
+        }
+        let Some((title, text, kind, note)) = extract_file(p) else { continue };
+        let text: String = text.chars().take(MAX_TEXT).collect();
+        let hash = put_text(root, &format!("# {title}\n\n{text}"));
+        out.push(Item { key, src: s.id.clone(), title: title.chars().take(120).collect(), kind, loc: p.to_string_lossy().to_string(), date: ymd_of(mtime), mtime, size: meta.len(), hash, note });
+        ctl.maybe_flush(&out, false);
+        // 抽 PDF、认截图要起外部程序：每个之间喘口气，别把风扇吹起来
+        if cls >= 2 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
     Ok(out)
@@ -358,7 +505,7 @@ fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, progress: 
 
 /// Claude Code（~/.claude/projects/*/*.jsonl）与 Codex（~/.codex/sessions/**.jsonl）的会话：
 /// 标题 = 第一句提问，正文开头放「结论」= 最后一段回答，后面是问答全文（截断）。
-fn scan_agent(root: &Path, s: &Source, prev: &HashMap<String, Item>, progress: &dyn Fn(usize)) -> Result<Vec<Item>, String> {
+fn scan_agent(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl) -> Result<Vec<Item>, String> {
     let which = s.agent.clone().unwrap_or_else(|| "claude".into());
     let base = expand(s.path.as_deref().unwrap_or(if which == "codex" { "~/.codex/sessions" } else { "~/.claude/projects" }));
     if !base.is_dir() {
@@ -377,13 +524,18 @@ fn scan_agent(root: &Path, s: &Source, prev: &HashMap<String, Item>, progress: &
             }
         }
     }
-    files.sort();
-    files.reverse();
+    // 最近的会话在前
+    files.sort_by_cached_key(|p| std::cmp::Reverse(std::fs::metadata(p).map(|m| mtime_of(&m)).unwrap_or(0)));
+    files.truncate(s.limit.unwrap_or(MAX_FILES).min(MAX_FILES));
+    ctl.total(files.len());
+    ctl.phase("会话");
     let mut out = Vec::new();
-    for (n, p) in files.into_iter().take(MAX_FILES).enumerate() {
-        if n % 20 == 0 {
-            progress(n);
+    for (n, p) in files.into_iter().enumerate() {
+        if !ctl.go() {
+            break;
         }
+        ctl.seen(n + 1);
+        ctl.maybe_flush(&out, false);
         let Ok(meta) = std::fs::metadata(&p) else { continue };
         let rel = p.strip_prefix(&base).unwrap_or(&p).to_string_lossy().to_string();
         let key = format!("ext:{}/{}", s.id, rel);
@@ -838,45 +990,57 @@ pub async fn remove(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id):
     Json(json!({ "ok": true })).into_response()
 }
 
-/// POST /sources/{id}/scan：后台扫描（增量）。进度看 GET /sources。
-pub async fn scan(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id): AxumPath<String>) -> impl IntoResponse {
-    if let Err(e) = check_token(&st, &h) {
-        return e.into_response();
-    }
-    let root = st.kernel.lock().unwrap().vault.root.clone();
-    let Some(s) = load_sources(&root).into_iter().find(|s| s.id == id) else { return err(StatusCode::NOT_FOUND, "没有这个来源").into_response() };
+/// 在后台（低优先级线程）扫一个来源。正在扫就返回 false。
+pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
+    let id = s.id.clone();
     {
         let mut sc = scans().lock().unwrap();
         if sc.get(&id).map(|x| x.running).unwrap_or(false) {
-            return err(StatusCode::CONFLICT, "正在扫描").into_response();
+            return false;
         }
-        sc.insert(id.clone(), ScanState { running: true, ..Default::default() });
+        sc.insert(id.clone(), ScanState { running: true, started: now_secs(), phase: "排队".into(), ..Default::default() });
     }
     let st2 = st.clone();
-    tokio::task::spawn_blocking(move || {
+    let root = root.to_path_buf();
+    spawn_background("litmus-scan", move || {
         let ix0 = load_index(&root);
         let prev: HashMap<String, Item> = ix0.items.iter().filter(|i| i.src == s.id).map(|i| (i.key.clone(), i.clone())).collect();
-        let sid = s.id.clone();
-        let progress = |n: usize| {
-            if let Some(x) = scans().lock().unwrap().get_mut(&sid) {
-                x.seen = n;
+        // 分批交付：已扫到的 + 还没扫到的旧条目（这样中途场上不会少东西），完成时再按本轮结果收口
+        let flush = |part: &[Item]| {
+            let mut ix = load_index(&root);
+            let fresh: std::collections::HashSet<&str> = part.iter().map(|i| i.key.as_str()).collect();
+            ix.items.retain(|i| i.src != s.id || !fresh.contains(i.key.as_str()));
+            ix.items.extend(part.iter().cloned());
+            save_index(&root, &ix);
+            REV.fetch_add(1, Ordering::SeqCst);
+            if let Some(x) = scans().lock().unwrap().get_mut(&s.id) {
+                x.items = ix.items.iter().filter(|i| i.src == s.id).count();
             }
         };
+        let ctl = Ctl { id: &s.id, flush: &flush, last: std::cell::Cell::new(std::time::Instant::now()), flushed: std::cell::Cell::new(0) };
         let r = match s.kind.as_str() {
-            "folder" => scan_folder(&root, &s, &prev, &progress),
-            "agent" => scan_agent(&root, &s, &prev, &progress),
+            "folder" => scan_folder(&root, &s, &prev, &ctl),
+            "agent" => scan_agent(&root, &s, &prev, &ctl),
             "mcp" => scan_mcp(&root, &st2, &s),
             "google" => scan_google(&root, &s),
             "rest" => scan_rest(&root, &s),
             _ => Err("不认识的来源".into()),
         };
+        let stopped = scans().lock().unwrap().get(&s.id).map(|x| x.stop).unwrap_or(false);
         let mut ix = load_index(&root);
         let state = match r {
             Ok(items) => {
                 let n = items.len();
-                ix.items.retain(|i| i.src != s.id);
+                if stopped {
+                    // 停下的：留着已扫到的和旧的，不删任何东西
+                    let fresh: std::collections::HashSet<String> = items.iter().map(|i| i.key.clone()).collect();
+                    ix.items.retain(|i| i.src != s.id || !fresh.contains(&i.key));
+                } else {
+                    ix.items.retain(|i| i.src != s.id);
+                }
                 ix.items.extend(items);
-                ScanState { running: false, seen: n, items: n, error: None, finished: now_secs() }
+                let total = ix.items.iter().filter(|i| i.src == s.id).count();
+                ScanState { running: false, seen: n, items: total, error: stopped.then(|| "停下了：已扫到的都留着，下次接着扫".to_string()), finished: now_secs(), phase: if stopped { "停下了".into() } else { "完成".into() }, ..Default::default() }
             }
             Err(e) => ScanState { running: false, error: Some(e), finished: now_secs(), items: prev.len(), ..Default::default() },
         };
@@ -885,6 +1049,19 @@ pub async fn scan(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id): A
         scans().lock().unwrap().insert(s.id.clone(), state);
         REV.fetch_add(1, Ordering::SeqCst);
     });
+    true
+}
+
+/// POST /sources/{id}/scan：后台扫描（增量）。进度看 GET /sources 或 GET /jobs。
+pub async fn scan(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id): AxumPath<String>) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let Some(s) = load_sources(&root).into_iter().find(|s| s.id == id) else { return err(StatusCode::NOT_FOUND, "没有这个来源").into_response() };
+    if !start_scan(&st, &root, s) {
+        return err(StatusCode::CONFLICT, "正在扫描").into_response();
+    }
     Json(json!({ "started": true })).into_response()
 }
 

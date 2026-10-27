@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex};
 
 mod field;
 mod field_tools;
+mod jobs;
 mod organize;
 mod sources;
 mod share;
@@ -210,6 +211,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/merge", post(organize::merge))
         .route("/field/refresh", post(organize::refresh))
         .route("/field/patrol", get(organize::patrol_status).post(organize::patrol_start).delete(organize::patrol_stop))
+        .route("/field/onboarding", get(jobs::onboarding_get).post(jobs::onboarding_post))
+        .route("/field/consent", get(jobs::consent_get).post(jobs::consent_post))
+        .route("/field/digest", get(jobs::digest_list).post(jobs::digest_start))
+        .route("/field/digest/accept", post(jobs::digest_accept))
+        .route("/field/digest/reject", post(jobs::digest_reject))
+        .route("/jobs", get(jobs::jobs))
+        .route("/jobs/{id}/{action}", post(jobs::job_control))
         .route("/sources", get(sources::list).post(sources::upsert))
         .route("/sources/detect", get(sources::detect))
         .route("/sources/connection", post(sources::add_connection))

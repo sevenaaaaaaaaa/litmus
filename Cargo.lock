@@ -3307,6 +3307,7 @@ dependencies = [
  "kernel-convert",
  "kernel-core",
  "kernel-deploy",
+ "libc",
  "litmus-mcp",
  "notify",
  "reqwest 0.12.28",

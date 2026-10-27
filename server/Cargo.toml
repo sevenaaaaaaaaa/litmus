@@ -28,6 +28,8 @@ sha2.workspace = true
 hex.workspace = true
 # 知识场「模型设置」只改 litmus.toml 的 [ai] 表，保留用户的注释与其余排版
 toml_edit = "0.22"
+# 后台扫描线程调低优先级（Linux setpriority）
+libc = "0.2"
 
 [dev-dependencies]
 tempfile.workspace = true
