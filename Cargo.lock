@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-a2ui"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-backup"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "age",
  "flate2",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-browser"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "futures-channel",
  "futures-sink",
@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-convert"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "flate2",
  "kernel-md",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-core"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "kernel-browser",
  "kernel-design",
@@ -3040,7 +3040,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-deploy"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "hex",
  "hmac",
@@ -3057,7 +3057,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-design"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "kernel-md",
  "kernel-store",
@@ -3069,7 +3069,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-md"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "hex",
  "serde",
@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-store"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "hex",
  "kernel-md",
@@ -3097,7 +3097,7 @@ dependencies = [
 
 [[package]]
 name = "kernel-sync"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "automerge",
  "kernel-md",
@@ -3244,7 +3244,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "litmus"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3259,7 +3259,7 @@ dependencies = [
 
 [[package]]
 name = "litmus-desktop"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3283,7 +3283,7 @@ dependencies = [
 
 [[package]]
 name = "litmus-mcp"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3295,7 +3295,7 @@ dependencies = [
 
 [[package]]
 name = "litmus-server"
-version = "0.17.0"
+version = "0.18.0"
 dependencies = [
  "anyhow",
  "axum",
