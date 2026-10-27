@@ -1,6 +1,6 @@
 # 知识场（Field）
 
-> 状态：F0–F4、G1–G4、H 已实现；0.14.0 起知识场是唯一的界面（经典界面退役）；0.16.0 起有上手引导与后台任务
+> 状态：F0–F4、G1–G4、H、筛选已实现；0.14.0 起知识场是唯一的界面（经典界面退役）；0.16.0 起有上手引导与后台任务
 > 与 `os.md`（宪法）、`interaction.md`（交互契约）并列。经典壳的结构规则见 `content-workspace.md`；知识场是下一代默认壳的候选，F2 起替代它的信息结构部分。
 
 ## 0. 为什么要做
@@ -105,6 +105,7 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | G3 数据源 | `server/src/sources.rs`。配置 `.litmus/local/sources.json`，索引 `.litmus/local/sources/index.json`，抽出的文字 `.litmus/local/sources/text/<hash>.txt`（设备本地）。种类 folder / agent / mcp / google / rest；`/sources`（列表、增改、`onboarded`）、`/sources/detect`（只数个数）、`/sources/{id}/scan`（后台增量：路径 + 大小 + 修改时间不变就沿用）、`/sources/connection`（写 litmus.toml 的 [[connections]]）、`/sources/google/start|callback`（OAuth 本机回环，refresh token 存凭证库）。知识场把条目当 `ext:<源>/<条目>` 节点铺进场（`k=ext`、`s`=来源名），缓存键加 `sources::REV`；`/field/ext` 只读、`/field/ext/import`（move / copy）；结晶能读库外原文；整理排除库外。截图 OCR：macOS Vision（首次编译一个 Swift 小程序到临时目录）→ tesseract | 已完成 |
 | G4 退役经典界面 | 删 `index.html` 与 `workspace.mjs`；`/` 直接是知识场；登录与 `?doc=` 深链进知识场；工艺测试改查 `field.html`（毛玻璃两档、圆角 token；7px 以内的节点标记允许 1–2px） | 已完成 |
 | H 上手与后台 | `server/src/jobs.rs`：首次「边用边引导」五步（记 / 问 / 接一个来源 / AI 学一小批 / 看进度，进度随库同步 `.litmus/onboarding.json`；库里已有 ≥20 篇的老库只给新东西）；每个 `X.Y.0` 第一次打开取内置 CHANGELOG 那一节做「这一版的新东西」；AI 学习与巡检前的隐私告知（同意按服务商主机记在 `.litmus/local/consent.json`，换主机重问，`/设置` 可撤回，服务端 428 强制）；数据源先只接最近 N 个（`Source.limit`），扫描在低优先级线程、先文字后截图、每 4 秒交一批（场上分批出现，输入/拖动/编辑时不刷新）；`GET /jobs` 汇总接入 / AI 学习 / 巡检，壳左上角小进度条可暂停、继续、停下；AI 学习学成「要点 + 出处」草稿存 `.litmus/local/digest.json`，`/待收下` 确认后才写进 `Notes/学习/` 并排进复习 | 已完成 |
+| 筛选 | `server/src/curate.rs`：规则把每篇分成十二类（会话、过程文档、生成物默认剔除），把握低于 0.6 的分批交模型复核（需隐私同意），结果是清单（`.litmus/local/curate.json`），用户改判后 `/field/curate/apply` 执行：库内进回收站（`trash_move`），库外从索引拿掉并记入 excluded（重扫不回来）；每批可撤销，改判记 overrides；扫描新条目先 `hold_new`，像过程文档的扣下等确认；设置随库同步 `.litmus/curate.json`；「帮我…剔除…会话/过程」直接打开筛选 | 已完成 |
 
 其他未做：学习按节自评，不做逐题间隔重复；凭证库是明文存本机（0600），没有加密；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。
 

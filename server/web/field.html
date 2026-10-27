@@ -469,6 +469,23 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 .draft pre{white-space:pre-wrap;font:400 var(--fs-2)/1.6 var(--f-ui);background:var(--paper);padding:10px 12px;border-radius:var(--r-md);max-height:260px;overflow:auto}
 .draft summary{cursor:pointer;font-size:var(--fs-2);color:var(--ink-2)}
 .chip.on{background:var(--ink);color:var(--paper);box-shadow:none}
+.btn.danger{background:var(--acid);color:var(--paper)}
+.cu-tabs{margin:10px 0 8px}
+.cu-tabs button{white-space:nowrap}
+.cu-list{display:flex;flex-direction:column}
+.cu-row{display:flex;align-items:flex-start;gap:10px;padding:9px 6px;border-radius:var(--r-sm)}
+#cu-scope{width:auto;max-width:280px}
+.cu-row + .cu-row{box-shadow:0 -1px 0 var(--rule)}
+.cu-row.sel{background:oklch(var(--acid-c) / .06)}
+.cu-row input{margin-top:4px}
+.cu-row .grow{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.cu-row .grow span{font:400 var(--fs-3)/1.45 var(--f-ui)}
+.cu-row .grow small{font:400 var(--fs-1)/1.45 var(--f-mono);color:var(--ink-2);overflow-wrap:anywhere}
+.cu-row .btn{padding:4px 10px;font-size:var(--fs-1);flex:none}
+.kind.by{opacity:.75}
+.cu-bar{position:sticky;bottom:-16px;background:var(--sheet);padding:10px 0 4px;box-shadow:0 -1px 0 var(--rule)}
+#p-body label.chk.inline{display:inline-flex;align-items:center;gap:6px;margin:0;font:400 var(--fs-2)/1.4 var(--f-ui);color:var(--ink-2);letter-spacing:0;text-transform:none}
+.btn.wide{width:100%;margin-top:6px}
 </style>
 </head>
 <body>
@@ -599,6 +616,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
         <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
         <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
+        <tr><td>清理会话、过程文档</td><td>/筛选，或「帮我把会话和过程文档剔除」：规则先分、拿不准的交给 AI，出清单你改判后再删；库里的进回收站，库外的不再上场、原件不动，可整批撤销</td></tr>
         <tr><td>上手引导、这一版的新东西</td><td>/上手 重新走一遍；/新东西 再看这一版多了什么</td></tr>
         <tr><td>后台进度</td><td>左上角「鹿蕊」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
         <tr><td>AI 学习</td><td>/数据源 每个来源的「让 AI 学一批」、库外文档上的「让 AI 学」或 /AI学习；学成的在 /待收下，确认后才进 Notes/学习/</td></tr>
@@ -1651,6 +1669,7 @@ const CMDS = [
   ['/重排', '整体重新计算一次布局', rebuild],
   ['/进度', '后台在做的事：接入、AI 学习、巡检（可暂停、停下）', () => { if ($('jobs').hidden) flashJobs(); toggleJobsPop(); }],
   ['/待收下', 'AI 学成、等你确认的学习笔记', openDigest],
+  ['/筛选', '留下文档、报告、方案、文章、教程、课程、harness、skills，剔除会话和过程文档（先出清单）', () => openCurate()],
   ['/AI学习', '让 AI 把接进来的内容学成笔记（你确认后才进库）', () => startDigest({limit:10})],
   ['/上手', '重新走一遍上手引导', async () => { await api('/field/onboarding', {method:'POST', json:{reset:true}}).catch(() => {}); onb = null; await initOnboarding(); }],
   ['/新东西', '这一版多了什么', async () => { const o = await api('/field/onboarding').catch(() => null); if (o && o.whatsnew){ onb = o; renderWhatsNew(o.whatsnew); } else toast('这一版没有新东西的说明'); }],
@@ -1731,6 +1750,7 @@ async function submit(){
   }
   if (v === '记'){ const body = s.replace(/^[+＋]|^记[\s:：]/, '').trim(); q.value = ''; onInput(); capture(body); return; }
   if (v === '收'){ q.value = ''; onInput(); collectUrl(s); return; }
+  if (v === '办' && CUR_RE.test(s)){ q.value = ''; onInput(); q.blur(); openCurate(); toast('先按你的设置筛一遍：这里可以改留哪些、剔哪些，执行前会给你过目'); return; }
   if (v === '办'){ q.value = ''; onInput(); q.blur(); runAgent(s.replace(AGENT_RE, '').trim() || s); return; }
   if (v === '标'){ const rel = showTag(s); if (rel.length) fit(rel.map(x => x.n)); else toast('没有文档带 ' + esc(s)); return; }
   if (v === '问'){ onbDone('ask'); ask(s); hints(); return; }
@@ -3145,6 +3165,7 @@ async function openSources(first){
     '<details class="more"><summary>手动添加</summary>' +
       '<div class="addf"><select id="sa-k" class="sel"><option value="folder">本地文件夹</option><option value="agent">agent 会话（Claude Code / Codex）</option><option value="mcp">连接器（MCP，比如 LinkTo）</option><option value="google">Google（Drive / Gmail / Calendar）</option><option value="rest">任意 JSON 接口</option></select>' +
       '<div id="sa-f"></div></div></details>' +
+    (have.length ? '<p class="hint">接进来的会话、过程文档太多？<button class="btn" id="sa-cur">筛一遍</button>（留下文档、报告、方案、教程、课程、harness、skills，剔除会话和过程文档）</p>' : '') +
     '<p class="hint">' + (cur.tools && !cur.tools.tesseract && !/Mac/.test(navigator.platform) ? '截图里的文字要用 tesseract 识别；没装时截图只按文件名收录。' : '') + (cur.tools && !cur.tools.pdftotext ? ' PDF 要用 pdftotext（brew install poppler）。' : '') + '</p>' +
     (cands.length ? '<label class="row chk"><input type="checkbox" id="sa-lim" checked><div class="grow"><span>先只接最近的 300 个</span><small>每个来源先接最近改过的 300 个，用顺了再点「全部接进来」。扫描在后台低优先级进行，不卡你写东西。</small></div></label>' : '') +
     '<div class="acts">' + (cands.length ? '<button class="btn pri" id="sa-go">接入勾选的并扫描</button>' : '') + (first ? '<button class="btn" id="sa-skip">以后再说</button>' : '') + '<span id="sa-msg"></span></div>';
@@ -3180,6 +3201,7 @@ async function openSources(first){
     openSources();
   };
   if ($('sa-go')) $('sa-go').onclick = () => addSources([...box.querySelectorAll('input[data-ci]:checked')].map(c => { const x = cands[+c.dataset.ci]; return {kind:x.kind, name:x.name, path:x.path || null, exts:x.exts || [], recursive:x.recursive !== false, agent:x.agent || null, connection:x.connection || null, services:x.services || [], limit:$('sa-lim') && $('sa-lim').checked ? 300 : null}; }));
+  if ($('sa-cur')) $('sa-cur').onclick = () => openCurate();
   if ($('sa-skip')) $('sa-skip').onclick = async () => { await api('/sources', {method:'POST', json:{onboarded:true}}).catch(() => {}); closePanel(); toast('之后想接，输入 /数据源'); };
   box.querySelectorAll('[data-scan]').forEach(b => b.onclick = async () => { b.disabled = true; try { await api('/sources/' + b.dataset.scan + '/scan', {method:'POST'}); } catch(e){ toast(esc(e.message), true); } openSources(); });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次（原文件不动）'; b.classList.add('danger'); return; } await api('/sources/' + b.dataset.del, {method:'DELETE'}).catch(e => toast(esc(e.message), true)); await refreshNow(); openSources(); });
@@ -3363,24 +3385,29 @@ function scheduleFieldRefresh(gap){
 }
 function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
 function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
-const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检'};
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选'};
 function renderJobs(j){
   const b = $('jobs'); if (!b) return;
   const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
   /* 刚做完的留几秒，让人看到「做完了」 */
   const fresh = j.jobs.filter(x => (x.state === 'done' || x.state === 'error') && x.finished && Date.now() / 1000 - x.finished < 8);
+  if (!live.length && !j.pending && j.held && !fresh.length){
+    b.hidden = false; b.classList.add('idle'); b.classList.remove('paused'); b.style.setProperty('--p', 100);
+    $('jobs-t').textContent = j.held + ' 篇像过程文档'; if (jobsPopOpen()) renderJobsPop(); return;
+  }
   if (!live.length && !j.pending && fresh.length){
     b.hidden = false; b.classList.add('idle'); b.classList.remove('paused'); b.style.setProperty('--p', 100);
     const x = fresh[0]; $('jobs-t').textContent = (x.state === 'error' ? '没做完 · ' : '做完了 · ') + JOB_VERB[x.kind] + (x.items ? ' ' + x.items : '');
     clearTimeout(renderJobs.t); renderJobs.t = setTimeout(() => renderJobs(jobsLast), 8200); if (jobsPopOpen()) renderJobsPop(); return;
   }
-  if (!live.length && !j.pending){ b.hidden = true; if (jobsPopOpen()) renderJobsPop(); return; }
+  if (!live.length && !j.pending && !j.held){ b.hidden = true; if (jobsPopOpen()) renderJobsPop(); return; }
   b.hidden = false;
   let label, pct = 0;
   if (live.length === 1){ const x = live[0]; pct = jobPct(x); label = (x.state === 'paused' ? '已暂停 · ' : '') + JOB_VERB[x.kind] + ' ' + (x.total ? x.done + '/' + x.total : x.done || '…'); }
   else if (live.length > 1){ const d = live.reduce((a, x) => a + x.done, 0), t = live.reduce((a, x) => a + (x.total || x.done), 0); pct = t ? Math.round(d / t * 100) : 0; label = live.length + ' 项 · ' + pct + '%'; }
   else { pct = 100; label = j.pending + ' 篇待收下'; }
   if (live.length && j.pending) label += ' · ' + j.pending + ' 待收';
+  if (!live.length && j.held) label += ' · ' + j.held + ' 篇像过程文档';
   b.style.setProperty('--p', pct); b.classList.toggle('idle', !live.length); b.classList.toggle('paused', live.length > 0 && live.every(x => x.state === 'paused'));
   $('jobs-t').textContent = label; b.title = '后台进度：点开看详情';
   if (jobsPopOpen()) renderJobsPop();
@@ -3395,9 +3422,11 @@ function renderJobsPop(){
       ((x.can || []).length ? '<div class="ja">' + (x.can.includes('pause') ? (x.state === 'paused' ? '<button class="btn" data-ja="resume" data-jid="' + esc(x.id) + '">继续</button>' : '<button class="btn" data-ja="pause" data-jid="' + esc(x.id) + '">暂停</button>') : '') + '<button class="btn" data-ja="stop" data-jid="' + esc(x.id) + '">停下</button></div>' : '') + '</div>').join('');
   p.innerHTML = (rows || '<p class="hint" style="margin:6px 8px">后台没有在做的事。</p>') +
     (j.pending ? '<button class="btn pri wide" id="jp-review">' + j.pending + ' 篇学习笔记等你收下</button>' : '') +
+    (j.held ? '<button class="btn wide" id="jp-held">' + j.held + ' 篇新扫到的像过程文档，等你确认</button>' : '') +
     '<p class="hint" style="margin:8px 8px 4px">后台用低优先级慢慢做，不影响你写东西。关掉 App 会停下，做完的都留着。</p>';
   p.querySelectorAll('[data-ja]').forEach(btn => btn.onclick = async e => { e.stopPropagation(); btn.disabled = true; try { await api('/jobs/' + encodeURIComponent(btn.dataset.jid) + '/' + btn.dataset.ja, {method:'POST'}); } catch(err){ toast(esc(err.message), true); } pollJobs(true); });
   if ($('jp-review')) $('jp-review').onclick = () => { p.hidden = true; openDigest(); };
+  if ($('jp-held')) $('jp-held').onclick = () => { p.hidden = true; openCurate('held'); };
 }
 function toggleJobsPop(){
   let p = $('jobs-pop');
@@ -3411,6 +3440,127 @@ document.addEventListener('pointerdown', e => { const p = $('jobs-pop'); if (p &
 $('jobs').onclick = toggleJobsPop;
 loadAiInfo();
 pollJobs();
+
+/* ═══════════ 筛选：留下知识，剔除会话和过程文档（规则先分、拿不准的交给 AI，先出清单再执行） ═══════════ */
+const CUR_RE = /(剔除|清理|清掉|删掉|去掉|筛掉|筛选|过滤).{0,16}(过程|会话|session|对话记录|没用)|(过程|会话|session|对话记录).{0,16}(剔除|清理|清掉|删掉|去掉|筛掉|过滤)|(保留|留下).{0,30}(剔除|删掉|去掉)/i;
+let cur = null, curTab = 'drop', curCat = '', curShow = 200, curSel = null, curPoll = 0;
+const BY_NAME = {rule:'规则', ai:'AI', you:'你改判', words:'你的词'};
+async function openCurate(tab){
+  if (tab) curTab = tab;
+  const box = openPanel('筛选：留下知识，剔除过程文档', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(920px,100%)';
+  try { cur = await api('/field/curate'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  if (!aiInfo) await loadAiInfo();
+  curSel = new Set((cur.rows || []).filter(r => !r.keep).map(r => r.key).concat((cur.held || []).map(r => r.key)));
+  if (curTab === 'held' && !(cur.held || []).length) curTab = 'drop';
+  renderCurate();
+  clearTimeout(curPoll);
+  if (cur.job && cur.job.running) curPoll = setTimeout(() => { if (!$('panel').hidden && $('cu-root')) openCurate(); }, 1500);
+}
+function curRows(){
+  if (curTab === 'held') return cur.held || [];
+  return (cur.rows || []).filter(r => curTab === 'keep' ? r.keep : !r.keep);
+}
+function renderCurate(){
+  const box = $('p-body'), cfg = cur.config || {keep:[], drop:[]}, job = cur.job, rows = cur.rows || [];
+  const catChip = (c, side) => '<button class="chip' + (side === 'drop' ? ' on' : '') + '" data-cc="' + c.id + '" title="' + esc(c.about) + '（点一下换到另一边）"><span>' + esc(c.name) + '</span></button>';
+  const cats = cur.cats || [];
+  const keepCats = cats.filter(c => !cfg.drop.includes(c.id)), dropCats = cats.filter(c => cfg.drop.includes(c.id));
+  const srcs = [...new Set((cur.rows || []).concat(cur.held || []).map(r => r.src))];
+  const ai = aiInfo && aiInfo.configured;
+  let h = '<div id="cu-root"><p class="lede" style="margin-top:0">先按来源、路径、文件名和正文特征把每篇分类，拿不准的交给 AI 复核；出一份清单，你改判个别篇后再执行。库里的进回收站（' + 30 + ' 天内能找回），库外的从场上拿掉、<b>原件不动</b>。每次执行都能整批撤销。</p>' +
+    '<details class="more"' + (rows.length ? '' : ' open') + '><summary>留哪些、剔哪些</summary>' +
+      '<label>保留</label><div class="chips">' + keepCats.map(c => catChip(c, 'keep')).join('') + '</div>' +
+      '<label>剔除</label><div class="chips">' + dropCats.map(c => catChip(c, 'drop')).join('') + '</div>' +
+      '<label for="cu-kw">总要保留（路径或标题里有这些词，逗号分隔）</label><input type="text" id="cu-kw" value="' + esc((cfg.keep_words || []).join('，')) + '" placeholder="比如 playbook，复盘">' +
+      '<label for="cu-dw">总要剔除</label><input type="text" id="cu-dw" value="' + esc((cfg.drop_words || []).join('，')) + '" placeholder="比如 草稿，scratch">' +
+      '<label class="row chk"><input type="checkbox" id="cu-auto"' + (cfg.auto !== false ? ' checked' : '') + '><div class="grow"><span>以后新接进来的也先筛一遍</span><small>像过程文档的不直接上场，左上角提示「N 篇像过程文档」，你确认后再删</small></div></label>' +
+      '<div class="acts"><button class="btn" id="cu-save">保存设置</button></div></details>' +
+    '<div class="acts"><select id="cu-scope" class="sel"><option value="all">全部（库里 + 库外）</option><option value="vault">只看库里的</option><option value="ext">只看库外的</option>' + srcs.filter(s => s && s !== '库内').map(s => '<option value="src:' + esc(s) + '">只看「' + esc(s) + '」</option>').join('') + '</select>' +
+      '<label class="chk inline"><input type="checkbox" id="cu-ai"' + (ai ? ' checked' : ' disabled') + '> 拿不准的交给 AI 复核' + (ai ? '' : '（先在 /设置 配模型）') + '</label>' +
+      '<button class="btn pri" id="cu-go"' + (job && job.running ? ' disabled' : '') + '>' + (rows.length ? '重新筛一遍' : '开始筛选') + '</button></div>';
+  if (job && job.running) h += '<p class="hint"><span class="thinking"><i></i><i></i><i></i></span> ' + esc(job.phase || '') + ' · ' + job.done + ' / ' + (job.total || '…') + '（后台进行，左上角也能看）<button class="btn" id="cu-stop">停下</button></p>';
+  else if (job && job.error) h += '<p class="hint bad">' + esc(job.error) + '</p>';
+  const nDrop = rows.filter(r => !r.keep).length, nKeep = rows.length - nDrop, nHeld = (cur.held || []).length, nAi = rows.filter(r => r.by === 'ai').length;
+  if (rows.length || nHeld || (cur.batches || []).length){
+    h += (rows.length ? '<p class="hint">' + rows.length + ' 篇：保留 ' + nKeep + '、剔除 ' + nDrop + (nAi ? '（其中 ' + nAi + ' 篇由 AI 判断）' : '') + (cur.created ? ' · ' + new Date(cur.created * 1000).toLocaleString() : '') + '</p>' : '') +
+      '<div class="seg cu-tabs" role="tablist">' + [['drop', '剔除 ' + nDrop], ['keep', '保留 ' + nKeep], ['held', '新扫到、等确认 ' + nHeld], ['undo', '撤销']].map(t => '<button data-tab="' + t[0] + '" class="' + (curTab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>';
+    if (curTab === 'undo'){
+      const bs = cur.batches || [];
+      h += bs.length ? bs.map(b => '<div class="row"><div class="grow"><span>' + new Date(b.at * 1000).toLocaleString() + '</span><small>库里 ' + b.vault.length + ' 篇进了回收站 · 库外 ' + b.ext.length + ' 篇不再上场</small></div><button class="btn" data-undo="' + esc(b.id) + '">整批撤销</button></div>').join('') : '<p class="empty">还没执行过。</p>';
+    } else {
+      const list = curRows();
+      const counts = {}; list.forEach(r => { counts[r.cat] = (counts[r.cat] || 0) + 1; });
+      h += '<div class="chips">' + '<button class="chip' + (curCat ? '' : ' on') + '" data-cf=""><span>全部 ' + list.length + '</span></button>' + Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(c => '<button class="chip' + (curCat === c ? ' on' : '') + '" data-cf="' + c + '"><span>' + esc((cats.find(x => x.id === c) || {}).name || c) + ' ' + counts[c] + '</span></button>').join('') + '</div>';
+      const shown = list.filter(r => !curCat || r.cat === curCat);
+      h += '<div class="cu-list">' + shown.slice(0, curShow).map(r => '<div class="cu-row' + (curTab !== 'keep' && curSel.has(r.key) ? ' sel' : '') + '">' + (curTab === 'keep' ? '' : '<input type="checkbox" data-sel="' + esc(r.key) + '"' + (curSel.has(r.key) ? ' checked' : '') + '>') +
+          '<div class="grow"><span><b>' + esc(r.title) + '</b> <em class="kind">' + esc((cats.find(x => x.id === r.cat) || {}).name || r.cat) + '</em> <em class="kind by">' + (BY_NAME[r.by] || r.by) + '</em></span><small>' + esc(r.loc) + '</small><small>' + esc(r.why || '') + '</small></div>' +
+          '<button class="btn" data-flip="' + esc(r.key) + '">' + (curTab === 'keep' ? '改为剔除' : '改为保留') + '</button>' + (byPath.has(r.key) ? '<button class="btn" data-see="' + esc(r.key) + '">看</button>' : '') + '</div>').join('') +
+        (shown.length > curShow ? '<button class="btn wide" id="cu-more">再显示 ' + Math.min(200, shown.length - curShow) + ' 篇（共 ' + shown.length + '）</button>' : '') + (shown.length ? '' : '<p class="empty">这里没有。</p>') + '</div>';
+      if (curTab !== 'keep'){
+        const sel = [...curSel].filter(k => list.some(r => r.key === k));
+        const nv = sel.filter(k => !k.startsWith('ext:')).length, ne = sel.length - nv;
+        h += '<div class="acts cu-bar"><button class="btn pri" id="cu-apply"' + (sel.length ? '' : ' disabled') + '>删掉勾选的 ' + sel.length + ' 篇</button><span class="hint">' + (nv ? '库里 ' + nv + ' 篇进回收站' : '') + (nv && ne ? '，' : '') + (ne ? '库外 ' + ne + ' 篇不再上场（原件不动）' : '') + '</span>' +
+          (curTab === 'held' && nHeld ? '<button class="btn" id="cu-keepall">都留着</button>' : '') + '</div>';
+      }
+    }
+  }
+  box.innerHTML = h + '</div>';
+  wireCurate();
+}
+function wireCurate(){
+  const box = $('p-body'), cfg = cur.config;
+  box.querySelectorAll('[data-cc]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.cc, toDrop = !cfg.drop.includes(id);
+    cfg.drop = toDrop ? cfg.drop.concat(id) : cfg.drop.filter(x => x !== id);
+    cfg.keep = toDrop ? cfg.keep.filter(x => x !== id) : cfg.keep.concat(id);
+    await saveCurateCfg(); openCurate();
+  });
+  $('cu-save').onclick = async () => { await saveCurateCfg(); toast('设置存好了，清单已按新设置重算'); openCurate(); };
+  $('cu-go').onclick = async () => {
+    const sc = $('cu-scope').value, useAi = $('cu-ai').checked;
+    if (useAi && !(await ensureConsent('拿不准的那些文档的路径、标题和开头 400 字（每批 20 篇）。', '筛选之前'))) return;
+    const body = sc.startsWith('src:') ? {scope:'ext', ai:useAi, source:(cur.rows || []).concat(cur.held || []).map(r => r.key).find(k => k.startsWith('ext:') && (cur.rows || []).concat(cur.held || []).find(r => r.key === k).src === sc.slice(4))?.split('/')[0].slice(4)} : {scope:sc, ai:useAi};
+    try { await api('/field/curate', {method:'POST', json:body}); curTab = 'drop'; pollJobs(true); openCurate(); }
+    catch(e){ toast('<b>没开始</b>：' + esc(e.message || e), true); }
+  };
+  if ($('cu-stop')) $('cu-stop').onclick = () => api('/jobs/curate/stop', {method:'POST'}).catch(() => {}).then(() => openCurate());
+  box.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { curTab = b.dataset.tab; curCat = ''; curShow = 200; renderCurate(); });
+  box.querySelectorAll('[data-cf]').forEach(b => b.onclick = () => { curCat = b.dataset.cf; curShow = 200; renderCurate(); });
+  box.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { if (c.checked) curSel.add(c.dataset.sel); else curSel.delete(c.dataset.sel); renderCurate(); });
+  box.querySelectorAll('[data-flip]').forEach(b => b.onclick = e => {
+    e.preventDefault();
+    const k = b.dataset.flip, r = (cur.rows || []).find(x => x.key === k) || (cur.held || []).find(x => x.key === k);
+    if (curTab === 'held'){ curSel.delete(k); api('/field/curate/apply', {method:'POST', json:{keep:[k]}}).then(() => { refreshSoon(); pollJobs(true); openCurate(); }); return; }
+    if (r){ r.keep = !r.keep; r.by = 'you'; if (r.keep) curSel.delete(k); else curSel.add(k); }
+    renderCurate();
+  });
+  box.querySelectorAll('[data-see]').forEach(b => b.onclick = e => { e.preventDefault(); const n = byPath.get(b.dataset.see); if (n){ closePanel(); openDoc(n); } });
+  if ($('cu-more')) $('cu-more').onclick = () => { curShow += 200; renderCurate(); };
+  box.querySelectorAll('[data-undo]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await api('/field/curate/undo', {method:'POST', json:{batch:b.dataset.undo}}); await refreshNow(); toast('放回来了 ' + r.restored + ' 篇' + (r.failed.length ? '，' + r.failed.length + ' 篇没放回（原处已有同名）' : '')); openCurate('undo'); }
+    catch(e){ toast(esc(e.message || e), true); b.disabled = false; }
+  });
+  if ($('cu-keepall')) $('cu-keepall').onclick = async () => { await api('/field/curate/apply', {method:'POST', json:{keep:(cur.held || []).map(r => r.key)}}).catch(() => {}); refreshSoon(); pollJobs(true); curTab = 'drop'; openCurate(); };
+  if ($('cu-apply')) $('cu-apply').onclick = async () => {
+    const list = curRows(), drop = [...curSel].filter(k => list.some(r => r.key === k));
+    const keep = (cur.rows || []).filter(r => r.keep && r.by === 'you').map(r => r.key);
+    const b = $('cu-apply'); if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次：删掉 ' + drop.length + ' 篇'; b.classList.add('danger'); return; }
+    b.disabled = true;
+    try {
+      const r = await api('/field/curate/apply', {method:'POST', json:{drop, keep}});
+      await refreshNow(); pollJobs(true);
+      toastAct('删了 ' + (r.trashed + r.hidden) + ' 篇：' + (r.trashed ? '库里 ' + r.trashed + ' 篇进了回收站' : '') + (r.trashed && r.hidden ? '，' : '') + (r.hidden ? '库外 ' + r.hidden + ' 篇不再上场' : '') + (r.failed.length ? '；' + r.failed.length + ' 篇没删成' : ''), '撤销', async () => { await api('/field/curate/undo', {method:'POST', json:{batch:r.batch}}).catch(e => toast(esc(e.message), true)); await refreshNow(); toast('放回来了'); });
+      openCurate();
+    } catch(e){ b.disabled = false; toast('<b>没删成</b>：' + esc(e.message || e), true); }
+  };
+}
+async function saveCurateCfg(){
+  const words = id => ($(id) ? $(id).value : '').split(/[,，、\n]+/).map(x => x.trim()).filter(Boolean);
+  const c = Object.assign({}, cur.config, {keep_words:words('cu-kw'), drop_words:words('cu-dw'), auto:$('cu-auto') ? $('cu-auto').checked : true});
+  try { const r = await api('/field/curate/config', {method:'POST', json:c}); cur.config = r.config; } catch(e){ toast(esc(e.message || e), true); }
+}
 
 /* 库外文档：只读打开，导入或学习 */
 async function openExt(n){

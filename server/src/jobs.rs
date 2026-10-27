@@ -706,12 +706,21 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "can": if p.running { json!(["stop"]) } else { json!([]) },
         }));
     }
+    if let Some(c) = super::curate::job_snapshot(&root).filter(|c| recent(c.running, c.finished)) {
+        out.push(json!({
+            "id": "curate", "kind": "curate", "title": "筛选：留下知识、剔除过程文档",
+            "state": if c.running { "running" } else if c.error.is_some() && c.total == 0 { "error" } else { "done" },
+            "done": c.done, "total": c.total, "phase": c.phase, "items": 0, "error": c.error, "finished": c.finished,
+            "can": if c.running { json!(["stop"]) } else { json!([]) },
+        }));
+    }
+    let held = super::curate::load_store(&root).held.len();
     let pending = {
         let r = root.clone();
         tokio::task::spawn_blocking(move || load_store(&r).drafts.iter().filter(|d| d.status == "pending").count()).await.unwrap_or(0)
     };
     let busy = out.iter().any(|j| j["state"] == "running" || j["state"] == "paused");
-    Json(json!({ "jobs": out, "rev": super::sources::REV.load(std::sync::atomic::Ordering::SeqCst), "pending": pending, "busy": busy })).into_response()
+    Json(json!({ "jobs": out, "rev": super::sources::REV.load(std::sync::atomic::Ordering::SeqCst), "pending": pending, "held": held, "busy": busy })).into_response()
 }
 
 /// POST /jobs/{id}/{action}：pause | resume | stop。
@@ -724,6 +733,8 @@ pub async fn job_control(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath
         super::sources::scan_control(sid, &action)
     } else if id == "digest" {
         digest_control(&root, &action)
+    } else if id == "curate" && action == "stop" {
+        super::curate::job_stop(&root)
     } else if id == "patrol" && action == "stop" {
         super::organize::patrol_request_stop(&root)
     } else {

@@ -27,6 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 mod field;
+mod curate;
 mod field_tools;
 mod jobs;
 mod organize;
@@ -217,6 +218,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/digest/accept", post(jobs::digest_accept))
         .route("/field/digest/reject", post(jobs::digest_reject))
         .route("/jobs", get(jobs::jobs))
+        .route("/field/curate", get(curate::get).post(curate::start))
+        .route("/field/curate/config", post(curate::set_config))
+        .route("/field/curate/apply", post(curate::apply))
+        .route("/field/curate/undo", post(curate::undo))
         .route("/jobs/{id}/{action}", post(jobs::job_control))
         .route("/sources", get(sources::list).post(sources::upsert))
         .route("/sources/detect", get(sources::detect))
@@ -2456,6 +2461,50 @@ fn trash_purge_expired(root: &std::path::Path, days: u32) -> usize {
         let _ = trash_save(root, &entries);
     }
     removed
+}
+
+/// 把一篇（或一个文件夹）移进回收站：筛选、整理等批量动作共用。
+pub(crate) fn trash_move(k: &mut Kernel, path: &str) -> Result<(), String> {
+    if !is_safe_doc_path(path) {
+        return Err("只能删 Notes/ 下的".into());
+    }
+    let abs = k.vault.root.join(path);
+    if !abs.exists() {
+        return Err("已经不在了".into());
+    }
+    let mut entries = trash_load(&k.vault.root);
+    let trash_rel = trash_unique_rel(&k.vault.root, &entries, path);
+    let dest = trash_dir(&k.vault.root).join(&trash_rel);
+    if let Some(p) = dest.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&abs, &dest).map_err(|e| e.to_string())?;
+    entries.push(TrashEntry { path: path.to_string(), trash: trash_rel, deleted_at: trash_now() });
+    if let Err(e) = trash_save(&k.vault.root, &entries) {
+        let _ = std::fs::rename(&dest, &abs);
+        return Err(e.to_string());
+    }
+    let _ = k.sync_all();
+    Ok(())
+}
+
+/// 从回收站放回原处（原处已有同名就不动）。
+pub(crate) fn trash_restore_path(k: &mut Kernel, path: &str) -> Result<(), String> {
+    let mut entries = trash_load(&k.vault.root);
+    let Some(idx) = entries.iter().rposition(|e| e.path == path) else { return Err("回收站里没有".into()) };
+    let src = trash_dir(&k.vault.root).join(&entries[idx].trash);
+    let dst = k.vault.root.join(path);
+    if dst.exists() {
+        return Err("原处已经有同名文档".into());
+    }
+    if let Some(p) = dst.parent() {
+        std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(&src, &dst).map_err(|e| e.to_string())?;
+    entries.remove(idx);
+    trash_save(&k.vault.root, &entries).map_err(|e| e.to_string())?;
+    let _ = k.sync_all();
+    Ok(())
 }
 
 /// GET /trash — 回收站列表（顺带清除过期）

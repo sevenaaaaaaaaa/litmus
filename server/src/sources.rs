@@ -140,12 +140,52 @@ fn put_text(root: &Path, text: &str) -> String {
     hash
 }
 
-/// 知识场要的：所有已启用来源的条目 + 正文（截断）。
+/// 索引里的全部条目（不看是否启用、是否被筛掉）。
+pub fn all_items(root: &Path) -> Vec<Item> {
+    load_index(root).items
+}
+
+/// 从索引里拿掉这些条目（筛选剔除），返回拿掉的原样（放回时用）。
+pub fn take_items(root: &Path, keys: &[&str]) -> Vec<(String, Value)> {
+    let mut ix = load_index(root);
+    let mut out = Vec::new();
+    ix.items.retain(|i| {
+        if keys.contains(&i.key.as_str()) {
+            out.push((i.key.clone(), serde_json::to_value(i).unwrap_or(json!({}))));
+            false
+        } else {
+            true
+        }
+    });
+    if !out.is_empty() {
+        save_index(root, &ix);
+        REV.fetch_add(1, Ordering::SeqCst);
+    }
+    out
+}
+
+/// 把拿掉的条目放回索引（撤销剔除）。
+pub fn put_items(root: &Path, items: Vec<Value>) {
+    let items: Vec<Item> = items.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
+    if items.is_empty() {
+        return;
+    }
+    let mut ix = load_index(root);
+    let keys: std::collections::HashSet<String> = items.iter().map(|i| i.key.clone()).collect();
+    ix.items.retain(|i| !keys.contains(&i.key));
+    ix.items.extend(items);
+    save_index(root, &ix);
+    REV.fetch_add(1, Ordering::SeqCst);
+}
+
+/// 知识场要的：所有已启用来源的条目 + 正文（截断）。筛掉的、等确认的不上场。
 pub fn corpus(root: &Path) -> Vec<(Item, String, String)> {
     let enabled: HashMap<String, String> = load_sources(root).into_iter().filter(|s| s.enabled).map(|s| (s.id, s.name)).collect();
+    let hidden = super::curate::hidden_keys(root);
     load_index(root)
         .items
         .into_iter()
+        .filter(|it| !hidden.contains(&it.key))
         .filter_map(|it| {
             let name = enabled.get(&it.src)?.clone();
             let t = read_text(root, &it.hash);
@@ -1006,7 +1046,13 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
         let ix0 = load_index(&root);
         let prev: HashMap<String, Item> = ix0.items.iter().filter(|i| i.src == s.id).map(|i| (i.key.clone(), i.clone())).collect();
         // 分批交付：已扫到的 + 还没扫到的旧条目（这样中途场上不会少东西），完成时再按本轮结果收口
+        let excluded = super::curate::excluded_keys(&root);
         let flush = |part: &[Item]| {
+            let part: Vec<Item> = part.iter().filter(|i| !excluded.contains(&i.key)).cloned().collect();
+            // 分批上场前先过筛选规则：像过程文档的直接扣下，不会先出现再消失
+            let fresh: Vec<Item> = part.iter().filter(|i| !prev.contains_key(&i.key)).cloned().collect();
+            super::curate::hold_new(&root, &fresh, &s.name, s.path.as_deref());
+            let part = &part[..];
             let mut ix = load_index(&root);
             let fresh: std::collections::HashSet<&str> = part.iter().map(|i| i.key.as_str()).collect();
             ix.items.retain(|i| i.src != s.id || !fresh.contains(i.key.as_str()));
@@ -1027,6 +1073,14 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
             _ => Err("不认识的来源".into()),
         };
         let stopped = scans().lock().unwrap().get(&s.id).map(|x| x.stop).unwrap_or(false);
+        let r = r.map(|items| items.into_iter().filter(|i| !excluded.contains(&i.key)).collect::<Vec<_>>());
+        // 新扫到的先按筛选规则过一遍：像过程文档的扣下等确认，不直接上场
+        if let Ok(items) = &r {
+            let fresh: Vec<Item> = items.iter().filter(|i| !prev.contains_key(&i.key)).cloned().collect();
+            super::curate::hold_new(&root, &fresh, &s.name, s.path.as_deref());
+        }
+        let pre = format!("ext:{}/", s.id);
+        let held_n = super::curate::load_store(&root).held.keys().filter(|k| k.starts_with(&pre)).count();
         let mut ix = load_index(&root);
         let state = match r {
             Ok(items) => {
@@ -1040,7 +1094,7 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
                 }
                 ix.items.extend(items);
                 let total = ix.items.iter().filter(|i| i.src == s.id).count();
-                ScanState { running: false, seen: n, items: total, error: stopped.then(|| "停下了：已扫到的都留着，下次接着扫".to_string()), finished: now_secs(), phase: if stopped { "停下了".into() } else { "完成".into() }, ..Default::default() }
+                ScanState { running: false, seen: n, items: total, error: stopped.then(|| "停下了：已扫到的都留着，下次接着扫".to_string()), finished: now_secs(), phase: if stopped { "停下了".into() } else if held_n > 0 { format!("完成；{held_n} 篇像过程文档，等你确认") } else { "完成".into() }, ..Default::default() }
             }
             Err(e) => ScanState { running: false, error: Some(e), finished: now_secs(), items: prev.len(), ..Default::default() },
         };

@@ -1790,6 +1790,150 @@ mod api_tests {
     }
 
     #[tokio::test]
+    async fn curate_asks_the_model_only_about_unsure_docs() {
+        let (app, token, dir) = app();
+        let f = dir.path().join("Notes/Sources/ops/Q3 数据报告.md");
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, "# Q3 数据报告\n\n留存 41%。").unwrap();
+        let g = dir.path().join("Notes/资料/方案.md");
+        std::fs::create_dir_all(g.parent().unwrap()).unwrap();
+        std::fs::write(&g, "# 同步方案\n\n两边保留。").unwrap();
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        let base = mock_json_llm(|sys, user| {
+            if sys.contains("清理知识库") {
+                assert!(user.contains("Q3 数据报告") && !user.contains("同步方案"), "只问拿不准的：{user}");
+                serde_json::json!({"items":[{"i":1,"cat":"report","why":"有数据的季度报告"}]}).to_string()
+            } else {
+                "?".into()
+            }
+        })
+        .await;
+        let (_, _) = call(&app, &token, "POST", "/field/ai", &serde_json::json!({"base_url": base, "model": "mock"}).to_string()).await;
+        let (st, _) = call(&app, &token, "POST", "/field/curate", "{}").await;
+        assert_eq!(st, 428, "要先同意隐私告知");
+        let (_, _) = call(&app, &token, "POST", "/field/consent", r#"{"agree":true}"#).await;
+        let (st, _) = call(&app, &token, "POST", "/field/curate", "{}").await;
+        assert_eq!(st, 200);
+        let mut c = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            c = call(&app, &token, "GET", "/field/curate", "").await.1;
+            if c["job"]["running"] == false {
+                break;
+            }
+        }
+        let r = c["rows"].as_array().unwrap().iter().find(|r| r["title"] == "Q3 数据报告").unwrap().clone();
+        assert_eq!((r["by"].as_str(), r["cat"].as_str(), r["keep"].as_bool()), (Some("ai"), Some("report"), Some(true)), "{c}");
+        assert_eq!(c["job"]["ai_calls"], 1);
+    }
+
+    #[tokio::test]
+    async fn curate_keeps_knowledge_and_trashes_process_docs_with_undo() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        let put = |p: &str, t: &str| {
+            let f = root.join(p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, t).unwrap();
+        };
+        put("Notes/资料/Q3 增长分析报告.md", "# Q3 增长分析报告\n\n| 指标 | 数值 |\n|---|---|\n| 留存 | 41% |");
+        put("Notes/资料/部署指南.md", "# 部署指南\n\n1. 打包\n2. 上传\n3. 重启");
+        put("Notes/Sources/会话/修登录.md", "# 修登录\n\n> 导入自 `/Users/x/.claude/projects/a.jsonl`（2026-10-01）\n\n## 结论\n\n好了\n\n## 过程\n\n**问**：修一下\n\n**答**：好");
+        put("Notes/Sources/ops/交接.md", "# 交接\n\n> 导入自 `/Users/x/proj/ops/2026-10-20-handoff.md`（2026-10-20）\n\n今天做到这里。");
+        put("Notes/资料/随想.md", "# 随想\n\n" );
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        // 库外：一个 ops 文件夹
+        let outside = tempfile::tempdir().unwrap();
+        let ops = outside.path().join("ops");
+        std::fs::create_dir_all(&ops).unwrap();
+        std::fs::write(ops.join("progress.md"), "# 进度\n\n今天改了同步。").unwrap();
+        std::fs::write(ops.join("课程大纲.md"), "# 课程大纲\n\n第一课 所有权").unwrap();
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "folder", "name": "ops", "path": ops.to_string_lossy()}}).to_string()).await;
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (_, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        // 扫描时就按规则扣下了 progress.md（ops/ 里、像过程文档），课程大纲照常上场
+        let (_, j) = call(&app, &token, "GET", "/jobs", "").await;
+        assert_eq!(j["held"], 1, "{j}");
+        // 全库筛一遍（没配模型：只用规则）
+        let (st, r) = call(&app, &token, "POST", "/field/curate", r#"{"scope":"all"}"#).await;
+        assert_eq!(st, 200, "{r}");
+        let mut c = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            c = call(&app, &token, "GET", "/field/curate", "").await.1;
+            if c["job"]["running"] == false {
+                break;
+            }
+        }
+        let rows = c["rows"].as_array().unwrap();
+        let row = |t: &str| rows.iter().find(|r| r["title"] == t).unwrap_or_else(|| panic!("{t} 不在清单里：{c}")).clone();
+        assert_eq!(row("Q3 增长分析报告")["cat"], "report");
+        assert_eq!(row("Q3 增长分析报告")["keep"], true);
+        assert_eq!(row("部署指南")["cat"], "tutorial");
+        assert_eq!(row("修登录")["cat"], "session");
+        assert_eq!(row("修登录")["keep"], false);
+        assert_eq!(row("交接")["cat"], "process", "导入自 ops/ 的交接：{c}");
+        assert_eq!(row("课程大纲")["cat"], "course");
+        // 执行：剔除清单里判为剔除的 + 等确认的
+        let mut drop: Vec<String> = rows.iter().filter(|r| r["keep"] == false).map(|r| r["key"].as_str().unwrap().to_string()).collect();
+        drop.extend(c["held"].as_array().unwrap().iter().map(|r| r["key"].as_str().unwrap().to_string()));
+        let (st, a) = call(&app, &token, "POST", "/field/curate/apply", &serde_json::json!({"drop": drop}).to_string()).await;
+        assert_eq!(st, 200, "{a}");
+        assert_eq!(a["trashed"], 2, "{a} {drop:?}");
+        assert_eq!(a["hidden"], 1, "{a}");
+        assert!(!root.join("Notes/Sources/会话/修登录.md").exists());
+        assert!(root.join(".litmus/local/trash/Notes/Sources/会话/修登录.md").exists(), "进了回收站");
+        assert!(ops.join("progress.md").exists(), "库外原件不动");
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let titles: Vec<&str> = d["docs"].as_array().unwrap().iter().map(|x| x["t"].as_str().unwrap()).collect();
+        assert!(titles.contains(&"课程大纲") && titles.contains(&"部署指南") && !titles.contains(&"进度") && !titles.contains(&"修登录"), "{titles:?}");
+        // 重新扫描：剔掉的不会回来
+        let (_, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        let (_, j) = call(&app, &token, "GET", "/jobs", "").await;
+        assert_eq!(j["held"], 0, "{j}");
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        assert!(!d["docs"].as_array().unwrap().iter().any(|x| x["t"] == "进度"));
+        // 整批撤销：库内的回到原处，库外的回到场上
+        let (st, u) = call(&app, &token, "POST", "/field/curate/undo", &serde_json::json!({"batch": a["batch"]}).to_string()).await;
+        assert_eq!(st, 200, "{u}");
+        assert_eq!(u["restored"], 3, "{u}");
+        assert!(root.join("Notes/Sources/会话/修登录.md").exists());
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        assert!(d["docs"].as_array().unwrap().iter().any(|x| x["t"] == "进度"));
+        // 放回来的：重新筛一遍也照你说的留着
+        let (_, _) = call(&app, &token, "POST", "/field/curate", r#"{"scope":"all"}"#).await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if call(&app, &token, "GET", "/field/curate", "").await.1["job"]["running"] == false {
+                break;
+            }
+        }
+        let (_, c2) = call(&app, &token, "GET", "/field/curate", "").await;
+        let r = c2["rows"].as_array().unwrap().iter().find(|r| r["title"] == "修登录").unwrap().clone();
+        assert_eq!((r["keep"].as_bool(), r["by"].as_str()), (Some(true), Some("you")), "{r}");
+        // 设置：把「会话」改成保留，清单跟着变
+        let (_, cfg) = call(&app, &token, "GET", "/field/curate", "").await;
+        let mut conf = cfg["config"].clone();
+        conf["drop"] = serde_json::json!(["process", "generated"]);
+        conf["keep"].as_array_mut().unwrap().push(serde_json::json!("session"));
+        let (st, _) = call(&app, &token, "POST", "/field/curate/config", &conf.to_string()).await;
+        assert_eq!(st, 200);
+        assert!(root.join(".litmus/curate.json").is_file(), "设置随库同步");
+    }
+
+    #[tokio::test]
     async fn outside_sources_are_indexed_in_place_and_imported_on_demand() {
         let (app, token, dir) = app();
         seed(&app, &token).await;
@@ -1935,9 +2079,15 @@ mod api_tests {
         assert_eq!(by(&gid)["items"], 2, "{list}");
         let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
         let titles: Vec<String> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").map(|x| x["t"].as_str().unwrap().to_string()).collect();
-        assert!(titles.iter().any(|t| t.starts_with("[InputFlow] 候选词排序怎么改")), "{titles:?}");
+        // 会话按筛选规则默认扣下等确认，不直接上场；其余照常出现
+        assert!(!titles.iter().any(|t| t.starts_with("[InputFlow]")), "{titles:?}");
         assert!(titles.contains(&"接口里的一条".to_string()) && titles.contains(&"云端方案".to_string()) && titles.contains(&"周会纪要".to_string()), "{titles:?}");
-        let key = d["docs"].as_array().unwrap().iter().find(|x| x["t"].as_str().unwrap().starts_with("[InputFlow]")).unwrap()["p"].as_str().unwrap().to_string();
+        let (_, cur) = call(&app, &token, "GET", "/field/curate", "").await;
+        let held = cur["held"].as_array().unwrap();
+        assert_eq!(held.len(), 1, "{cur}");
+        assert_eq!(held[0]["cat"], "session");
+        assert!(held[0]["title"].as_str().unwrap().starts_with("[InputFlow] 候选词排序怎么改"));
+        let key = held[0]["key"].as_str().unwrap().to_string();
         let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&key)), "").await;
         assert!(e["source"].as_str().unwrap().contains("## 结论") && e["source"].as_str().unwrap().contains("按频率降序"));
         let mail = d["docs"].as_array().unwrap().iter().find(|x| x["t"] == "周会纪要").unwrap()["p"].as_str().unwrap().to_string();
