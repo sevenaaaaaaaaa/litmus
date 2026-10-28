@@ -2548,13 +2548,15 @@ async function openSettings(){
     '<label for="ai-url">接口地址</label><input type="text" id="ai-url" value="' + esc(a.base_url || '') + '" placeholder="https://api.deepseek.com/v1">' +
     '<label for="ai-model">模型</label><input type="text" id="ai-model" value="' + esc(a.model || '') + '" placeholder="deepseek-chat">' +
     '<label for="ai-key">密钥</label><input type="password" id="ai-key" placeholder="' + (a.has_key ? '已保存，留空表示不改' : a.key_from_env ? '已从环境变量 LITMUS_AI_API_KEY 读取' : 'sk-…（本机 Ollama 可留空）') + '">' +
-    '<p class="hint">密钥写进库根目录的 litmus.toml，只在这台电脑上。更稳妥的做法是设环境变量 LITMUS_AI_API_KEY，这里留空。</p>' +
+    '<p class="hint">密钥加密存进这台设备的凭证库（/凭证），不随库同步、不进 git；别的设备要各自填一次。也可以设环境变量 LITMUS_AI_API_KEY，这里留空。</p>' +
+    (a.key_in_toml ? '<p class="hint bad">现在的密钥还写在 litmus.toml 里，会跟着库同步到别的设备和服务器。<button class="btn" id="ai-mv">挪进凭证库</button></p>' : '') +
     '<div class="acts"><button class="btn pri" id="ai-save">保存并测试</button><span id="ai-msg"></span></div>' +
     '<p class="hint" id="ai-consent"></p>';
   loadAiInfo().then(i => { const el = $('ai-consent'); if (!el || !i || !i.configured) return;
     el.innerHTML = i.agreed ? '隐私：已同意 AI 学习、巡检把选中的内容发给 <b>' + esc(i.host) + '</b>（' + (i.at ? new Date(i.at * 1000).toLocaleDateString() : '') + '）。<button class="btn" id="ai-revoke">撤回同意</button>' : '隐私：AI 学习、巡检开始前会先告诉你发什么、发给 ' + esc(i.host) + '，你同意才开始。';
     const rv = $('ai-revoke'); if (rv) rv.onclick = async () => { aiInfo = await api('/field/consent', {method:'POST', json:{agree:false}}).catch(() => aiInfo); toast('撤回了：下次用 AI 学习、巡检前会再问你'); openSettings(); };
   });
+  if ($('ai-mv')) $('ai-mv').onclick = async () => { try { await api('/field/ai/move-key', {method:'POST'}); toast('密钥挪进凭证库了：litmus.toml 里已经不再有它。别的设备上要各自在 /设置 填一次'); openSettings(); } catch(e){ toast(esc(e.message || e), true); } };
   box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
   $('ai-save').onclick = async () => {
     const msg = $('ai-msg'); msg.className = ''; msg.textContent = '正在保存…'; $('ai-save').disabled = true;
@@ -3425,15 +3427,26 @@ async function openUpdate(){
 }
 
 
-/* ═══════════ F4 凭证库（只在本机，明文存 .litmus/local/secrets.json） ═══════════ */
+/* ═══════════ F4 凭证库（只在本机；0.22 起加密存放，钥匙在系统钥匙串或用户目录） ═══════════ */
 async function openSecrets(){
   const box = openPanel('凭证库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   let r; try { r = await api('/secrets'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
-  const list = r.secrets || [];
+  const list = r.secrets || [], sst = r.state || {};
+  /* 锁着：这份凭证库是在另一台设备上加密的 */
+  if (sst.locked){
+    box.innerHTML = '<p style="margin-top:0"><b>凭证库锁着</b></p><p class="hint">这份凭证库是在另一台设备上加密的（或者这台设备上的钥匙丢了），这里打不开。在原来那台设备的 /凭证 里点「恢复码」，把那串字填在下面；没有的话可以清空重来（旧文件会留一份备份）。</p>' +
+      '<label for="sc-code">恢复码</label><input type="text" id="sc-code" placeholder="xxxx-xxxx-…（64 个字符）" autocomplete="off"><div class="acts"><button class="btn pri" id="sc-unlock">解开</button><button class="btn" id="sc-reset">清空重来</button><span id="sc-msg"></span></div>';
+    $('sc-unlock').onclick = async () => { const m = $('sc-msg'); try { const x = await api('/secrets/unlock', {method:'POST', json:{code:$('sc-code').value}}); toast('解开了：' + x.count + ' 条凭证'); openSecrets(); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+    $('sc-reset').onclick = async e => { const b = e.currentTarget; if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次：清空'; b.classList.add('danger'); return; } try { await api('/secrets/unlock', {method:'POST', json:{reset:true}}); toast('清空了，重新填吧'); openSecrets(); } catch(x){ toast(esc(x.message || x), true); } };
+    return;
+  }
   const mask = v => v ? v.slice(0, 3) + '•'.repeat(Math.min(12, Math.max(4, v.length - 5))) + (v.length > 8 ? v.slice(-2) : '') : '';
-  box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备（库的 .litmus/local/ 里），不同步、不进 git。</p>' +
+  const where = {keychain:'钥匙在系统钥匙串里', file:'钥匙在你的用户目录里（~/.config/litmus/keys）', env:'钥匙来自环境变量 LITMUS_SECRETS_KEY'}[sst.key] || '';
+  box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备，不同步、不进 git；加密存放' + (where ? '，' + where : '') + '，库文件夹或备份被拿走也打不开。</p>' +
     (list.length ? list.map((s, i) => '<div class="row"><div class="grow"><span>' + esc(s.name) + '</span><small data-v="' + i + '">' + esc(mask(s.value)) + (s.note ? ' · ' + esc(s.note) : '') + '</small></div><button class="btn" data-show="' + i + '">显示</button><button class="btn" data-copy="' + i + '">复制</button><button class="btn" data-del="' + i + '">删除</button></div>').join('') : '<p class="empty">还没有凭证。</p>') +
     '<label for="sc-n">新增或更新（同名会覆盖）</label><input type="text" id="sc-n" placeholder="名字，比如 openai" autocomplete="off"><input type="password" id="sc-v" placeholder="值" autocomplete="new-password" style="margin-top:8px"><input type="text" id="sc-note" placeholder="备注（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="sc-go">保存</button><span id="sc-msg"></span></div>';
+  box.insertAdjacentHTML('beforeend', '<details class="more"><summary>换设备、恢复备份时用的恢复码</summary><p class="hint">在新设备上恢复了这个库（或它的备份）以后，凭证库要用恢复码解开。恢复码等于钥匙本身，像密码一样保管。</p><div class="acts"><button class="btn" id="sc-rec">显示恢复码</button><code id="sc-code-v" style="font:400 var(--fs-2) var(--f-mono);word-break:break-all"></code></div></details>');
+  $('sc-rec').onclick = async () => { try { const x = await api('/secrets/recovery'); $('sc-code-v').textContent = x.code; } catch(e){ toast(esc(e.message || e), true); } };
   box.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const i = +b.dataset.show, sm = box.querySelector('[data-v="' + i + '"]'), s = list[i]; const on = b.textContent === '显示'; sm.textContent = (on ? s.value : mask(s.value)) + (s.note ? ' · ' + s.note : ''); b.textContent = on ? '隐藏' : '显示'; });
   box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(list[+b.dataset.copy].value); toast('已复制 <b>' + esc(list[+b.dataset.copy].name) + '</b>'); } catch(e){ toast('复制失败：先点「显示」再手动复制', true); } });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {

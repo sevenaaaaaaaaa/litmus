@@ -203,6 +203,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/crystal", post(field::crystal))
         .route("/field/note", post(field::note))
         .route("/field/ai", get(field::ai_get).post(field::ai_put))
+        .route("/field/ai/move-key", post(field::ai_move_key))
         .route("/field/ai/test", post(field::ai_test))
         .route("/field/region", post(field::region_rename))
         .route("/field/organize", post(field::organize_plan))
@@ -331,6 +332,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/backup/run", post(backup_run))
         .route("/backup/status", get(backup_status))
         .route("/secrets", get(secrets_list).post(secrets_put).delete(secrets_delete))
+        .route("/secrets/recovery", get(secrets_recovery))
+        .route("/secrets/unlock", post(secrets_unlock))
         .route("/doc", get(get_doc).put(put_doc).delete(delete_doc))
         .route("/asset", post(post_asset))
         .route("/sync", post(sync))
@@ -2104,10 +2107,6 @@ async fn rag_status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
 // 文件真相：.litmus/local/secrets.json（unix 0600，.litmus/local 天然不入 git）。
 // 与 machine.toml 的 token 同一威胁模型——拿到磁盘/TOKEN 的人本就能读到一切。
 
-fn secrets_path(vault_root: &std::path::Path) -> std::path::PathBuf {
-    vault_root.join(".litmus/local").join("secrets.json")
-}
-
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2115,36 +2114,22 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 0.22 起凭证库加密存放（kernel_store::secrets）：密文在 .litmus/local/secrets.json，钥匙在系统钥匙串或用户目录。
 fn secrets_load(vault_root: &std::path::Path) -> Vec<Value> {
-    std::fs::read_to_string(secrets_path(vault_root))
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| v.get("secrets").and_then(|s| s.as_array()).cloned())
-        .unwrap_or_default()
+    kernel_core::secrets::load(vault_root)
 }
 
 fn secrets_save(vault_root: &std::path::Path, rows: &[Value]) -> Result<(), String> {
-    let p = secrets_path(vault_root);
-    if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let body = json!({ "secrets": rows, "updatedAt": now_ms() });
-    std::fs::write(&p, serde_json::to_string_pretty(&body).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+    kernel_core::secrets::save(vault_root, rows)
 }
 
 async fn secrets_list(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
-    let rows = { let k = st.kernel.lock().unwrap(); secrets_load(&k.vault.root) };
-    Json(json!({ "secrets": rows })).into_response()
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let rows = secrets_load(&root);
+    Json(json!({ "secrets": rows, "state": kernel_core::secrets::state(&root) })).into_response()
 }
 
 async fn secrets_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
@@ -2195,6 +2180,48 @@ async fn secrets_delete(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q):
         }
     };
     Json(json!({ "ok": true, "removed": removed })).into_response()
+}
+
+/// GET /secrets/recovery：恢复码（就是钥匙），换设备时带过去
+async fn secrets_recovery(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    match kernel_core::secrets::recovery_code(&root) {
+        Ok(code) => {
+            audit_log(&root.join(".litmus/local"), "secrets-recovery-shown", &json!({}));
+            Json(json!({ "code": code })).into_response()
+        }
+        Err(e) => err(StatusCode::CONFLICT, e).into_response(),
+    }
+}
+
+/// POST /secrets/unlock {code}：用另一台设备的恢复码解开；POST /secrets/reset：锁着又没恢复码时清空重来
+async fn secrets_unlock(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let r = if req.get("reset").and_then(|v| v.as_bool()).unwrap_or(false) {
+        kernel_core::secrets::reset(&root).map(|_| 0)
+    } else {
+        kernel_core::secrets::unlock(&root, req.get("code").and_then(|v| v.as_str()).unwrap_or(""))
+    };
+    match r {
+        Ok(n) => {
+            // 模型密钥可能就在里面：解开后补上
+            let mut k = st.kernel.lock().unwrap();
+            if let Some(ai) = k.vault.config.ai.as_mut() {
+                if ai.api_key.is_empty() {
+                    if let Some(key) = kernel_core::secrets::get(&root, "ai_api_key") { ai.api_key = key; }
+                }
+            }
+            Json(json!({ "ok": true, "count": n })).into_response()
+        }
+        Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
+    }
 }
 
 async fn search(
@@ -2771,6 +2798,13 @@ pub fn spawn_watcher(state: Arc<AppState>) -> anyhow::Result<()> {
 
 /// 打开库并构建状态。
 pub fn build_state(vault: Vault) -> anyhow::Result<Arc<AppState>> {
+    // 测试里别碰真的钥匙串和用户目录
+    #[cfg(test)]
+    if std::env::var_os("LITMUS_KEYS_DIR").is_none() {
+        let d = std::env::temp_dir().join(format!("litmus-test-keys-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&d);
+        std::env::set_var("LITMUS_KEYS_DIR", d);
+    }
     let machine = vault.ensure_machine()?;
     let kernel = Arc::new(Mutex::new(Kernel::open(vault)?));
     let mcp = Arc::new(litmus_mcp::McpServer::new(kernel.clone()));

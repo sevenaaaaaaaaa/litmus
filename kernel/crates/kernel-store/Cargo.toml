@@ -15,6 +15,7 @@ ulid.workspace = true
 thiserror.workspace = true
 walkdir.workspace = true
 rusqlite.workspace = true
+ring.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

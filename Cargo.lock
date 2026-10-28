@@ -3084,6 +3084,7 @@ version = "0.21.0"
 dependencies = [
  "hex",
  "kernel-md",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",

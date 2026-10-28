@@ -2,6 +2,7 @@
 //!
 //! 真相区（Notes/ Assets/ litmus.toml）用户可直改；sidecar（.litmus/local/）可随时删除重建。
 
+pub mod secrets;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -380,7 +381,15 @@ impl Vault {
             return Err(StoreError::NotAVault(root));
         }
         let raw = fs::read_to_string(&cfg_path)?;
-        let config: VaultConfig = toml::from_str(&raw).map_err(|e| StoreError::Config(e.to_string()))?;
+        let mut config: VaultConfig = toml::from_str(&raw).map_err(|e| StoreError::Config(e.to_string()))?;
+        // 模型密钥 0.22 起放进加密的凭证库（不随库同步）；litmus.toml 里没写就去凭证库拿
+        if let Some(ai) = config.ai.as_mut() {
+            if ai.api_key.is_empty() {
+                if let Some(k) = secrets::get(&root, "ai_api_key") {
+                    ai.api_key = k;
+                }
+            }
+        }
         Ok(Vault { root, config })
     }
 

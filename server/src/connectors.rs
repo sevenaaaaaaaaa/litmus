@@ -220,6 +220,10 @@ fn scan_github(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
             if out.len() >= MAX_ITEMS {
                 break;
             }
+            if !super::sources::scan_go() {
+                fails = 5;
+                break 'repos;
+            }
             let id = format!("{full}/{path}");
             let key = format!("ext:{}/{id}", s.id);
             seen.insert(key.clone());
@@ -247,15 +251,15 @@ fn scan_github(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
             out.push(item(root, s, &id, &title, &text, "md", &loc, pushed, Some(sha)));
         }
     }
-    if let Some(e) = first_err {
+    if let Some(e) = first_err.as_ref() {
         if out.is_empty() && prev.is_empty() {
-            return Err(e);
+            return Err(e.clone());
         }
-        // 半路停下：上次扫到、这次没轮到的照旧留着
-        if fails >= 5 {
-            for (k, it) in prev {
-                if !seen.contains(k) && out.len() < MAX_ITEMS { out.push(it.clone()); }
-            }
+    }
+    // 半路停下（连着出错或你点了停下）：上次扫到、这次没轮到的照旧留着
+    if fails >= 5 {
+        for (k, it) in prev {
+            if !seen.contains(k) && out.len() < MAX_ITEMS { out.push(it.clone()); }
         }
     }
     Ok(out)
@@ -424,6 +428,7 @@ fn scan_sanity(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
     let docs = v["result"].as_array().cloned().unwrap_or_default();
     let mut out = Vec::new();
     for d in docs.iter().take(MAX_ITEMS) {
+        if !super::sources::scan_go() { break; }
         let Some(id) = d["_id"].as_str() else { continue };
         let key = format!("ext:{}/{id}", s.id);
         let rev = d["_rev"].as_str().map(String::from);
@@ -630,6 +635,7 @@ fn scan_mflow(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<V
     files.dedup_by(|a, b| a.1 == b.1);
     let mut out = Vec::new();
     for (label, path, date) in files.into_iter().take(MAX_ITEMS) {
+        if !super::sources::scan_go() { break; }
         let key = format!("ext:{}/{path}", s.id);
         if let Some(old) = prev.get(&key).filter(|o| !date.is_empty() && o.etag.as_deref() == Some(date.as_str())) {
             out.push(old.clone());
@@ -792,6 +798,7 @@ fn scan_notion(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
     }
     let mut out = Vec::new();
     for p in pages.iter().take(800) {
+        if !super::sources::scan_go() { break; }
         let Some(id) = p["id"].as_str() else { continue };
         if p["archived"] == true || p["in_trash"] == true {
             continue;
@@ -959,6 +966,7 @@ fn scan_openflow(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Resul
             }
         }
         for (id, a) in seen.into_iter().take(MAX_ITEMS) {
+            if !super::sources::scan_go() { break; }
             let key = format!("ext:{}/article/{id}", s.id);
             let upd = a["updated_at"].as_str().unwrap_or("").to_string();
             if let Some(old) = prev.get(&key).filter(|o| !upd.is_empty() && o.etag.as_deref() == Some(upd.as_str())) {

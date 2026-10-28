@@ -455,6 +455,30 @@ impl<'a> Ctl<'a> {
     }
 }
 
+thread_local! {
+    /// 这个扫描线程正在扫哪个来源：接口类的扫描器没有 Ctl，靠它在循环里问一声要不要停
+    static CUR_SCAN: std::cell::RefCell<Option<(String, usize)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 接口类扫描器在每条之间调一下：暂停就在这等；返回 false 表示该停了（已拿到的照样留着）
+pub fn scan_go() -> bool {
+    let Some((id, n)) = CUR_SCAN.with(|c| c.borrow().clone()) else { return true };
+    CUR_SCAN.with(|c| if let Some(x) = c.borrow_mut().as_mut() { x.1 += 1 });
+    if let Some(x) = scans().lock().unwrap().get_mut(&id) {
+        x.seen = n + 1;
+    }
+    loop {
+        let (stop, paused) = scans().lock().unwrap().get(&id).map(|x| (x.stop, x.paused)).unwrap_or((false, false));
+        if stop {
+            return false;
+        }
+        if !paused {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+}
+
 /// 后台干重活的线程：调低优先级，前台（打字、翻页、铺场）永远先走。
 pub fn spawn_background(name: &str, f: impl FnOnce() + Send + 'static) {
     let _ = std::thread::Builder::new().name(name.to_string()).spawn(move || {
@@ -694,6 +718,7 @@ fn scan_mcp(root: &Path, st: &Arc<AppState>, s: &Source) -> Result<Vec<Item>, St
     let list = c.list_resources().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for r in list.into_iter().take(800) {
+        if !scan_go() { break; }
         let Some(uri) = r.get("uri").and_then(|u| u.as_str()) else { continue };
         let Ok(v) = c.read_resource(uri) else { continue };
         let Some(text) = litmus_mcp::client::extract_text(&v) else { continue };
@@ -867,6 +892,7 @@ fn scan_google(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
                 let q = s.query.clone().unwrap_or_else(|| "mimeType='application/vnd.google-apps.document' and trashed=false".into());
                 let list = get(&format!("{}/files?pageSize=200&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,mimeType,webViewLink)&q={}", google_base("drive"), enc(&q)))?;
                 for f in list.get("files").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+                    if !scan_go() { break; }
                     let id = f["id"].as_str().unwrap_or("").to_string();
                     let text = client.get(format!("{}/files/{id}/export?mimeType=text/markdown", google_base("drive"))).bearer_auth(&token).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.text().ok()).unwrap_or_default();
                     let title = f["name"].as_str().unwrap_or("文档").to_string();
@@ -878,6 +904,7 @@ fn scan_google(root: &Path, s: &Source) -> Result<Vec<Item>, String> {
                 let q = s.query.clone().unwrap_or_else(|| "newer_than:90d -category:promotions".into());
                 let list = get(&format!("{}/users/me/messages?maxResults=150&q={}", google_base("gmail"), enc(&q)))?;
                 for m in list.get("messages").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+                    if !scan_go() { break; }
                     let id = m["id"].as_str().unwrap_or("").to_string();
                     let Ok(full) = get(&format!("{}/users/me/messages/{id}?format=full", google_base("gmail"))) else { continue };
                     let header = |n: &str| full.pointer("/payload/headers").and_then(|h| h.as_array()).and_then(|a| a.iter().find(|x| x["name"].as_str().map(|s| s.eq_ignore_ascii_case(n)).unwrap_or(false))).and_then(|x| x["value"].as_str()).unwrap_or("").to_string();
@@ -1090,7 +1117,8 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
         if sc.get(&id).map(|x| x.running).unwrap_or(false) {
             return false;
         }
-        let controllable = matches!(s.kind.as_str(), "folder" | "agent");
+        // REST 是一次请求拿完，没有中途可停的地方；其他的都逐条问 scan_go / Ctl
+        let controllable = s.kind != "rest";
         sc.insert(id.clone(), ScanState { running: true, started: now_secs(), phase: "排队".into(), controllable, ..Default::default() });
     }
     let st2 = st.clone();
@@ -1120,6 +1148,7 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
             }
         };
         let ctl = Ctl { id: &s.id, flush: &flush, last: std::cell::Cell::new(std::time::Instant::now()), flushed: std::cell::Cell::new(0) };
+        CUR_SCAN.with(|c| *c.borrow_mut() = Some((s.id.clone(), 0)));
         let r = match s.kind.as_str() {
             "folder" => scan_folder(&root, &s, &prev, &ctl),
             "agent" => scan_agent(&root, &s, &prev, &ctl),

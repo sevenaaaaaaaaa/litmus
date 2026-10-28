@@ -16,7 +16,7 @@ pub use kernel_md::{Block, DocModel, from_markdown, to_html, to_markdown};
 pub use kernel_md::tidy;
 pub use kernel_store::{
     AiConfig, BrowserConfig, Cas, ConnectionConfig, PublishConfig, PublishTarget, StoreError, Vault,
-    VaultConfig, events_dir, is_vault_dir, list_docs, migrate_legacy_layout, new_doc_id, refs,
+    VaultConfig, events_dir, is_vault_dir, list_docs, migrate_legacy_layout, new_doc_id, refs, secrets,
 };
 pub use kernel_sync::{OpLog, SyncError, VERBATIM_EXTS, is_html_rel, is_verbatim_rel};
 

@@ -789,6 +789,8 @@ pub async fn ai_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
         "base_url": ai.base_url,
         "model": ai.model,
         "has_key": !ai.api_key.is_empty(),
+        // 密钥还写在随库同步的 litmus.toml 里（0.21 及以前的做法）：界面上提示挪进凭证库
+        "key_in_toml": toml_has_key(&st.kernel.lock().unwrap().vault.root.join("litmus.toml")),
         "key_from_env": ai.api_key.is_empty() && std::env::var("LITMUS_AI_API_KEY").or_else(|_| std::env::var("THIRDC_AI_API_KEY")).map(|v| !v.is_empty()).unwrap_or(false),
     }))
     .into_response()
@@ -805,6 +807,7 @@ pub fn write_ai_config(cfg_path: &std::path::Path, base_url: &str, model: &str, 
     let t = doc["ai"].as_table_mut().ok_or("litmus.toml 里的 ai 不是一个表")?;
     t["base_url"] = toml_edit::value(base_url);
     t["model"] = toml_edit::value(model);
+    // Some("") = 清掉（密钥在凭证库里）；None = 不动
     if let Some(k) = api_key {
         t["api_key"] = toml_edit::value(k);
     } else if !t.contains_key("api_key") {
@@ -831,7 +834,13 @@ pub async fn ai_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
     }
     let mut k = st.kernel.lock().unwrap();
     let cfg_path = k.vault.root.join("litmus.toml");
-    if let Err(e) = write_ai_config(&cfg_path, &base_url, &model, key.as_deref()) {
+    // 新填的密钥进加密的凭证库，只在这台设备；litmus.toml 里的旧密钥一并拿掉（它会随库同步）
+    if let Some(key) = key.as_deref() {
+        if let Err(e) = kernel_core::secrets::put(&k.vault.root, "ai_api_key", key, "模型接口密钥（/设置）") {
+            return err(StatusCode::CONFLICT, e).into_response();
+        }
+    }
+    if let Err(e) = write_ai_config(&cfg_path, &base_url, &model, key.as_ref().map(|_| "")) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
     let mut ai = k.vault.config.ai.clone().unwrap_or_default();
@@ -841,6 +850,29 @@ pub async fn ai_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
         ai.api_key = key;
     }
     k.vault.config.ai = Some(ai);
+    Json(json!({ "ok": true })).into_response()
+}
+
+fn toml_has_key(cfg_path: &std::path::Path) -> bool {
+    std::fs::read_to_string(cfg_path).ok().and_then(|raw| raw.parse::<toml_edit::DocumentMut>().ok()).and_then(|d| d.get("ai").and_then(|a| a.get("api_key")).and_then(|k| k.as_str()).map(|k| !k.is_empty())).unwrap_or(false)
+}
+
+/// POST /field/ai/move-key：把 litmus.toml 里的模型密钥挪进凭证库
+pub async fn ai_move_key(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let k = st.kernel.lock().unwrap();
+    let cfg_path = k.vault.root.join("litmus.toml");
+    let key = std::fs::read_to_string(&cfg_path).ok().and_then(|raw| raw.parse::<toml_edit::DocumentMut>().ok()).and_then(|d| d.get("ai").and_then(|a| a.get("api_key")).and_then(|v| v.as_str()).map(String::from)).filter(|v| !v.is_empty());
+    let Some(key) = key else { return err(StatusCode::CONFLICT, "litmus.toml 里没有密钥").into_response() };
+    let ai = k.vault.config.ai.clone().unwrap_or_default();
+    if let Err(e) = kernel_core::secrets::put(&k.vault.root, "ai_api_key", &key, "模型接口密钥（/设置）") {
+        return err(StatusCode::CONFLICT, e).into_response();
+    }
+    if let Err(e) = write_ai_config(&cfg_path, &ai.base_url, &ai.model, Some("")) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -1318,12 +1350,15 @@ mod api_tests {
         assert_eq!(g["configured"], true);
         assert_eq!(g["has_key"], true);
         assert!(g.get("api_key").is_none(), "不回明文密钥");
+        // 密钥进加密的凭证库，不写进随库同步的 litmus.toml
+        assert!(!after.contains("sk-test"));
         // 再存一次不带密钥：原密钥保留
         let (_, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"https://api.example.com/v1","model":"demo-2"}"#).await;
-        assert!(std::fs::read_to_string(&cfg).unwrap().contains("sk-test"));
-        // 重新打开库：配置能被内核读回
+        assert_eq!(kernel_core::secrets::get(dir.path(), "ai_api_key").as_deref(), Some("sk-test"));
+        // 重新打开库：配置能被内核读回，密钥从凭证库补上
         let v = kernel_core::Vault::open(dir.path()).unwrap();
-        assert_eq!(v.config.ai.unwrap().model, "demo-2");
+        let ai = v.config.ai.unwrap();
+        assert_eq!((ai.model.as_str(), ai.api_key.as_str()), ("demo-2", "sk-test"));
     }
 
     #[tokio::test]
@@ -2601,6 +2636,41 @@ for line in sys.stdin:
         let big = "x".repeat(3 << 20);
         let (st, _) = call(&app, &t, "POST", "/asset?name=big.bin", &big).await;
         assert_eq!(st, 200, "大请求体不该被拒");
+    }
+
+    /// 凭证库加密：明文迁移、文件里看不到值；模型密钥存进凭证库而不是随库同步的 litmus.toml；恢复码
+    #[tokio::test]
+    async fn secrets_are_encrypted_and_ai_key_leaves_litmus_toml() {
+        let (app, t, dir) = app();
+        let root = dir.path();
+        std::fs::write(root.join(".litmus/local/secrets.json"), r#"{"secrets":[{"name":"openai","value":"sk-old"}]}"#).unwrap();
+        let (_, r) = call(&app, &t, "GET", "/secrets", "").await;
+        assert_eq!(r["secrets"][0]["value"], "sk-old");
+        assert_eq!(r["state"]["encrypted"], true);
+        let raw = std::fs::read_to_string(root.join(".litmus/local/secrets.json")).unwrap();
+        assert!(!raw.contains("sk-old"), "读一次就该加密：{raw}");
+        // 旧做法：密钥写在 litmus.toml
+        let cfg = root.join("litmus.toml");
+        let mut toml = std::fs::read_to_string(&cfg).unwrap();
+        toml.push_str("\n[ai]\nbase_url = \"http://127.0.0.1:9\"\nmodel = \"m\"\napi_key = \"sk-in-toml\"\n");
+        std::fs::write(&cfg, toml).unwrap();
+        let (_, a) = call(&app, &t, "GET", "/field/ai", "").await;
+        let _ = a;
+        let (st, _) = call(&app, &t, "POST", "/field/ai/move-key", "").await;
+        assert_eq!(st, 200);
+        assert!(!std::fs::read_to_string(&cfg).unwrap().contains("sk-in-toml"));
+        // 新填的密钥也只进凭证库
+        let (st, _) = call(&app, &t, "POST", "/field/ai", r#"{"base_url":"http://127.0.0.1:9","model":"m","api_key":"sk-new"}"#).await;
+        assert_eq!(st, 200);
+        assert!(!std::fs::read_to_string(&cfg).unwrap().contains("sk-new"));
+        assert_eq!(kernel_core::secrets::get(root, "ai_api_key").as_deref(), Some("sk-new"));
+        let v = kernel_core::Vault::open(root).unwrap();
+        assert_eq!(v.config.ai.unwrap().api_key, "sk-new", "打开库时从凭证库拿密钥");
+        let (_, a) = call(&app, &t, "GET", "/field/ai", "").await;
+        assert_eq!((a["has_key"].as_bool(), a["key_in_toml"].as_bool()), (Some(true), Some(false)));
+        let (st, c) = call(&app, &t, "GET", "/secrets/recovery", "").await;
+        assert_eq!(st, 200);
+        assert_eq!(c["code"].as_str().unwrap().chars().filter(|c| c.is_ascii_hexdigit()).count(), 64);
     }
 
     #[tokio::test]
