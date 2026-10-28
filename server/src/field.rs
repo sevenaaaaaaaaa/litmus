@@ -1989,7 +1989,7 @@ for line in sys.stdin:
         let script = root.join("notion_mock.py");
         std::fs::write(&script, NOTION_MOCK).unwrap();
         let (_, pres) = call(&app, &token, "GET", "/connectors", "").await;
-        assert_eq!(pres["presets"].as_array().unwrap().len(), 5);
+        assert_eq!(pres["presets"].as_array().unwrap().len(), 8);
         let srcs = [
             serde_json::json!({"kind": "github", "name": "GitHub", "conf": {"api_base": format!("{base}/gh"), "write": {"repo": "me/proj", "dir": "docs/litmus"}}}),
             serde_json::json!({"kind": "sanity", "name": "Sanity", "conf": {"project": "p1", "api_base": format!("{base}/sanity"), "write": {"type": "post"}}}),
@@ -2074,6 +2074,142 @@ for line in sys.stdin:
         let (_, t) = call(&app, &token, "POST", "/connectors/test", &serde_json::json!({"id": ids[3]}).to_string()).await;
         assert_eq!(t["ok"], false);
         assert!(t["message"].as_str().unwrap().contains("鉴权") && t["message"].as_str().unwrap().contains("API Key 无效"), "{t}");
+    }
+
+    /// 假的 WebsFlow（工具 API）、PayFlow（v1）、inFlow（REST）
+    async fn mock_flows() -> (String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+        use axum::{extract::Query as Q, http::HeaderMap as H, routing::{get, post}, Router};
+        let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let (g1, g2) = (got.clone(), got.clone());
+        let app = Router::new()
+            .route("/webflow/api/tools/call", post(move |h: H, body: axum::body::Bytes| { let g = g1.clone(); async move {
+                if h.get("authorization").map(|x| x.to_str().unwrap()) != Some("Bearer wfk_test") {
+                    return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"ok": false, "error": "密钥无效"})));
+                }
+                let m: Value = serde_json::from_slice(&body).unwrap();
+                let a = &m["args"];
+                let r = match m["name"].as_str().unwrap_or("") {
+                    "list_pages" => serde_json::json!({"pages": [
+                        {"id": "p1", "name": "咖啡新品落地页", "mode": "site", "published": true, "url": "/webflow/p/tok1", "updated_at": "2026-10-20 09:00:00"},
+                        {"id": "p2", "name": "训练营报名", "mode": "h5", "published": false, "url": null, "updated_at": "2026-10-21 09:00:00"}]}),
+                    "get_page" => serde_json::json!({"id": a["project_id"], "blocks": [{"id": "b1", "type": "hero", "summary": "七天学会增长", "hidden": false}, {"id": "b2", "type": "faq", "summary": "藏起来的", "hidden": true}]}),
+                    "page_stats" => serde_json::json!({"days": 14, "views": 1200, "clicks": 96, "leads": 7, "cvr": 8.0}),
+                    "lessons_summary" => serde_json::json!({"summary": [{"scene": "landing-page-cvr", "action_label": "标题更具体", "wins": 3, "decided": 4, "winRate": 0.75}]}),
+                    "create_page" => { g.lock().unwrap().push(serde_json::json!({"to": "websflow", "args": a})); serde_json::json!({"id": "p_new", "name": a["name"], "url": null}) }
+                    _ => return (axum::http::StatusCode::NOT_FOUND, axum::Json(serde_json::json!({"ok": false, "error": "未知工具"}))),
+                };
+                (axum::http::StatusCode::OK, axum::Json(serde_json::json!({"ok": true, "result": r})))
+            } }))
+            .route("/webflow/p/tok1", get(|| async { axum::response::Html("<html><body><h1>精品咖啡，第一杯半价</h1><p>每天早上八点前下单，十分钟送到。</p></body></html>") }))
+            .route("/payflow/api/v1/products", get(|h: H| async move {
+                if h.get("authorization").map(|x| x.to_str().unwrap()) != Some("Bearer pfk_1.sec") { return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(serde_json::json!({"ok": false, "error": "unauthorized"}))); }
+                (axum::http::StatusCode::OK, axum::Json(serde_json::json!({"ok": true, "products": [{"id": "prod_1", "name": "增长手册", "slug": "growth-book", "type": "one_time", "amount_cents": 9900, "currency": "CNY", "interval": null}, {"id": "prod_2", "name": "会员", "slug": "vip", "type": "subscription", "amount_cents": 2900, "currency": "CNY", "interval": "month"}]}))) }))
+            .route("/payflow/api/v1/analytics/summary", get(|Q(q): Q<std::collections::HashMap<String, String>>| async move { axum::Json(serde_json::json!({"ok": true, "summary": {"days": q.get("days").and_then(|d| d.parse::<u64>().ok()), "created": 40, "paid": 30, "delivered": 29, "refunded": 1, "gmv_cents": 297000, "aov_cents": 9900, "refund_cents": 9900, "discount_cents": 0, "conversion_rate": 75.0, "new_customers": 25,
+                "channels": {"alipay": {"count": 20, "gmv": 198000}}, "subscriptions": {"active": 12, "past_due": 1, "canceled": 2, "mrr_cents": 34800}, "commission": {"pending": 1000, "available": 0, "paid": 500, "reversed": 0}}})) }))
+            .route("/inflow/api/v1/workspaces", get(|| async { axum::Json(serde_json::json!({"workspaces": [{"id": "ws1", "name": "鹿蕊官网", "stage": "growth", "maturity": "l2"}]})) }))
+            .route("/inflow/api/v1/insights", get(|| async { axum::Json(serde_json::json!({"insights": [
+                {"id": "ins_1", "workspace_id": "ws1", "type": "competitor_move", "title": "竞品降价 20%", "summary": "竞品 A 把专业版从 99 降到 79。", "severity": "high", "confidence": 0.82, "evidence_json": [{"source": "serper", "url": "https://a.example/pricing"}], "actions_json": [{"action_type": "mflow.create_content", "description": "写一篇对比文"}], "status": "new", "created_at": "2026-10-25T03:00:00"},
+                {"id": "ins_2", "workspace_id": "ws1", "type": "traffic_anomaly", "title": "忽略掉的", "summary": "x", "severity": "low", "confidence": 0.3, "evidence_json": [], "actions_json": [], "status": "dismissed", "created_at": "2026-10-24T03:00:00"}]})) }))
+            .route("/inflow/api/v1/agent/notes", get(|| async { axum::Json(serde_json::json!({"notes": [
+                {"id": "n1", "title": "品牌词口径", "body": "对外统一叫鹿蕊。", "tags_json": "[\"品牌\"]", "author": "user", "version": 2, "updated_at": "2026-10-26T00:00:00"},
+                {"id": "n2", "title": "从鹿蕊发过来的", "body": "x", "tags_json": "[]", "author": "litmus", "version": 1, "updated_at": "2026-10-26T00:00:00"}], "total": 2})) })
+                .post(move |body: axum::body::Bytes| { let g = g2.clone(); async move {
+                    let v: Value = serde_json::from_slice(&body).unwrap();
+                    g.lock().unwrap().push(serde_json::json!({"to": "inflow", "body": v.clone()}));
+                    axum::Json(serde_json::json!({"ok": true, "note": {"id": "n_new", "version": 1, "title": v["title"]}})) } }));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        (format!("http://{addr}"), got)
+    }
+
+    #[tokio::test]
+    async fn flows_read_in_and_publish_back() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        let (base, got) = mock_flows().await;
+        for (n, v) in [("websflow_api_key", "wfk_test"), ("payflow_api_key", "pfk_1.sec")] {
+            let (st, _) = call(&app, &token, "POST", "/secrets", &serde_json::json!({"name": n, "value": v}).to_string()).await;
+            assert_eq!(st, 200);
+        }
+        let srcs = [
+            serde_json::json!({"kind": "websflow", "name": "WebsFlow", "conf": {"url": format!("{base}/webflow")}}),
+            serde_json::json!({"kind": "payflow", "name": "PayFlow", "conf": {"url": format!("{base}/payflow"), "days": "7"}}),
+            serde_json::json!({"kind": "inflow", "name": "inFlow", "conf": {"url": format!("{base}/inflow")}}),
+        ];
+        let mut ids = Vec::new();
+        for s in &srcs {
+            let (st, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": s}).to_string()).await;
+            assert_eq!(st, 200, "{r}");
+            let id = r["source"]["id"].as_str().unwrap().to_string();
+            let (_, t) = call(&app, &token, "POST", "/connectors/test", &serde_json::json!({"id": id}).to_string()).await;
+            assert_eq!(t["ok"], true, "{s} → {t}");
+            let (st, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+            assert_eq!(st, 200);
+            ids.push(id);
+        }
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        let (_, list) = call(&app, &token, "GET", "/sources", "").await;
+        for s in list["sources"].as_array().unwrap() {
+            assert!(s["scan"]["error"].is_null(), "{}：{}", s["name"], s["scan"]);
+        }
+        let n = |name: &str| list["sources"].as_array().unwrap().iter().find(|s| s["name"] == name).unwrap()["items"].as_u64().unwrap();
+        assert_eq!(n("WebsFlow"), 3, "两个页面 + 投放经验");
+        assert_eq!(n("PayFlow"), 2, "商品目录 + 经营概览");
+        assert_eq!(n("inFlow"), 2, "洞察 1（忽略的不要）+ 记忆 1（自己发过去的不要）");
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let docs = d["docs"].as_array().unwrap();
+        let get = |t: &str| docs.iter().find(|x| x["t"] == t).unwrap_or_else(|| panic!("{t} 不在场上"))["p"].as_str().unwrap().to_string();
+        let body = |v: Value| v["source"].as_str().unwrap_or("").to_string();
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&get("咖啡新品落地页"))), "").await;
+        let b = body(e);
+        assert!(b.contains("第一杯半价") && b.contains("| 1200 | 96 | 7 | 8.0% |"), "发布了的读整页 + 数据：{b}");
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&get("训练营报名"))), "").await;
+        let b = body(e);
+        assert!(b.contains("hero：七天学会增长") && !b.contains("藏起来的"), "没发布的读模块摘要：{b}");
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&get("PayFlow 经营概览（近 7 天）"))), "").await;
+        let b = body(e);
+        assert!(b.contains("¥2970.00") && b.contains("| 12 | 1 | 2 | ¥348.00 |") && b.contains("alipay"), "{b}");
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&get("PayFlow 商品目录"))), "").await;
+        assert!(body(e).contains("| 会员 | 订阅 | ¥29.00 | 按月 | `vip` |"));
+        let (_, e) = call(&app, &token, "GET", &format!("/field/ext?p={}", urlenc(&get("竞品降价 20%"))), "").await;
+        let b = body(e);
+        assert!(b.contains("置信度：82%") && b.contains("写一篇对比文") && b.contains("a.example/pricing"), "{b}");
+        assert!(docs.iter().any(|x| x["t"] == "品牌词口径"));
+        assert!(docs.iter().all(|x| x["t"] != "忽略掉的" && x["t"] != "从鹿蕊发过来的"));
+        // 发回去：PayFlow 不在可发列表里
+        let (_, c) = call(&app, &token, "GET", "/connectors", "").await;
+        let kinds: Vec<&str> = c["targets"].as_array().unwrap().iter().map(|t| t["kind"].as_str().unwrap()).collect();
+        assert!(kinds.contains(&"websflow") && kinds.contains(&"inflow") && !kinds.contains(&"payflow"), "{kinds:?}");
+        std::fs::create_dir_all(root.join("Notes/方案")).unwrap();
+        std::fs::write(root.join("Notes/方案/秋季活动.md"), "# 秋季活动\n\n第一杯 **半价**，限前 100 名。").unwrap();
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        let (st, r) = call(&app, &token, "POST", "/connectors/publish", &serde_json::json!({"id": ids[1], "path": "Notes/方案/秋季活动.md", "confirm": true}).to_string()).await;
+        assert_eq!(st, 502, "PayFlow 只读：{r}");
+        for id in [&ids[0], &ids[2]] {
+            let (st, r) = call(&app, &token, "POST", "/connectors/publish", &serde_json::json!({"id": id, "path": "Notes/方案/秋季活动.md", "confirm": true}).to_string()).await;
+            assert_eq!(st, 200, "{id}：{r}");
+        }
+        let got = got.lock().unwrap().clone();
+        let wf = got.iter().find(|g| g["to"] == "websflow").unwrap();
+        assert_eq!(wf["args"]["publish"], false, "默认不发布");
+        assert_eq!(wf["args"]["name"], "秋季活动");
+        assert!(wf["args"]["prompt"].as_str().unwrap().contains("限前 100 名"));
+        let inf = got.iter().find(|g| g["to"] == "inflow").unwrap();
+        assert_eq!(inf["body"]["workspace_id"], "ws1");
+        assert_eq!(inf["body"]["author"], "litmus");
+        assert!(inf["body"]["note_key"].as_str().unwrap().starts_with("litmus-"));
+        assert!(inf["body"]["body"].as_str().unwrap().starts_with("第一杯"), "正文不重复标题");
+        // 错的 WebsFlow 密钥：说清楚是密钥
+        let (_, _) = call(&app, &token, "POST", "/secrets", r#"{"name":"websflow_api_key","value":"wrong"}"#).await;
+        let (_, t) = call(&app, &token, "POST", "/connectors/test", &serde_json::json!({"id": ids[0]}).to_string()).await;
+        assert_eq!(t["ok"], false);
+        assert!(t["message"].as_str().unwrap().contains("websflow_api_key"), "{t}");
     }
 
     #[tokio::test]

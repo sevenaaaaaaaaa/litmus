@@ -1,4 +1,4 @@
-//! 对接（0.18）：GitHub、Notion（官方 MCP）、Sanity、OpenFlow、MFlow——接进来，也能发回去。
+//! 对接（0.18 / 0.26）：GitHub、Notion（官方 MCP）、Sanity、OpenFlow、MFlow、WebsFlow、PayFlow（只读）、inFlow——接进来，也能发回去。
 //!
 //! - **接进来**：都是数据源的一种（`kind` = github / notion / sanity / openflow / mflow），内容原处索引、
 //!   在场上出现、能搜能问，值得的再导入或让 AI 学。配置在这台设备（`.litmus/local/sources.json` 的 `conf`），
@@ -107,7 +107,22 @@ pub fn presets() -> Value {
           "secret": "mflow_token", "secret_hint": "MFlow 服务器 run/env.sh 里的 MFLOW_API_TOKEN",
           "fields": [["url", "MFlow 地址（默认 https://nownexts.com/mflow）"], ["only", "只要这些（可选，逗号分隔：知识库名或报告类别）"]],
           "defaults": { "url": "https://nownexts.com/mflow" },
-          "write": [] }
+          "write": [] },
+        { "kind": "websflow", "name": "WebsFlow", "about": "读你的落地页：发布了的读整页正文，没发布的读模块摘要，再带上近 14 天的曝光、点击、线索和平台记下的投放经验。发回去 = 按这篇做一个新页面（默认不发布）。",
+          "secret": "websflow_api_key", "secret_hint": "WebsFlow 控制台「设置 → API 密钥」，wfk_ 开头（读要 read，发回去要 write）",
+          "fields": [["url", "WebsFlow 地址（默认 https://nownexts.com/webflow）"]],
+          "defaults": { "url": "https://nownexts.com/webflow" },
+          "write": [["mode", "做成什么（site 落地页 / h5 / ppt / story，默认 site）"]] },
+        { "kind": "payflow", "name": "PayFlow", "about": "只读：在售商品目录，和近一段时间的经营概览（成交额、订单、订阅、渠道、佣金）。不读买家信息，也不会往 PayFlow 写任何东西。",
+          "secret": "payflow_api_key", "secret_hint": "PayFlow 后台「API」页新建密钥，填 key_id.secret（用沙箱密钥也行，看板数据不含沙箱订单）",
+          "fields": [["url", "PayFlow 地址（默认 https://nownexts.com/payflow）"], ["days", "经营概览看最近几天（默认 30）"]],
+          "defaults": { "url": "https://nownexts.com/payflow" },
+          "write": [] },
+        { "kind": "inflow", "name": "inFlow", "about": "读洞察（带证据、置信度和推荐动作，忽略掉的不要）和工作区记忆。发回去 = 写进工作区记忆，再发同一篇会更新那一条。",
+          "secret": "inflow_api_key", "secret_hint": "inFlow 的 API Key（服务器开了 INSFLOW_API_AUTH 才需要；读要 read，发回去要 write）",
+          "fields": [["url", "inFlow 地址（默认 https://nownexts.com/inflow）"], ["workspace", "只要这些工作区（可选，逗号分隔的 id；留空 = 全部）"]],
+          "defaults": { "url": "https://nownexts.com/inflow" },
+          "write": [["workspace", "写进哪个工作区（id；留空 = 第一个）"]] }
     ])
 }
 
@@ -1017,6 +1032,349 @@ fn openflow_publish(root: &Path, s: &Source, title: &str, md: &str, opts: &Value
     Ok(json!({ "id": id, "published": published, "url": format!("{}/xmp/content-hub?tab=articles", openflow_site(&c)) }))
 }
 
+// ═══════════ WebsFlow（开放工具 API：/api/tools/call） ═══════════
+
+fn wf_base(c: &Value) -> String {
+    cs(c, "url").unwrap_or("https://nownexts.com/webflow").trim_end_matches('/').to_string()
+}
+/// "https://a.com/webflow" → "https://a.com"（托管页地址是 /webflow/p/<token> 这种站内路径）
+fn origin_of(base: &str) -> String {
+    match base.find("://") {
+        Some(i) => base[..i + 3 + base[i + 3..].find('/').unwrap_or(base.len() - i - 3)].to_string(),
+        None => base.to_string(),
+    }
+}
+fn wf_call(client: &reqwest::blocking::Client, base: &str, key: &str, name: &str, args: Value) -> Result<Value, String> {
+    let resp = client.post(format!("{base}/api/tools/call")).bearer_auth(key).json(&json!({ "name": name, "args": args })).send().map_err(|e| format!("连不上 WebsFlow：{e}"))?;
+    let st = resp.status();
+    let v: Value = resp.json().unwrap_or(json!({}));
+    if st.as_u16() == 401 {
+        return Err("WebsFlow 不认这个密钥（/凭证 里的 websflow_api_key，控制台「设置 → API 密钥」里建的 wfk_ 开头那串）".into());
+    }
+    if st.as_u16() == 403 {
+        return Err(format!("WebsFlow 拒绝了：{}（读要 read 权限，发回去要 write）", v["error"].as_str().unwrap_or("密钥权限不够")));
+    }
+    if !st.is_success() || v["ok"] == false {
+        return Err(format!("WebsFlow {name} 没成（{st}）：{}", v["error"].as_str().unwrap_or("")));
+    }
+    Ok(v["result"].clone())
+}
+fn num_s(v: &Value) -> String {
+    match v {
+        Value::Number(n) => n.to_string(),
+        Value::Null => "—".into(),
+        Value::String(s) => s.clone(),
+        x => x.to_string(),
+    }
+}
+
+fn scan_websflow(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<Vec<Item>, String> {
+    let c = conf(s);
+    let base = wf_base(&c);
+    let origin = origin_of(&base);
+    let key = secret(root, "websflow_api_key").ok_or("先在 /凭证 存 websflow_api_key（WebsFlow 控制台「设置 → API 密钥」）")?;
+    let client = http()?;
+    let pages = wf_call(&client, &base, &key, "list_pages", json!({}))?;
+    let today = ymd(now_secs() as i64);
+    let mut out = Vec::new();
+    for p in pages["pages"].as_array().into_iter().flatten().take(MAX_ITEMS) {
+        if !super::sources::scan_go() { break; }
+        let Some(id) = p["id"].as_str().map(String::from).or_else(|| p["id"].as_i64().map(|n| n.to_string())) else { continue };
+        let upd = p["updated_at"].as_str().unwrap_or("").to_string();
+        let published = p["published"] == true;
+        // 数据每天变：同一天、页面没改就不重读
+        let etag = format!("{upd}|{published}|{today}");
+        let key_s = format!("ext:{}/page/{id}", s.id);
+        if let Some(old) = prev.get(&key_s).filter(|o| o.etag.as_deref() == Some(etag.as_str())) {
+            out.push(old.clone());
+            continue;
+        }
+        let name = p["name"].as_str().unwrap_or("WebsFlow 页面").to_string();
+        let url = p["url"].as_str().map(|u| if u.starts_with("http") { u.to_string() } else { format!("{origin}{u}") });
+        let mode = match p["mode"].as_str().unwrap_or("site") { "h5" => "H5", "ppt" => "演示", "story" => "故事线", _ => "落地页" };
+        let mut md = format!("- 形态：{mode}\n- {}\n", if published { format!("已发布：{}", url.clone().unwrap_or_default()) } else { "还没发布".to_string() });
+        // 正文：发布了就读托管页（服务端直出，不会算进访问数据）；没发布只有各模块的摘要
+        let mut body = String::new();
+        if let (true, Some(u)) = (published, url.as_ref()) {
+            if let Ok(r) = client.get(u).send() {
+                if r.status().is_success() {
+                    // 托管页的大标题是转换器拿去当 title 的：放回正文，它往往就是主卖点
+                    if let Ok(cv) = kernel_convert::convert("html", r.text().unwrap_or_default().as_bytes()) {
+                        body = match cv.title.filter(|t| !t.trim().is_empty() && !cv.markdown.contains(t.trim())) {
+                            Some(t) => format!("**{}**\n\n{}", t.trim(), cv.markdown),
+                            None => cv.markdown,
+                        };
+                    }
+                }
+            }
+        }
+        if body.trim().is_empty() {
+            if let Ok(g) = wf_call(&client, &base, &key, "get_page", json!({ "project_id": id })) {
+                let lines: Vec<String> = g["blocks"].as_array().into_iter().flatten().filter(|b| b["hidden"] != true).map(|b| {
+                    let sum = b["summary"].as_str().unwrap_or("").trim();
+                    format!("- {}{}", b["type"].as_str().unwrap_or("模块"), if sum.is_empty() { String::new() } else { format!("：{sum}") })
+                }).collect();
+                if !lines.is_empty() {
+                    body = format!("页面由这些模块组成：\n\n{}", lines.join("\n"));
+                }
+            }
+        }
+        if !body.trim().is_empty() {
+            md.push_str(&format!("\n## 页面内容\n\n{}\n", body.trim()));
+        }
+        if let Ok(st) = wf_call(&client, &base, &key, "page_stats", json!({ "project_id": id, "days": 14 })) {
+            if st.is_object() {
+                md.push_str(&format!("\n## 近 {} 天数据（{today}）\n\n| 曝光 | 点击 | 线索 | 点击率 |\n|---|---|---|---|\n| {} | {} | {} | {} |\n",
+                    num_s(&st["days"]).replace('—', "14"), num_s(&st["views"]), num_s(&st["clicks"]), num_s(&st["leads"]),
+                    if st["cvr"].is_null() { "—".to_string() } else { format!("{}%", num_s(&st["cvr"])) }));
+            }
+        }
+        let t = if upd.len() >= 10 { parse_time(&upd.replace(' ', "T")) } else { now_secs() as i64 };
+        let mut it = item(root, s, &format!("page/{id}"), &name, &md, "page", &url.unwrap_or_else(|| format!("{base}/")), t, Some(etag));
+        it.note = Some(format!("{mode} · {}", if published { "已发布" } else { "草稿" }));
+        out.push(it);
+    }
+    // 平台经验：哪些改法常赢、哪些常输
+    if let Ok(l) = wf_call(&client, &base, &key, "lessons_summary", json!({})) {
+        let rows: Vec<&Value> = l["summary"].as_array().into_iter().flatten().filter(|r| r["decided"].as_u64().unwrap_or(0) > 0).collect();
+        if !rows.is_empty() {
+            let mut md = "WebsFlow 记下的投放经验：同一个场景下，每种改法赢了几次。\n\n| 场景 | 改法 | 赢 / 可判定 | 胜率 |\n|---|---|---|---|\n".to_string();
+            for r in rows.iter().take(200) {
+                let rate = r["winRate"].as_f64().map(|x| format!("{:.0}%", x * 100.0)).unwrap_or("—".into());
+                md.push_str(&format!("| {} | {} | {} / {} | {rate} |\n", r["scene_label"].as_str().or(r["scene"].as_str()).unwrap_or(""), r["action_label"].as_str().or(r["action"].as_str()).unwrap_or(""), num_s(&r["wins"]), num_s(&r["decided"])));
+            }
+            out.push(item(root, s, "lessons", "WebsFlow 投放经验", &md, "lessons", &format!("{base}/"), now_secs() as i64, None));
+        }
+    }
+    if out.is_empty() {
+        return Err("WebsFlow 里还没有页面".into());
+    }
+    Ok(out)
+}
+
+fn websflow_publish(root: &Path, s: &Source, title: &str, md: &str, opts: &Value) -> Result<Value, String> {
+    let c = conf(s);
+    let w = c.get("write").cloned().unwrap_or(json!({}));
+    let base = wf_base(&c);
+    let key = secret(root, "websflow_api_key").ok_or("先在 /凭证 存 websflow_api_key")?;
+    let mode = cs(opts, "mode").or_else(|| cs(&w, "mode")).filter(|m| ["site", "h5", "ppt", "story"].contains(m)).unwrap_or("site");
+    let body: String = body_without_title(md).chars().take(1800).collect();
+    let prompt = format!("按这份资料做一个{}：{title}\n\n{body}", match mode { "h5" => "H5 页面", "ppt" => "演示页", "story" => "故事线页面", _ => "落地页" });
+    let publish = opts["publish"] == true;
+    let r = wf_call(&http()?, &base, &key, "create_page", json!({ "prompt": prompt, "name": title.chars().take(60).collect::<String>(), "mode": mode, "publish": publish }))?;
+    let id = r["id"].as_str().map(String::from).or_else(|| r["id"].as_i64().map(|n| n.to_string())).ok_or_else(|| format!("WebsFlow 没建成：{}", r.to_string().chars().take(200).collect::<String>()))?;
+    let url = r["url"].as_str().map(|u| if u.starts_with("http") { u.to_string() } else { format!("{}{u}", origin_of(&base)) }).unwrap_or_else(|| format!("{base}/"));
+    Ok(json!({ "id": id, "published": publish && r["url"].is_string(), "url": url }))
+}
+
+// ═══════════ PayFlow（开放 API v1，只读：商品与经营汇总） ═══════════
+
+fn pf_base(c: &Value) -> String {
+    cs(c, "url").unwrap_or("https://nownexts.com/payflow").trim_end_matches('/').to_string()
+}
+fn pf_get(client: &reqwest::blocking::Client, url: &str, key: &str) -> Result<Value, String> {
+    let resp = client.get(url).bearer_auth(key).send().map_err(|e| format!("连不上 PayFlow：{e}"))?;
+    let st = resp.status();
+    let v: Value = resp.json().unwrap_or(json!({}));
+    if st.as_u16() == 401 || st.as_u16() == 403 {
+        return Err("PayFlow 不认这个密钥（/凭证 里的 payflow_api_key，格式是 key_id.secret，在 PayFlow 后台「API」页新建）".into());
+    }
+    if st.as_u16() == 429 {
+        return Err("PayFlow 说调得太勤了，过一会儿再扫".into());
+    }
+    if !st.is_success() || v["ok"] == false {
+        return Err(format!("PayFlow 返回 {st}：{}", v["error"].as_str().unwrap_or("")));
+    }
+    Ok(v)
+}
+fn money(cents: &Value, cur: &str) -> String {
+    let n = cents.as_f64().unwrap_or(0.0) / 100.0;
+    let sym = match cur { "CNY" | "" => "¥", "USD" => "$", "EUR" => "€", x => x };
+    format!("{sym}{n:.2}")
+}
+
+fn scan_payflow(root: &Path, s: &Source, _prev: &HashMap<String, Item>) -> Result<Vec<Item>, String> {
+    let c = conf(s);
+    let base = pf_base(&c);
+    let key = secret(root, "payflow_api_key").ok_or("先在 /凭证 存 payflow_api_key（PayFlow 后台「API」页新建，key_id.secret）")?;
+    let days = c.get("days").and_then(|d| d.as_u64().or_else(|| d.as_str().and_then(|x| x.trim().parse().ok()))).unwrap_or(30).clamp(1, 365);
+    let client = http()?;
+    let now = now_secs() as i64;
+    let today = ymd(now);
+    let mut out = Vec::new();
+    let prods = pf_get(&client, &format!("{base}/api/v1/products"), &key)?;
+    let list: Vec<&Value> = prods["products"].as_array().into_iter().flatten().collect();
+    if !list.is_empty() {
+        let mut md = "在售的商品（PayFlow）。\n\n| 商品 | 类型 | 价格 | 周期 | 标识 |\n|---|---|---|---|---|\n".to_string();
+        for p in &list {
+            let ty = match p["type"].as_str().unwrap_or("") { "subscription" => "订阅", "one_time" | "onetime" | "once" => "一次性", "license" => "授权", x => x };
+            let iv = match p["interval"].as_str().unwrap_or("") { "month" | "monthly" => "按月", "year" | "yearly" => "按年", "week" => "按周", "" => "—", x => x };
+            md.push_str(&format!("| {} | {ty} | {} | {iv} | `{}` |\n", p["name"].as_str().unwrap_or("").replace('|', "/"), money(&p["amount_cents"], p["currency"].as_str().unwrap_or("CNY")), p["slug"].as_str().or(p["id"].as_str()).unwrap_or("")));
+        }
+        out.push(item(root, s, "products", "PayFlow 商品目录", &md, "catalog", &format!("{base}/"), now, Some(today.clone())));
+    }
+    let sm = pf_get(&client, &format!("{base}/api/v1/analytics/summary?days={days}"), &key)?;
+    let m = &sm["summary"];
+    if m.is_object() {
+        let cur = "CNY";
+        let mut md = format!("PayFlow 近 {days} 天的经营情况，截至 {today}（不含沙箱订单）。\n\n## 收入\n\n| 成交额 | 客单价 | 退款 | 优惠 |\n|---|---|---|---|\n| {} | {} | {} | {} |\n\n## 订单\n\n| 下单 | 付款 | 已发货 | 退款 | 转化率 | 新客户 |\n|---|---|---|---|---|---|\n| {} | {} | {} | {} | {}% | {} |\n",
+            money(&m["gmv_cents"], cur), money(&m["aov_cents"], cur), money(&m["refund_cents"], cur), money(&m["discount_cents"], cur),
+            num_s(&m["created"]), num_s(&m["paid"]), num_s(&m["delivered"]), num_s(&m["refunded"]), num_s(&m["conversion_rate"]), num_s(&m["new_customers"]));
+        let sub = &m["subscriptions"];
+        if sub.is_object() {
+            md.push_str(&format!("\n## 订阅\n\n| 有效 | 欠费 | 已取消 | 月经常性收入 |\n|---|---|---|---|\n| {} | {} | {} | {} |\n", num_s(&sub["active"]), num_s(&sub["past_due"]), num_s(&sub["canceled"]), money(&sub["mrr_cents"], cur)));
+        }
+        if let Some(ch) = m["channels"].as_object().filter(|o| !o.is_empty()) {
+            md.push_str("\n## 支付渠道\n\n| 渠道 | 笔数 | 成交额 |\n|---|---|---|\n");
+            for (k, v) in ch {
+                md.push_str(&format!("| {k} | {} | {} |\n", num_s(&v["count"]), money(&v["gmv"], cur)));
+            }
+        }
+        let cm = &m["commission"];
+        if cm.is_object() {
+            md.push_str(&format!("\n## 推荐佣金\n\n| 冻结中 | 可提现 | 已付 | 已冲回 |\n|---|---|---|---|\n| {} | {} | {} | {} |\n", money(&cm["pending"], cur), money(&cm["available"], cur), money(&cm["paid"], cur), money(&cm["reversed"], cur)));
+        }
+        let mut it = item(root, s, "summary", &format!("PayFlow 经营概览（近 {days} 天）"), &md, "report", &format!("{base}/"), now, Some(today));
+        it.note = Some(format!("截至 {}", ymd(now)));
+        out.push(it);
+    }
+    if out.is_empty() {
+        return Err("PayFlow 里还没有在售的商品，也没拿到经营汇总".into());
+    }
+    Ok(out)
+}
+
+// ═══════════ inFlow（REST v1：洞察 + 工作区记忆；发回去 = 写进工作区记忆） ═══════════
+
+fn if_base(c: &Value) -> String {
+    cs(c, "url").unwrap_or("https://nownexts.com/inflow").trim_end_matches('/').to_string()
+}
+fn if_req(rb: reqwest::blocking::RequestBuilder, key: Option<&str>) -> Result<Value, String> {
+    let rb = match key { Some(k) => rb.header("X-API-Key", k), None => rb };
+    let resp = rb.send().map_err(|e| format!("连不上 inFlow：{e}"))?;
+    let st = resp.status();
+    if st.as_u16() == 401 || st.as_u16() == 403 {
+        return Err("inFlow 要 API Key：在 /凭证 存 inflow_api_key（inFlow 后台或 POST /api/v1/auth/keys 建，读要 read，发回去要 write）".into());
+    }
+    if st.as_u16() == 404 {
+        return Err("inFlow 找不到这个工作区（「工作区」填的 id 对不上）".into());
+    }
+    if !st.is_success() {
+        return Err(format!("inFlow 返回 {st}"));
+    }
+    resp.json().map_err(|e| format!("inFlow 回的不是 JSON：{e}"))
+}
+/// (id, 名字)
+fn if_workspaces(client: &reqwest::blocking::Client, base: &str, c: &Value, key: Option<&str>) -> Result<Vec<(String, String)>, String> {
+    let want = list_of(c, "workspace");
+    let v = if_req(client.get(format!("{base}/api/v1/workspaces")), key);
+    let all: Vec<(String, String)> = v.as_ref().map(|v| v["workspaces"].as_array().into_iter().flatten().filter_map(|w| Some((w["id"].as_str()?.to_string(), w["name"].as_str().unwrap_or("").to_string()))).collect()).unwrap_or_default();
+    if !want.is_empty() {
+        return Ok(want.into_iter().map(|w| { let n = all.iter().find(|(i, _)| *i == w).map(|x| x.1.clone()).unwrap_or_default(); (w, n) }).collect());
+    }
+    let all = match v { Ok(_) => all, Err(e) => return Err(e) };
+    if all.is_empty() {
+        return Err("inFlow 里还没有工作区".into());
+    }
+    Ok(all)
+}
+fn tags_of(v: &Value, k: &str) -> Vec<String> {
+    let x = &v[k];
+    let arr = match x { Value::String(s) => serde_json::from_str::<Value>(s).unwrap_or(json!([])), x => x.clone() };
+    arr.as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect()
+}
+
+fn scan_inflow(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<Vec<Item>, String> {
+    let c = conf(s);
+    let base = if_base(&c);
+    let key = secret(root, "inflow_api_key");
+    let client = http()?;
+    let wss = if_workspaces(&client, &base, &c, key.as_deref())?;
+    let multi = wss.len() > 1;
+    let mut out = Vec::new();
+    for (ws, wname) in &wss {
+        if !super::sources::scan_go() { break; }
+        let label = if wname.is_empty() { ws.clone() } else { wname.clone() };
+        let ins = if_req(client.get(format!("{base}/api/v1/insights")).query(&[("workspace_id", ws.as_str()), ("limit", "200")]), key.as_deref())?;
+        for i in ins["insights"].as_array().into_iter().flatten() {
+            if out.len() >= MAX_ITEMS { break; }
+            let Some(id) = i["id"].as_str().filter(|x| !x.is_empty()) else { continue };
+            let status = i["status"].as_str().unwrap_or("new");
+            if status == "dismissed" {
+                continue;
+            }
+            let etag = format!("{status}|{}", i["verified_at"].as_str().unwrap_or(""));
+            let k = format!("ext:{}/insight/{id}", s.id);
+            if let Some(old) = prev.get(&k).filter(|o| o.etag.as_deref() == Some(etag.as_str())) {
+                out.push(old.clone());
+                continue;
+            }
+            let title = i["title"].as_str().unwrap_or("inFlow 洞察").to_string();
+            let sev = match i["severity"].as_str().unwrap_or("") { "critical" => "严重", "high" => "高", "medium" => "中", "low" => "低", "info" => "提示", x => x };
+            let st_cn = match status { "new" => "新", "acknowledged" => "已确认", "actioned" => "已行动", "verified" => "已验证", x => x };
+            let mut md = format!("{}\n\n- 重要程度：{sev}\n- 置信度：{:.0}%\n- 状态：{st_cn}\n- 类型：{}\n- 工作区：{label}\n", i["summary"].as_str().unwrap_or("").trim(), i["confidence"].as_f64().unwrap_or(0.0) * 100.0, i["type"].as_str().unwrap_or(""));
+            let ev: Vec<String> = i["evidence_json"].as_array().into_iter().flatten().take(20).map(|e| match e.as_object() {
+                Some(o) => format!("- {}", o.iter().map(|(k, v)| format!("{k}：{}", match v { Value::String(s) => s.clone(), x => x.to_string() })).collect::<Vec<_>>().join("，").chars().take(400).collect::<String>()),
+                None => format!("- {e}"),
+            }).collect();
+            if !ev.is_empty() {
+                md.push_str(&format!("\n## 证据\n\n{}\n", ev.join("\n")));
+            }
+            let acts: Vec<String> = i["actions_json"].as_array().into_iter().flatten().map(|a| {
+                let d = a["description"].as_str().unwrap_or("").trim();
+                format!("- {}{}", if d.is_empty() { "（没写说明）" } else { d }, a["action_type"].as_str().map(|t| format!("（{t}）")).unwrap_or_default())
+            }).collect();
+            if !acts.is_empty() {
+                md.push_str(&format!("\n## 推荐动作\n\n{}\n", acts.join("\n")));
+            }
+            let t = i["created_at"].as_str().map(parse_time).unwrap_or(now_secs() as i64);
+            let mut it = item(root, s, &format!("insight/{id}"), &title, &md, "insight", &format!("{base}/console/insights"), t, Some(etag));
+            it.note = Some(if multi { format!("{label} · {sev} · {st_cn}") } else { format!("{sev} · {st_cn}") });
+            out.push(it);
+        }
+        let notes = if_req(client.get(format!("{base}/api/v1/agent/notes")).query(&[("workspace_id", ws.as_str()), ("limit", "200")]), key.as_deref()).unwrap_or(json!({}));
+        for n in notes["notes"].as_array().into_iter().flatten() {
+            if out.len() >= MAX_ITEMS { break; }
+            // 从鹿蕊发过去的那些不再接回来，免得场上出现两份
+            if n["author"] == "litmus" {
+                continue;
+            }
+            let Some(id) = n["id"].as_str().filter(|x| !x.is_empty()) else { continue };
+            let title = n["title"].as_str().unwrap_or("inFlow 记忆").to_string();
+            let tags = tags_of(n, if n.get("tags").is_some() { "tags" } else { "tags_json" });
+            let md = format!("{}{}", n["body"].as_str().unwrap_or("").trim(), if tags.is_empty() { String::new() } else { format!("\n\n标签：{}", tags.join("、")) });
+            let upd = n["updated_at"].as_str().unwrap_or("").to_string();
+            let t = if upd.len() >= 10 { parse_time(&upd) } else { now_secs() as i64 };
+            let mut it = item(root, s, &format!("note/{id}"), &title, &md, "note", &format!("{base}/console"), t, Some(format!("{upd}|{}", num_s(&n["version"]))));
+            it.note = Some(if multi { format!("{label} · 记忆") } else { "记忆".into() });
+            out.push(it);
+        }
+    }
+    if out.is_empty() {
+        return Err("inFlow 里没有洞察，也没有工作区记忆".into());
+    }
+    Ok(out)
+}
+
+fn inflow_publish(root: &Path, s: &Source, title: &str, md: &str, doc_path: &str, opts: &Value) -> Result<Value, String> {
+    let c = conf(s);
+    let w = c.get("write").cloned().unwrap_or(json!({}));
+    let base = if_base(&c);
+    let key = secret(root, "inflow_api_key");
+    let client = http()?;
+    let ws = match cs(opts, "workspace").or_else(|| cs(&w, "workspace")) {
+        Some(x) => x.to_string(),
+        None => if_workspaces(&client, &base, &c, key.as_deref())?.into_iter().next().map(|x| x.0).ok_or("inFlow 里还没有工作区")?,
+    };
+    let body: String = body_without_title(md).chars().take(8000).collect();
+    let note_key = format!("litmus-{}", key_id(doc_path));
+    let v = if_req(client.post(format!("{base}/api/v1/agent/notes")).json(&json!({ "workspace_id": ws, "title": title, "body": body, "tags": ["litmus"], "note_key": note_key, "author": "litmus" })), key.as_deref())?;
+    if v["ok"] == false {
+        return Err(format!("inFlow 没收下：{}", v["detail"].as_str().or(v["error"].as_str()).unwrap_or("")));
+    }
+    Ok(json!({ "id": v["note"]["id"].as_str().unwrap_or(&note_key), "workspace": ws, "version": v["note"]["version"].clone(), "url": format!("{base}/console") }))
+}
+
 // ═══════════ 入口 ═══════════
 
 /// sources::start_scan 调这里：返回 None 表示不是这几种。
@@ -1027,12 +1385,16 @@ pub fn scan(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Option<Res
         "mflow" => scan_mflow(root, s, prev),
         "notion" => scan_notion(root, s, prev),
         "openflow" => scan_openflow(root, s, prev),
+        "websflow" => scan_websflow(root, s, prev),
+        "payflow" => scan_payflow(root, s, prev),
+        "inflow" => scan_inflow(root, s, prev),
         _ => return None,
     })
 }
 
-pub const KINDS: [&str; 5] = ["github", "notion", "sanity", "openflow", "mflow"];
-pub const WRITABLE: [&str; 5] = ["github", "notion", "sanity", "openflow", "mflow"];
+pub const KINDS: [&str; 8] = ["github", "notion", "sanity", "openflow", "mflow", "websflow", "payflow", "inflow"];
+/// PayFlow 只读：收钱的系统不往里写东西。
+pub const WRITABLE: [&str; 7] = ["github", "notion", "sanity", "openflow", "mflow", "websflow", "inflow"];
 
 /// 测连接：最便宜的一次调用。
 fn probe(root: &Path, s: &Source) -> Result<String, String> {
@@ -1061,6 +1423,20 @@ fn probe(root: &Path, s: &Source) -> Result<String, String> {
             let v = mflow_get(&http()?, &format!("{}/api/kb/tree", mflow_base(&c)), &token)?;
             let n: u64 = v.as_array().into_iter().flatten().filter_map(|x| x["files"].as_u64()).sum();
             Ok(format!("连上了：知识中台 {} 个库、{n} 篇", v.as_array().map(|a| a.len()).unwrap_or(0)))
+        }
+        "websflow" => {
+            let key = secret(root, "websflow_api_key").ok_or("先在 /凭证 存 websflow_api_key")?;
+            let v = wf_call(&http()?, &wf_base(&c), &key, "list_pages", json!({}))?;
+            Ok(format!("连上了：{} 个页面", v["pages"].as_array().map(|a| a.len()).unwrap_or(0)))
+        }
+        "payflow" => {
+            let key = secret(root, "payflow_api_key").ok_or("先在 /凭证 存 payflow_api_key")?;
+            let v = pf_get(&http()?, &format!("{}/api/v1/products", pf_base(&c)), &key)?;
+            Ok(format!("连上了：{} 个在售商品", v["products"].as_array().map(|a| a.len()).unwrap_or(0)))
+        }
+        "inflow" => {
+            let w = if_workspaces(&http()?, &if_base(&c), &c, secret(root, "inflow_api_key").as_deref())?;
+            Ok(format!("连上了：{} 个工作区（{}）", w.len(), w.iter().map(|x| if x.1.is_empty() { x.0.clone() } else { x.1.clone() }).take(4).collect::<Vec<_>>().join("、")))
         }
         "notion" | "openflow" => {
             let cfg = mcp_cfg(root, s)?;
@@ -1133,6 +1509,8 @@ pub async fn publish(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         "notion" => notion_publish(&root2, &s2, &title2, &md2, &opts),
         "openflow" => openflow_publish(&root2, &s2, &title2, &md2, &opts),
         "mflow" => mflow_publish(&root2, &s2, &title2, &md2, &path2),
+        "websflow" => websflow_publish(&root2, &s2, &title2, &md2, &opts),
+        "inflow" => inflow_publish(&root2, &s2, &title2, &md2, &path2, &opts),
         k => Err(format!("{k} 不能发回去")),
     })
     .await

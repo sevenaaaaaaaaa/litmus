@@ -78,7 +78,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 - **一键整理**：圈选批量移动 / 打标签，或让 AI 按语义聚类搬移
 - **快速成稿**：划选即指令（总结 / 精简 / 提取为节点 / 改写 / 扩写 / 翻译）
 - **快速成 PPT**：展示模式 50 款预设风格一键换装，`整库 PPT` 一键生成全库幻灯
-- **生态体验**：通过 MCP 连接器接入 OpenFlow（图表）、Conflow / WebsFlow / PayFlow / InFlow 等矩阵产品（规划中，见[路线图](#-路线图)）
+- **生态体验**：通过 MCP 连接器接入 OpenFlow、MFlow、Conflow、WebsFlow（落地页与投放数据）、PayFlow（商品与经营概览，只读）、inFlow（洞察与工作区记忆）等矩阵产品
 
 > AI 对话**无 API key 也能用**：内置命令模式（离线规则引擎，工具调用照常可见）；在 `litmus.toml` 的 `[ai]` 配置任意 OpenAI 兼容模型后，解锁改写 / 扩写 / 翻译等 AI 动词与 token 计量。
 
@@ -150,7 +150,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 
 - [x] 五模式 · Flow 画布三视图 · 50 设计风格 · Memo 热力图 · 桌面壳
 - [x] 启动预热 · 监听式同步 · 性能门禁
-- [x] 生态矩阵接入框架就绪：**Conflow 对话流已内置**（对话自动归档 + 一键知识卡）；WebsFlow / PayFlow / InFlow 待接入（MCP 连接器 / 插件工具协议已就绪）
+- [x] 生态矩阵接入框架就绪：**Conflow 对话流已内置**（对话自动归档 + 一键知识卡）；OpenFlow、MFlow、WebsFlow、PayFlow、inFlow 已接入（/数据源 接进来，WebsFlow、inFlow 也能发回去）
 - [x] 协作光标 v2（选区 / 文档内光标 + 评论）· 内嵌终端（桌面端白名单命令）· 插件系统 v0~v3（含 agent 工具贡献与社区索引）· 设计宪法（[docs/spec/os.md](docs/spec/os.md)）
 - [ ] 桌面独占：全盘索引 · 本地小模型（[规划](docs/spec/desktop.md)）
 - [ ] 多端：Windows / Linux / Android / iOS 持续跟进（[规划](docs/spec/platform.md)）
