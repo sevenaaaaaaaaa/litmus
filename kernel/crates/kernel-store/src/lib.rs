@@ -299,6 +299,10 @@ pub struct AiConfig {
     /// 单轮对话最大工具步数
     #[serde(default = "default_max_steps")]
     pub max_steps: usize,
+    /// 私密模式（0.28）：模型和嵌入只走本机或局域网；网页抓取、第三方对接、发到外面的发布一律不出网。
+    /// 写在 litmus.toml 里随库走——敏感的库换到哪台设备上都还是私密的。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub local_only: bool,
 }
 
 fn default_max_steps() -> usize {
@@ -307,11 +311,43 @@ fn default_max_steps() -> usize {
 
 impl Default for AiConfig {
     fn default() -> Self {
-        Self { base_url: String::new(), api_key: String::new(), model: String::new(), embedding_model: String::new(), max_steps: default_max_steps() }
+        Self { base_url: String::new(), api_key: String::new(), model: String::new(), embedding_model: String::new(), max_steps: default_max_steps(), local_only: false }
+    }
+}
+
+/// 地址里的主机名（小写，带端口）。
+pub fn url_host(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    host.rsplit_once('@').map(|x| x.1).unwrap_or(host).to_ascii_lowercase()
+}
+
+/// 这个主机是不是在这台电脑上或局域网里（内容不出这台机器或家里、公司的内网）。
+pub fn is_local_host(host: &str) -> bool {
+    let h = if host.starts_with('[') { host.trim_start_matches('[').split(']').next().unwrap_or("") } else { host.rsplit_once(':').filter(|(a, _)| !a.contains(':')).map(|x| x.0).unwrap_or(host) };
+    if h == "localhost" || h == "::1" || h.ends_with(".local") || h.ends_with(".localhost") {
+        return true;
+    }
+    match h.parse::<std::net::Ipv4Addr>() {
+        Ok(ip) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Err(_) => false,
     }
 }
 
 impl AiConfig {
+    /// 模型接口在本机或局域网。
+    pub fn is_local(&self) -> bool {
+        !self.base_url.is_empty() && is_local_host(&url_host(&self.base_url))
+    }
+
+    /// 私密模式开着、模型却在外面：拒绝，说清楚怎么办。每个调模型、调嵌入的地方先过这一关。
+    pub fn check_private(&self) -> Result<(), String> {
+        if self.local_only && !self.base_url.is_empty() && !self.is_local() {
+            return Err(format!("私密模式开着：只用本机或局域网里的模型，{} 不在这里（在 /私密 里换成本机模型，或者关掉私密模式）", url_host(&self.base_url)));
+        }
+        Ok(())
+    }
+
     /// 密钥解析：配置优先，其次环境变量。
     pub fn resolved_key(&self) -> String {
         if !self.api_key.is_empty() {
@@ -641,6 +677,22 @@ pub fn list_non_doc_files(vault: &Vault) -> Result<Vec<PathBuf>, StoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_mode_only_allows_local_models() {
+        assert!(is_local_host("localhost:11434") && is_local_host("127.0.0.1:1234") && is_local_host("[::1]:8080"));
+        assert!(is_local_host("192.168.1.20:11434") && is_local_host("10.0.0.5") && is_local_host("nas.local:11434") && is_local_host("172.20.1.1"));
+        assert!(!is_local_host("api.deepseek.com") && !is_local_host("8.8.8.8") && !is_local_host("172.32.0.1"));
+        let mut c = AiConfig { base_url: "https://api.deepseek.com/v1".into(), model: "deepseek-chat".into(), ..Default::default() };
+        assert!(c.check_private().is_ok(), "没开私密模式不拦");
+        c.local_only = true;
+        let e = c.check_private().unwrap_err();
+        assert!(e.contains("api.deepseek.com"), "{e}");
+        c.base_url = "http://127.0.0.1:11434/v1".into();
+        assert!(c.check_private().is_ok());
+        let t = toml::to_string(&AiConfig::default()).unwrap();
+        assert!(!t.contains("local_only"), "关着时不往 litmus.toml 里写");
+    }
 
     #[test]
     fn legacy_thirdc_layout_is_migrated_on_open() {

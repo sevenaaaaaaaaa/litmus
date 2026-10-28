@@ -1113,8 +1113,22 @@ pub async fn remove(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id):
 }
 
 /// 在后台（低优先级线程）扫一个来源。正在扫就返回 false。
+/// 要连外网的来源（私密模式下不扫）：GitHub、Notion 这些对接，Google，任意 JSON 接口（地址不在本机时）。
+pub fn needs_network(s: &Source) -> bool {
+    match s.kind.as_str() {
+        "folder" | "agent" | "mcp" => false,
+        "rest" => !s.rest.as_ref().and_then(|c| c.get("url")).and_then(|u| u.as_str()).map(|u| kernel_core::is_local_host(&kernel_core::url_host(u))).unwrap_or(false),
+        _ => true,
+    }
+}
+
 pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
     let id = s.id.clone();
+    if needs_network(&s) && super::private_mode(st) {
+        let state = ScanState { running: false, error: Some("私密模式开着：这个来源要连外网，没有扫（在 /私密 里关掉后再扫）".into()), finished: now_secs(), ..Default::default() };
+        scans().lock().unwrap().insert(id, state);
+        return false;
+    }
     {
         let mut sc = scans().lock().unwrap();
         if sc.get(&id).map(|x| x.running).unwrap_or(false) {
@@ -1202,6 +1216,11 @@ pub async fn scan(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id): A
     }
     let root = st.kernel.lock().unwrap().vault.root.clone();
     let Some(s) = load_sources(&root).into_iter().find(|s| s.id == id) else { return err(StatusCode::NOT_FOUND, "没有这个来源").into_response() };
+    if needs_network(&s) {
+        if let Err(e) = super::offline_guard(&st, &format!("扫「{}」", s.name)) {
+            return e.into_response();
+        }
+    }
     if !start_scan(&st, &root, s) {
         return err(StatusCode::CONFLICT, "正在扫描").into_response();
     }

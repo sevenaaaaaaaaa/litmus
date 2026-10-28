@@ -355,6 +355,9 @@ pub async fn localize(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
+    if let Err(e) = super::offline_guard(&st, "把网页存进库") {
+        return e.into_response();
+    }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let url = req.get("url").and_then(|u| u.as_str()).unwrap_or("").trim().to_string();
     if !url.starts_with("http://") && !url.starts_with("https://") {

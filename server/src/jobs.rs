@@ -233,8 +233,7 @@ fn host_of(base_url: &str) -> String {
 
 /// 模型是不是就跑在这台电脑 / 局域网里（内容不出这台机器或家里的网）。
 pub fn is_local_host(host: &str) -> bool {
-    let h = host.split(':').next().unwrap_or(host).trim_matches(['[', ']']);
-    h == "localhost" || h.starts_with("127.") || h == "::1" || h.ends_with(".local") || h.starts_with("192.168.") || h.starts_with("10.")
+    kernel_core::is_local_host(host)
 }
 
 fn consent_path(root: &Path) -> PathBuf {

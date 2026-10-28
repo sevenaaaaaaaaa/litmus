@@ -16,7 +16,7 @@ pub use kernel_md::{Block, DocModel, from_markdown, to_html, to_markdown};
 pub use kernel_md::tidy;
 pub use kernel_store::{
     AiConfig, BrowserConfig, Cas, ConnectionConfig, PublishConfig, PublishTarget, StoreError, Vault,
-    VaultConfig, events_dir, is_vault_dir, list_docs, migrate_legacy_layout, new_doc_id, refs, secrets,
+    VaultConfig, events_dir, is_vault_dir, list_docs, migrate_legacy_layout, new_doc_id, refs, secrets, is_local_host, url_host,
 };
 pub use kernel_sync::{OpLog, SyncError, VERBATIM_EXTS, is_html_rel, is_verbatim_rel};
 
@@ -852,6 +852,8 @@ impl Kernel {
     pub fn embedding_endpoint(&self) -> Option<(String, String)> {
         let ai = self.vault.config.ai.as_ref()?;
         if ai.base_url.is_empty() { return None; }
+        // 私密模式：嵌入只走本机或局域网，外面的一律当没配（检索退回 TF-IDF）
+        if ai.check_private().is_err() { return None; }
         Some((ai.base_url.clone(), ai.resolved_key()))
     }
 
@@ -2111,9 +2113,20 @@ pub mod rag {
         model: &str,
         inputs: &[String],
     ) -> Result<Vec<Vec<f32>>, String> {
+        embed_batch_within(base_url, api_key, model, inputs, std::time::Duration::from_secs(60))
+    }
+
+    /// 同上，自定超时（边打字边查的查询向量要快，等不及就不等）。
+    pub fn embed_batch_within(
+        base_url: &str,
+        api_key: &str,
+        model: &str,
+        inputs: &[String],
+        timeout: std::time::Duration,
+    ) -> Result<Vec<Vec<f32>>, String> {
         let url = format!("{}/embeddings", base_url.trim_end_matches('/'));
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
+            .timeout(timeout)
             .build().map_err(|e| e.to_string())?;
         let mut req = client.post(&url).json(&serde_json::json!({
             "model": model,

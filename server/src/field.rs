@@ -9,7 +9,7 @@
 //!
 //! 坐标是派生层：缓存在 `.litmus/local/field.json`，删掉即可重建；增量更新时旧坐标不动。
 
-use super::{AppState, SseEvent, check_token, err, extract_memo_tags};
+use super::{audit_log, AppState, SseEvent, check_token, err, extract_memo_tags};
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -794,6 +794,12 @@ pub async fn ai_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
         // 密钥还写在随库同步的 litmus.toml 里（0.21 及以前的做法）：界面上提示挪进凭证库
         "key_in_toml": toml_has_key(&st.kernel.lock().unwrap().vault.root.join("litmus.toml")),
         "key_from_env": ai.api_key.is_empty() && std::env::var("LITMUS_AI_API_KEY").or_else(|_| std::env::var("THIRDC_AI_API_KEY")).map(|v| !v.is_empty()).unwrap_or(false),
+        "embedding_model": ai.embedding_model,
+        "local": ai.is_local(),
+        "local_only": ai.local_only,
+        "blocked": ai.check_private().err(),
+        "vectors": st.kernel.lock().unwrap().vector_stats().map(|(a, b)| json!([a, b])).unwrap_or(json!([0, 0])),
+        "rag_running": st.rag.running.load(std::sync::atomic::Ordering::SeqCst),
     }))
     .into_response()
 }
@@ -894,6 +900,158 @@ pub async fn ai_test(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl Into
     }
 }
 
+// ───────── 本机模型与私密模式（0.28） ─────────
+
+/// 名字看起来是嵌入模型（Ollama 的 family 也看）。
+pub fn looks_like_embedding(name: &str, family: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["embed", "bge", "m3e", "gte-", "gte:", "e5-", "minilm", "arctic", "mxbai", "nomic", "jina-emb", "text2vec", "multilingual-e5"].iter().any(|k| n.contains(k)) || matches!(family, "bert" | "nomic-bert" | "xlm-roberta")
+}
+
+/// 探一个本机/局域网的模型服务：Ollama 原生 /api/tags，其他 OpenAI 兼容 /v1/models。
+fn probe_models(kind: &str, root: &str) -> Option<Value> {
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_millis(900)).build().ok()?;
+    let root = root.trim_end_matches('/').trim_end_matches("/v1").to_string();
+    let mut models: Vec<Value> = Vec::new();
+    if kind == "ollama" {
+        let v: Value = client.get(format!("{root}/api/tags")).send().ok()?.json().ok()?;
+        for m in v["models"].as_array()? {
+            let Some(name) = m["name"].as_str() else { continue };
+            let fam = m["details"]["family"].as_str().unwrap_or("");
+            models.push(json!({ "id": name, "embed": looks_like_embedding(name, fam), "size": m["size"], "params": m["details"]["parameter_size"] }));
+        }
+    } else {
+        let v: Value = client.get(format!("{root}/v1/models")).send().ok()?.json().ok()?;
+        for m in v["data"].as_array()? {
+            let Some(id) = m["id"].as_str() else { continue };
+            models.push(json!({ "id": id, "embed": looks_like_embedding(id, "") }));
+        }
+    }
+    Some(json!({ "kind": kind, "base_url": format!("{root}/v1"), "models": models }))
+}
+
+/// GET /field/ai/local?url=：这台电脑（或给的局域网地址）上跑着的模型服务和模型。
+pub async fn ai_local_get(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let extra = q.get("url").map(|u| u.trim().to_string()).filter(|u| u.starts_with("http"));
+    if let Some(u) = &extra {
+        if !kernel_core::is_local_host(&kernel_core::url_host(u)) {
+            return err(StatusCode::BAD_REQUEST, "只探本机或局域网里的地址").into_response();
+        }
+    }
+    let found = tokio::task::spawn_blocking(move || {
+        let mut cands: Vec<(&str, &str, String)> = vec![("ollama", "Ollama", "http://127.0.0.1:11434".into()), ("openai", "LM Studio", "http://127.0.0.1:1234".into()), ("openai", "llama.cpp / MLX", "http://127.0.0.1:8080".into())];
+        if let Some(u) = extra {
+            cands.insert(0, ("ollama", "Ollama", u.clone()));
+            cands.insert(1, ("openai", "OpenAI 兼容", u));
+        }
+        let mut out: Vec<Value> = Vec::new();
+        for (kind, label, url) in cands {
+            if let Some(mut v) = probe_models(kind, &url) {
+                if out.iter().any(|o| o["base_url"] == v["base_url"]) {
+                    continue;
+                }
+                v["name"] = json!(label);
+                out.push(v);
+            }
+        }
+        out
+    })
+    .await
+    .unwrap_or_default();
+    Json(json!({ "servers": found })).into_response()
+}
+
+/// litmus.toml [ai] 里改一个键（None = 删掉）。
+fn write_ai_key(cfg_path: &std::path::Path, key: &str, val: Option<toml_edit::Item>) -> Result<(), String> {
+    let raw = std::fs::read_to_string(cfg_path).map_err(|e| format!("读不到 litmus.toml：{e}"))?;
+    let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("litmus.toml 格式有误：{e}"))?;
+    if !doc.contains_key("ai") {
+        doc["ai"] = toml_edit::table();
+    }
+    let t = doc["ai"].as_table_mut().ok_or("litmus.toml 里的 ai 不是一个表")?;
+    match val {
+        Some(v) => t[key] = v,
+        None => {
+            t.remove(key);
+        }
+    }
+    let tmp = cfg_path.with_extension("tmp");
+    std::fs::write(&tmp, doc.to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, cfg_path).map_err(|e| e.to_string())
+}
+
+/// POST /field/ai/local {base_url, model?, embedding_model?}：用本机模型（对话、嵌入可以分开选；不填的不动）。
+pub async fn ai_local_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let base = req["base_url"].as_str().unwrap_or("").trim().trim_end_matches('/').to_string();
+    if !base.starts_with("http") || !kernel_core::is_local_host(&kernel_core::url_host(&base)) {
+        return err(StatusCode::BAD_REQUEST, "这里只接本机或局域网里的模型服务").into_response();
+    }
+    let model = req["model"].as_str().map(str::trim).filter(|m| !m.is_empty()).map(String::from);
+    let emb = req["embedding_model"].as_str().map(str::trim).map(String::from);
+    let (root, cfg_path, emb_changed) = {
+        let mut k = st.kernel.lock().unwrap();
+        let cfg_path = k.vault.root.join("litmus.toml");
+        let mut ai = k.vault.config.ai.clone().unwrap_or_default();
+        // 换到本机：对话模型没给就沿用（还没配过就必须给）
+        let model = match model.or_else(|| (ai.is_local() && !ai.model.is_empty()).then(|| ai.model.clone())) {
+            Some(m) => m,
+            None => return err(StatusCode::BAD_REQUEST, "选一个对话模型").into_response(),
+        };
+        if let Err(e) = write_ai_config(&cfg_path, &base, &model, None) {
+            return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+        }
+        let mut emb_changed = false;
+        if let Some(e) = &emb {
+            if let Err(x) = write_ai_key(&cfg_path, "embedding_model", (!e.is_empty()).then(|| toml_edit::value(e.as_str()))) {
+                return err(StatusCode::INTERNAL_SERVER_ERROR, x).into_response();
+            }
+            emb_changed = *e != ai.embedding_model;
+            ai.embedding_model = e.clone();
+        }
+        ai.base_url = base.clone();
+        ai.model = model;
+        k.vault.config.ai = Some(ai);
+        (k.vault.root.clone(), cfg_path, emb_changed)
+    };
+    let _ = cfg_path;
+    audit_log(&root.join(".litmus/local"), "ai-local", &json!({ "base_url": base, "embedding_model": emb }));
+    // 换了嵌入模型：后台把库里的向量建起来（本机算，不出网）
+    let mut reindex = false;
+    if emb_changed && emb.as_deref().map(|e| !e.is_empty()).unwrap_or(false) && !st.rag.running.load(std::sync::atomic::Ordering::SeqCst) {
+        let st2 = st.clone();
+        tokio::task::spawn_blocking(move || super::rag_job_blocking(st2));
+        reindex = true;
+    }
+    Json(json!({ "ok": true, "reindex": reindex })).into_response()
+}
+
+/// POST /field/privacy {on}：私密模式开关（写进 litmus.toml，随库走）。
+pub async fn privacy_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let on = req["on"] == true;
+    let mut k = st.kernel.lock().unwrap();
+    let cfg_path = k.vault.root.join("litmus.toml");
+    if let Err(e) = write_ai_key(&cfg_path, "local_only", on.then(|| toml_edit::value(true))) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let mut ai = k.vault.config.ai.clone().unwrap_or_default();
+    ai.local_only = on;
+    let ok = ai.check_private().is_ok();
+    k.vault.config.ai = Some(ai);
+    audit_log(&k.vault.root.join(".litmus/local"), "privacy", &json!({ "local_only": on }));
+    Json(json!({ "ok": true, "on": on, "model_ok": ok })).into_response()
+}
+
 fn round1(x: f32) -> f64 {
     (x as f64 * 10.0).round() / 10.0
 }
@@ -931,7 +1089,42 @@ pub async fn react(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Quer
     } else {
         Vec::new()
     };
-    Json(score(&c, &text, &fts)).into_response()
+    let dense = if text.chars().count() >= 2 { local_dense(&st, &text).await } else { Vec::new() };
+    Json(score(&c, &text, &fts, &dense)).into_response()
+}
+
+/// 本机嵌入（0.28）：嵌入模型在本机或局域网、库里已经建了向量时，「找」「问」也按意思召回——
+/// 同义、换个说法的也能亮起来。云端嵌入不在每次按键时调（又慢又花钱），只给 /search/hybrid 用。
+async fn local_dense(st: &Arc<AppState>, text: &str) -> Vec<(String, f64)> {
+    let (model, endpoint) = {
+        let k = st.kernel.lock().unwrap();
+        let local = k.vault.config.ai.as_ref().map(|a| a.is_local()).unwrap_or(false);
+        let model = k.embedding_model();
+        if !local || model.is_empty() || k.vector_stats().map(|(n, _)| n == 0).unwrap_or(true) {
+            return Vec::new();
+        }
+        (model, k.embedding_endpoint())
+    };
+    let Some((base, key)) = endpoint else { return Vec::new() };
+    static CACHE: std::sync::OnceLock<Mutex<HashMap<String, Vec<f32>>>> = std::sync::OnceLock::new();
+    let ck = format!("{model}\u{1}{text}");
+    let hit = CACHE.get_or_init(Default::default).lock().unwrap().get(&ck).cloned();
+    let qv = match hit {
+        Some(v) => v,
+        None => {
+            let input = kernel_core::rag::embed_text(text);
+            let m2 = model.clone();
+            let got = tokio::task::spawn_blocking(move || kernel_core::rag::embed_batch_within(&base, &key, &m2, &[input], std::time::Duration::from_millis(1500))).await.ok().and_then(|r| r.ok()).and_then(|mut v| v.pop());
+            let Some(v) = got else { return Vec::new() };
+            let mut c = CACHE.get_or_init(Default::default).lock().unwrap();
+            if c.len() > 256 {
+                c.clear();
+            }
+            c.insert(ck, v.clone());
+            v
+        }
+    };
+    st.kernel.lock().unwrap().search_dense(&qv, 40).unwrap_or_default()
 }
 
 /// 用一篇文档的向量给全库打分（不含它自己）。
@@ -947,7 +1140,7 @@ pub fn score_vec(c: &Cached, qv: &field::SparseVec, skip: Option<usize>) -> Valu
     })
 }
 
-pub fn score(c: &Cached, text: &str, fts: &[(String, f64)]) -> Value {
+pub fn score(c: &Cached, text: &str, fts: &[(String, f64)], dense: &[(String, f64)]) -> Value {
     let qv = c.field.vectors.embed(text);
     let n = c.meta.len();
     let mut s = vec![0.0f32; n];
@@ -968,6 +1161,12 @@ pub fn score(c: &Cached, text: &str, fts: &[(String, f64)]) -> Value {
     for (rank, (p, _)) in fts.iter().take(200).enumerate() {
         if let Some(&i) = idx.get(p.as_str()) {
             s[i] += 0.35 / (1.0 + rank as f32 * 0.12);
+        }
+    }
+    // 本机嵌入按意思召回的：前面的加得多
+    for (rank, (p, _)) in dense.iter().take(40).enumerate() {
+        if let Some(&i) = idx.get(p.as_str()) {
+            s[i] += 0.4 / (1.0 + rank as f32 * 0.15);
         }
     }
     // 标题直接包含整句：再加一把（用户常常就是在找那篇）
@@ -2374,6 +2573,108 @@ for line in sys.stdin:
         let r = c.request(method.parse().unwrap(), format!("http://{addr}{uri}")).bearer_auth(token).body(body.to_string()).send().await.unwrap();
         let st = r.status().as_u16();
         (st, r.json().await.unwrap_or(Value::Null))
+    }
+
+    /// 假的本机 Ollama：/api/tags、OpenAI 兼容的 /v1/embeddings（按意思给向量：猫类、狗类、其他）和 /v1/chat/completions。
+    async fn mock_ollama() -> String {
+        use axum::{routing::{get, post}, Router};
+        fn vec_of(t: &str) -> Vec<f32> {
+            let cat = ["猫", "喵星人", "橘猫"].iter().any(|k| t.contains(k));
+            let dog = ["狗", "汪星人", "柴犬"].iter().any(|k| t.contains(k));
+            vec![if cat { 1.0 } else { 0.0 }, if dog { 1.0 } else { 0.0 }, if cat || dog { 0.05 } else { 1.0 }]
+        }
+        let app = Router::new()
+            .route("/api/tags", get(|| async { axum::Json(serde_json::json!({"models": [
+                {"name": "qwen2.5:3b", "size": 1900000000u64, "details": {"family": "qwen2", "parameter_size": "3.1B"}},
+                {"name": "bge-m3:latest", "size": 1200000000u64, "details": {"family": "bert", "parameter_size": "567M"}}]})) }))
+            .route("/v1/embeddings", post(|body: axum::body::Bytes| async move {
+                let v: Value = serde_json::from_slice(&body).unwrap();
+                let data: Vec<Value> = v["input"].as_array().unwrap().iter().enumerate().map(|(i, t)| serde_json::json!({"index": i, "embedding": vec_of(t.as_str().unwrap())})).collect();
+                axum::Json(serde_json::json!({"data": data}))
+            }))
+            .route("/v1/chat/completions", post(|| async { axum::Json(serde_json::json!({"choices": [{"message": {"role": "assistant", "content": "好的"}}]})) }));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn private_mode_keeps_everything_on_this_machine() {
+        let (app, token, dir) = app();
+        let root = dir.path();
+        let base = mock_ollama().await;
+        std::fs::create_dir_all(root.join("Notes/宠物")).unwrap();
+        std::fs::write(root.join("Notes/宠物/喵星人的饮食.md"), "# 喵星人的饮食\n\n每天两顿，少量多餐，别喂洋葱。").unwrap();
+        std::fs::write(root.join("Notes/宠物/汪星人散步.md"), "# 汪星人散步\n\n早晚各一次，每次半小时。").unwrap();
+        std::fs::write(root.join("Notes/宠物/报税.md"), "# 报税\n\n每年三月到六月办理个税汇算。").unwrap();
+        let (_, _) = call(&app, &token, "POST", "/sync", "{}").await;
+        // 先配一个外面的模型，再开私密模式：模型调用被拦，说清楚
+        let (st, _) = call(&app, &token, "POST", "/field/ai", r#"{"base_url":"https://api.example.com/v1","model":"m","api_key":"sk-x"}"#).await;
+        assert_eq!(st, 200);
+        let (_, r) = call(&app, &token, "POST", "/field/privacy", r#"{"on":true}"#).await;
+        assert_eq!(r["model_ok"], false, "{r}");
+        assert!(std::fs::read_to_string(root.join("litmus.toml")).unwrap().contains("local_only = true"), "写进 litmus.toml，随库走");
+        let (st, r) = call(&app, &token, "POST", "/field/ai/test", "").await;
+        assert_eq!(st, 502);
+        assert!(r["error"].as_str().unwrap().contains("私密模式"), "{r}");
+        let (_, g) = call(&app, &token, "GET", "/field/ai", "").await;
+        assert!(g["blocked"].as_str().unwrap().contains("api.example.com"), "{g}");
+        // 要出网的都不做
+        for (m, u, b) in [("POST", "/ingest/web", r#"{"url":"https://example.com"}"#), ("POST", "/ingest/topic", r#"{"topic":"猫"}"#), ("POST", "/field/localize", r#"{"url":"https://example.com"}"#)] {
+            let (st, r) = call(&app, &token, m, u, b).await;
+            assert_eq!(st, 403, "{u} → {r}");
+            assert!(r["error"].as_str().unwrap().contains("私密模式"), "{u} → {r}");
+        }
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "github", "name": "GH", "conf": {"repos": "a/b"}}}).to_string()).await;
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (st, r) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        assert_eq!(st, 403, "{r}");
+        let (st, _) = call(&app, &token, "POST", "/connectors/publish", &serde_json::json!({"id": id, "path": "Notes/宠物/报税.md", "confirm": true}).to_string()).await;
+        assert_eq!(st, 403);
+        // 找本机模型：认出对话模型和嵌入模型
+        let (_, l) = call(&app, &token, "GET", &format!("/field/ai/local?url={}", urlenc(&base)), "").await;
+        let sv = &l["servers"][0];
+        assert_eq!(sv["kind"], "ollama", "{l}");
+        assert_eq!(sv["base_url"], format!("{base}/v1"));
+        let emb: Vec<&str> = sv["models"].as_array().unwrap().iter().filter(|m| m["embed"] == true).map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(emb, vec!["bge-m3:latest"]);
+        let (st, _) = call(&app, &token, "GET", "/field/ai/local?url=https%3A%2F%2Fapi.example.com", "").await;
+        assert_eq!(st, 400, "外面的地址不探");
+        // 没有本机嵌入时，「猫咪吃什么」找不到「喵星人」那篇（一个字都不重合）
+        let (_, d0) = call(&app, &token, "GET", "/field/data", "").await;
+        let cat0 = d0["docs"].as_array().unwrap().iter().position(|x| x["t"] == "喵星人的饮食").unwrap() as u64;
+        let (_, r0) = call(&app, &token, "GET", &format!("/field/react?q={}", urlenc("猫咪吃什么")), "").await;
+        assert!(r0["hits"].as_array().unwrap().iter().all(|h| h[0].as_u64() != Some(cat0)), "{r0}");
+        // 换成本机：对话、嵌入都在本机，向量在后台建好
+        let (st, r) = call(&app, &token, "POST", "/field/ai/local", &serde_json::json!({"base_url": format!("{base}/v1"), "model": "qwen2.5:3b", "embedding_model": "bge-m3:latest"}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["reindex"], true);
+        let toml = std::fs::read_to_string(root.join("litmus.toml")).unwrap();
+        assert!(toml.contains("embedding_model = \"bge-m3:latest\"") && toml.contains("qwen2.5:3b") && toml.contains("local_only = true"), "{toml}");
+        let (st, r) = call(&app, &token, "POST", "/field/ai/test", "").await;
+        assert_eq!(st, 200, "本机模型能用：{r}");
+        for _ in 0..200 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            let (_, s) = call(&app, &token, "GET", "/rag/status", "").await;
+            if s["running"] == false && s["covered"].as_u64().unwrap_or(0) >= 3 {
+                break;
+            }
+        }
+        let (_, s) = call(&app, &token, "GET", "/rag/status", "").await;
+        assert!(s["covered"].as_u64().unwrap() >= 3, "{s}");
+        // 「找」按意思：「猫」这个字一篇都不含，本机嵌入让「喵星人」那篇亮起来
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let docs = d["docs"].as_array().unwrap();
+        let idx = |t: &str| docs.iter().position(|x| x["t"] == t).unwrap() as u64;
+        let (_, r) = call(&app, &token, "GET", &format!("/field/react?q={}", urlenc("猫咪吃什么")), "").await;
+        let top = r["hits"][0][0].as_u64().unwrap();
+        assert_eq!(top, idx("喵星人的饮食"), "{r}");
+        // 关掉私密模式：toml 里拿掉
+        let (_, _) = call(&app, &token, "POST", "/field/privacy", r#"{"on":false}"#).await;
+        assert!(!std::fs::read_to_string(root.join("litmus.toml")).unwrap().contains("local_only"));
+        let (st, _) = call(&app, &token, "POST", "/ingest/topic", r#"{"topic":""}"#).await;
+        assert_ne!(st, 403);
     }
 
     #[tokio::test]

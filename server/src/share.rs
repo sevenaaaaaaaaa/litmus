@@ -118,6 +118,9 @@ async fn push_public(st: &Arc<AppState>, id: &str, rec: Option<&Value>) -> (Opti
     let Some((target, base, site, sidecar)) = prep else {
         return (None, Some("还没有配置公开发布目标（/发布）：这个链接只能在能访问这台鹿蕊的地方打开。".into()));
     };
+    if target.kind != "local" && super::private_mode(st) {
+        return (None, Some("私密模式开着：没有推到公开目标，这个链接只能在能访问这台鹿蕊的地方打开。".into()));
+    }
     let file = site.join("e").join(format!("{id}.html"));
     if let Err(e) = std::fs::create_dir_all(file.parent().unwrap()).and_then(|_| std::fs::write(&file, page_html(rec))) {
         return (None, Some(format!("写入站点目录失败：{e}")));

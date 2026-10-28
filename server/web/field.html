@@ -309,6 +309,9 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 .dkr .dk span{font:400 var(--fs-1)/1.5 var(--f-ui);color:var(--ink-2)}
 .dkr mark,.dkb mark{background:var(--litmus-wash);color:var(--ink)}
 .dkb{white-space:pre-wrap;font:400 var(--fs-1)/1.6 var(--f-mono);color:var(--ink-2);background:var(--paper);border-radius:var(--r-sm);padding:12px 14px;max-height:46vh;overflow:auto}
+#panel .ph{font:600 var(--fs-2)/1.4 var(--f-ui);margin:18px 0 4px;color:var(--ink)}
+#panel .lm{border-top:1px solid var(--rule);padding:8px 0 4px}
+#panel .lm p{margin:6px 0}
 #panel{position:fixed;inset:0;z-index:75;background:oklch(var(--paper-c) / .55);backdrop-filter:blur(var(--blur-1));-webkit-backdrop-filter:blur(var(--blur-1));display:grid;place-items:center;padding:16px}
 #panel .pbox{width:min(560px,100%);max-height:78vh;overflow:auto;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);box-sizing:border-box}
 #panel header{display:flex;align-items:center;gap:10px;padding:14px 14px 10px 20px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--sheet)}
@@ -715,6 +718,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
         <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
         <tr><td>GitHub、Notion、Sanity、OpenFlow、MFlow、WebsFlow、PayFlow、inFlow</td><td>/数据源 → 手动添加：接进来（原处索引）；阅读页「更多」→ 发到…：发回去（GitHub 提交、Notion 新建子页面、Sanity 草稿、OpenFlow 草稿文章、MFlow 选题队列、WebsFlow 按这篇做新页面、inFlow 写进工作区记忆；PayFlow 只读），都要确认</td></tr>
+        <tr><td>本机模型、私密模式</td><td>/私密 或 /本机模型：找这台电脑上的 Ollama、LM Studio，一键换成本机模型和嵌入（「找」「问」也按意思召回）；私密模式下要出网的事一律不做</td></tr>
         <tr><td>终端（桌面 App）</td><td>/终端 或 Ctrl+`：在下面开一个真终端，默认在库的文件夹里；收起不断、可开几个；「存成笔记」把选中的输出存成一篇</td></tr>
         <tr><td>全盘索引（桌面 App）</td><td>/全盘：这台电脑上的文件按名字和内容找；打开后「找」的时候顺带给出电脑上的结果，值得的「收进库里」。索引只在这台电脑上</td></tr>
         <tr><td>清理会话、过程文档</td><td>/筛选，或「帮我把会话和过程文档剔除」：规则先分、拿不准的交给 AI，出清单你改判后再删；库里的进回收站，库外的不再上场、原件不动，可整批撤销</td></tr>
@@ -2030,6 +2034,8 @@ const CMDS = [
   ['/对话', '和 Agent 的对话记录（Conflow 对话流），一键提炼成知识卡', openConflow],
   ['/记住', '让 Agent 记住一件事（/记住 周报不超过 300 字）', () => openMemory()],
   ['/凭证', 'API 密钥等凭证（只在本机）', openSecrets],
+  ['/私密', '本机模型与私密模式：模型、嵌入只在本机或局域网，要出网的事一律不做', () => openPrivate()],
+  ['/本机模型', '找这台电脑上的 Ollama、LM Studio，一键换成本机模型（嵌入也行）', () => openPrivate()],
   ['/终端', '桌面 App：在下面开一个终端（默认在库的文件夹里；Ctrl+` 开合）', () => openTerm()],
   ['/全盘', '桌面 App：这台电脑上的文件按名字和内容找（/全盘 关键词）', () => openDisk('')],
   ['/昵称', '别处同时开着这篇时，他们看到的你的名字', openNick],
@@ -2801,11 +2807,65 @@ q.addEventListener('paste', e => {
 });
 
 /* 设置：模型 */
+/* ═══════════ 本机模型与私密模式：模型、嵌入只在本机或局域网，要出网的事一律不做 ═══════════ */
+let privOn = false;
+async function loadPriv(){ try { const a = await api('/field/ai'); privOn = !!a.local_only; } catch(e){} showVault(); }
+async function openPrivate(){
+  const box = openPanel('本机模型与私密模式', '<span class="thinking"><i></i><i></i><i></i> 正在看这台电脑上有什么模型</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(640px,100%)';
+  let a = {}; try { a = await api('/field/ai'); } catch(e){}
+  privOn = !!a.local_only; showVault();
+  const lanUrl = (() => { try { return localStorage.getItem('litmus_lan_model') || ''; } catch(e){ return ''; } })();
+  let found = []; try { found = (await api('/field/ai/local' + (lanUrl ? '?url=' + encodeURIComponent(lanUrl) : ''))).servers || []; } catch(e){}
+  const vec = a.vectors || [0, 0];
+  const curLine = a.configured ? '现在用的是 <b>' + esc(a.model) + '</b>（' + (a.local ? '本机' : esc((a.base_url || '').replace(/^https?:\/\//, '').split('/')[0])) + '）' + (a.embedding_model ? '，嵌入 <b>' + esc(a.embedding_model) + '</b>' : '，没配嵌入模型') : '还没配模型';
+  const opt = (list, cur, none) => (none ? '<option value="">' + none + '</option>' : '') + list.map(m => '<option value="' + esc(m.id) + '"' + (m.id === cur ? ' selected' : '') + '>' + esc(m.id) + (m.params ? '（' + esc(m.params) + '）' : '') + '</option>').join('');
+  box.innerHTML =
+    '<label class="row chk"><input type="checkbox" id="pv-on"' + (privOn ? ' checked' : '') + '><div class="grow"><span>私密模式</span><small>模型和嵌入只在本机或局域网，要出网的事一律不做</small></div></label>' +
+    '<p class="hint">开着时：对话、问答、AI 学习、巡检、嵌入只用本机或局域网里的模型；抓网页、按主题采集、GitHub / Notion 这些对接、发到外面的发布都不做。写进 litmus.toml，这个库换到哪台设备上都还是私密的。同步到你自己的服务器照常。</p>' +
+    (a.blocked ? '<p class="hint bad">' + esc(a.blocked) + '</p>' : '') +
+    '<p class="hint">' + curLine + '。</p>' +
+    '<h4 class="ph">这台电脑上的模型</h4>' +
+    (found.length ? found.map((s, i) => {
+      const chat = s.models.filter(m => !m.embed), emb = s.models.filter(m => m.embed);
+      const curChat = a.local && a.base_url === s.base_url ? a.model : (chat[0] || {}).id, curEmb = a.local && a.base_url === s.base_url ? a.embedding_model : (emb[0] || {}).id;
+      return '<div class="lm" data-i="' + i + '"><p><b>' + esc(s.name) + '</b> <code>' + esc(s.base_url) + '</code> · ' + s.models.length + ' 个模型</p>' +
+        (chat.length ? '<label>对话、问答用</label><select class="sel" data-chat>' + opt(chat, curChat) + '</select>' : '<p class="hint">没有对话模型。' + (s.kind === 'ollama' ? '终端里 <code>ollama pull qwen2.5:3b</code> 拉一个。' : '') + '</p>') +
+        '<label>嵌入（按意思找）用</label><select class="sel" data-emb>' + opt(emb, curEmb, emb.length ? '不用' : '没有嵌入模型') + '</select>' +
+        (emb.length ? '' : '<p class="hint">' + (s.kind === 'ollama' ? '想让「找」按意思找：<code>ollama pull bge-m3</code>（中文好），装好回来再点一次「找一找」。' : '换一个嵌入模型加载进来，就能按意思找。') + '</p>') +
+        '<div class="acts"><button class="btn pri" data-use' + (chat.length || (a.local && a.model) ? '' : ' disabled') + '>用这台的</button><span data-m></span></div></div>';
+    }).join('') : '<p class="hint">没找到。装一个 <b>Ollama</b>（ollama.com）或 <b>LM Studio</b> 并打开，再点「找一找」。也可以填局域网里跑着模型的机器。</p>') +
+    '<div class="addf"><input type="text" id="pv-lan" placeholder="局域网里的模型服务（可选），比如 http://192.168.1.20:11434" value="' + esc(lanUrl) + '"><button class="btn" id="pv-find">找一找</button></div>' +
+    (a.embedding_model ? '<p class="hint" id="pv-vec">按意思找的索引：' + vec[0] + ' / ' + vec[1] + ' 篇' + (a.rag_running ? '，正在建…' : vec[0] < vec[1] ? '。<button class="btn" id="pv-re">补齐</button>' : '，齐了') + (a.local ? '。嵌入在本机，一行输入「找」「问」也会按意思召回' : '') + '</p>' : '');
+  $('pv-on').onchange = async e => {
+    try { const r = await api('/field/privacy', {method:'POST', json:{on:e.target.checked}}); privOn = r.on; showVault(); toast(r.on ? (r.model_ok ? '私密模式开了：什么都只在这里' : '私密模式开了。<b>现在的模型不在本机</b>：在下面换一个本机模型，否则 AI 功能先停用') : '私密模式关了'); openPrivate(); }
+    catch(x){ e.target.checked = !e.target.checked; toast(esc(x.message || x), true); }
+  };
+  $('pv-find').onclick = () => { const v = $('pv-lan').value.trim(); try { v ? localStorage.setItem('litmus_lan_model', v) : localStorage.removeItem('litmus_lan_model'); } catch(e){} openPrivate(); };
+  if ($('pv-re')) $('pv-re').onclick = async () => { try { await api('/rag/reindex', {method:'POST'}); toast('在后台补齐，本机算，不出网'); openPrivate(); } catch(e){ toast(esc(e.message || e), true); } };
+  box.querySelectorAll('.lm').forEach(el => {
+    const s = found[+el.dataset.i], b = el.querySelector('[data-use]'), m = el.querySelector('[data-m]');
+    b.onclick = async () => {
+      b.disabled = true; m.className = ''; m.textContent = '正在换…';
+      const chat = el.querySelector('[data-chat]'), emb = el.querySelector('[data-emb]');
+      try {
+        const r = await api('/field/ai/local', {method:'POST', json:{base_url:s.base_url, model:chat ? chat.value : '', embedding_model:emb ? emb.value : ''}});
+        m.textContent = '换好了，正在试…';
+        const t = await api('/field/ai/test', {method:'POST'});
+        m.className = 'ok'; m.textContent = '能用：' + (t.ms / 1000).toFixed(1) + ' 秒回了「' + t.reply + '」' + (r.reindex ? '；按意思找的索引在后台建' : '');
+        aiInfo = null; setTimeout(openPrivate, r.reindex ? 1200 : 2200);
+      } catch(e){ b.disabled = false; m.className = 'bad'; m.textContent = e.message || String(e); }
+    };
+  });
+  /* 正在建索引：隔一会儿刷新进度 */
+  if (a.rag_running){ clearTimeout(openPrivate.t); openPrivate.t = setTimeout(() => { if (!$('panel').hidden && $('pv-on')) openPrivate(); }, 2500); }
+}
+
 async function openSettings(){
   const box = openPanel('模型设置', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   let a = {}; try { a = await api('/field/ai'); } catch(e){}
   const presets = [['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], ['通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'], ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'], ['本机 Ollama', 'http://localhost:11434/v1', 'qwen2.5']];
-  box.innerHTML = '<p class="hint" style="margin-top:0">问答结晶、解释、考考我都用这里的模型。任何兼容 OpenAI 接口的服务都可以。</p>' +
+  box.innerHTML = '<p class="hint" style="margin-top:0">问答结晶、解释、考考我都用这里的模型。任何兼容 OpenAI 接口的服务都可以。<button class="btn" id="ai-priv">' + (a.local_only ? '私密模式开着 · 本机模型…' : '用本机模型、私密模式…') + '</button></p>' + (a.blocked ? '<p class="hint bad">' + esc(a.blocked) + '</p>' : '') +
     '<div class="chips">' + presets.map((p, i) => '<button class="chip" data-pre="' + i + '"><span>' + esc(p[0]) + '</span></button>').join('') + '</div>' +
     '<label for="ai-url">接口地址</label><input type="text" id="ai-url" value="' + esc(a.base_url || '') + '" placeholder="https://api.deepseek.com/v1">' +
     '<label for="ai-model">模型</label><input type="text" id="ai-model" value="' + esc(a.model || '') + '" placeholder="deepseek-chat">' +
@@ -2818,6 +2878,7 @@ async function openSettings(){
     el.innerHTML = i.agreed ? '隐私：已同意 AI 学习、巡检把选中的内容发给 <b>' + esc(i.host) + '</b>（' + (i.at ? new Date(i.at * 1000).toLocaleDateString() : '') + '）。<button class="btn" id="ai-revoke">撤回同意</button>' : '隐私：AI 学习、巡检开始前会先告诉你发什么、发给 ' + esc(i.host) + '，你同意才开始。';
     const rv = $('ai-revoke'); if (rv) rv.onclick = async () => { aiInfo = await api('/field/consent', {method:'POST', json:{agree:false}}).catch(() => aiInfo); toast('撤回了：下次用 AI 学习、巡检前会再问你'); openSettings(); };
   });
+  $('ai-priv').onclick = openPrivate;
   if ($('ai-mv')) $('ai-mv').onclick = async () => { try { await api('/field/ai/move-key', {method:'POST'}); toast('密钥挪进凭证库了：litmus.toml 里已经不再有它。别的设备上要各自在 /设置 填一次'); openSettings(); } catch(e){ toast(esc(e.message || e), true); } };
   box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
   $('ai-save').onclick = async () => {
@@ -3483,7 +3544,7 @@ function merge3(base, mine, theirs, who){
   return {text:out.join('\n'), conflicts};
 }
 let peersN = 1;
-function showVault(){ $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇' + (peersN > 1 ? ' · ' + peersN + ' 处在线' : ''); }
+function showVault(){ $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇' + (peersN > 1 ? ' · ' + peersN + ' 处在线' : '') + (privOn ? ' · 私密' : ''); $('vault').title = privOn ? '私密模式：模型只在本机或局域网，要出网的事都不做（/私密）' : ''; }
 /* Agent 的轨迹：经过的文档连成一条线，当前那篇套一个呼吸的环 */
 function drawAgentTrail(){
   const R0 = agentRun; if (!R0 || !R0.trail.length) return;
@@ -4935,7 +4996,7 @@ loadField().then(() => {
   setTimeout(initOnboarding, nodes.length ? 1800 : 600);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
-loadPlugins(); presence(); loadDisk();
+loadPlugins(); presence(); loadDisk(); loadPriv();
 window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>

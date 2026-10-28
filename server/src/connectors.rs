@@ -1490,6 +1490,9 @@ pub async fn publish(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     if req["confirm"] != true {
         return err(StatusCode::BAD_REQUEST, "发到外面之前要确认（confirm: true）").into_response();
     }
+    if let Err(e) = super::offline_guard(&st, "发到外面") {
+        return e.into_response();
+    }
     let path = req["path"].as_str().unwrap_or("").to_string();
     if !kernel_core::is_safe_doc_path(&path) {
         return err(StatusCode::BAD_REQUEST, "只能发库里 Notes/ 下的文档").into_response();

@@ -208,6 +208,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/ai", get(field::ai_get).post(field::ai_put))
         .route("/field/ai/move-key", post(field::ai_move_key))
         .route("/field/ai/test", post(field::ai_test))
+        .route("/field/ai/local", get(field::ai_local_get).post(field::ai_local_put))
+        .route("/field/privacy", post(field::privacy_put))
         .route("/field/region", post(field::region_rename))
         .route("/field/organize", post(field::organize_plan))
         .route("/field/views", get(field::views_get).put(field::views_put))
@@ -4948,6 +4950,9 @@ async fn publish_deploy(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         if let Some(e) = publish_guard(&target) {
             return err(StatusCode::BAD_REQUEST, e).into_response();
         }
+        if target.kind != "local" && k.vault.config.ai.as_ref().map(|a| a.local_only).unwrap_or(false) {
+            return err(StatusCode::FORBIDDEN, format!("私密模式开着：发到「{}」要连外网，没有做。只在本机生成站点可以；要发出去先在 /私密 里关掉", target.name)).into_response();
+        }
         // 没选范围 = 整个库：要明确确认一次（以前点「部署」就会把整个库公开）
         if target.include.is_empty() && target.kind != "local" && !req.get("confirm_all").and_then(|v| v.as_bool()).unwrap_or(false) {
             let n = kernel_core::list_docs(&k.vault).map(|d| d.len()).unwrap_or(0);
@@ -5259,6 +5264,9 @@ async fn ingest_topic(
     body: Bytes,
 ) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    if let Err(e) = offline_guard(&st, "按主题从网上采集") {
         return e.into_response();
     }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
@@ -5621,6 +5629,9 @@ async fn design_presets() -> impl IntoResponse {
 /// 网页本地化：抓 URL → HTML→MD → 导入为文档。
 async fn ingest_web(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    if let Err(e) = offline_guard(&st, "抓网页") {
         return e.into_response();
     }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
@@ -6579,6 +6590,19 @@ async fn tree(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespons
 
 // ───────────────────────── 桌面端独占能力（/desktop/*） ─────────────────────────
 // 仅当 LITMUS_DESKTOP=1（桌面壳启动）时可用；线上部署返回 404。
+
+/// 私密模式（0.28）开着没有：litmus.toml [ai] local_only = true。
+pub(crate) fn private_mode(st: &AppState) -> bool {
+    st.kernel.lock().map(|k| k.vault.config.ai.as_ref().map(|a| a.local_only).unwrap_or(false)).unwrap_or(false)
+}
+
+/// 私密模式下要出网的事一律不做：说清楚是哪件事、怎么办。
+pub(crate) fn offline_guard(st: &AppState, what: &str) -> Result<(), (StatusCode, Json<Value>)> {
+    if private_mode(st) {
+        return Err(err(StatusCode::FORBIDDEN, format!("私密模式开着：{what}要连外网，没有做。要用就先在 /私密 里关掉")));
+    }
+    Ok(())
+}
 
 fn desktop_guard(st: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
     if st.desktop {

@@ -1358,6 +1358,10 @@ impl McpServer {
     }
 
     fn plugin_tool_http(&self, args: &Value, tool: &Value) -> Result<Value, String> {
+        // 私密模式：插件的联网工具不出网
+        if self.kernel.lock().map(|k| k.vault.config.ai.as_ref().map(|a| a.local_only).unwrap_or(false)).unwrap_or(false) {
+            return Err("私密模式开着：插件的联网工具不能用".into());
+        }
         let raw_url = tool.get("url").and_then(|x| x.as_str()).unwrap_or("");
         if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
             return Err("url 必须是 http(s)".into());
@@ -1768,6 +1772,7 @@ pub mod agent {
     /// 纯文本补全：不给工具、不碰库——排版 / 起标题这类「只变形不行动」的任务用它，
     /// 杜绝模型顺手调用 write_doc 之类的副作用。
     pub async fn complete(cfg: &AiConfig, system: &str, user: &str) -> anyhow::Result<String> {
+        cfg.check_private().map_err(anyhow::Error::msg)?;
         let key = cfg.resolved_key();
         let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
         let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(180)).build()?;
@@ -1800,6 +1805,7 @@ pub mod agent {
         mut body: Value,
         on_delta: &mut (dyn FnMut(&str) + Send),
     ) -> anyhow::Result<(Value, u64)> {
+        cfg.check_private().map_err(anyhow::Error::msg)?;
         let key = cfg.resolved_key();
         let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
         body["stream"] = json!(true);
@@ -1996,6 +2002,7 @@ pub mod agent {
                  当用户要求整理/汇总时，用 write_doc 把结果沉淀成文档。" }),
             json!({ "role": "user", "content": message }),
         ];
+        cfg.check_private().map_err(anyhow::Error::msg)?;
         let key = cfg.resolved_key();
         let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
         let client = reqwest::Client::new();
