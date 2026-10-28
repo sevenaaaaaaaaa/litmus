@@ -698,6 +698,27 @@ pub async fn get(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResp
     .into_response()
 }
 
+/// GET /field/curate/excluded：库外被剔掉、不再上场的（回收站里一起列出来，能放回）。
+pub async fn excluded(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let s = load_store(&root);
+    let names: HashMap<String, String> = super::sources::load_sources(&root).into_iter().map(|x| (x.id, x.name)).collect();
+    let mut items: Vec<Value> = s
+        .excluded
+        .iter()
+        .map(|(k, v)| {
+            let src = v["src"].as_str().and_then(|id| names.get(id).cloned()).unwrap_or_default();
+            let at = s.batches.iter().rev().find(|b| b.ext.contains(k)).map(|b| b.at).unwrap_or(0);
+            json!({ "key": k, "title": v["title"].as_str().unwrap_or(k), "src": src, "loc": pretty_loc(v["loc"].as_str().unwrap_or("")), "at": at })
+        })
+        .collect();
+    items.sort_by(|a, b| b["at"].as_u64().cmp(&a["at"].as_u64()));
+    Json(json!({ "items": items })).into_response()
+}
+
 /// POST /field/curate/config {keep, drop, keep_words, drop_words, auto}
 pub async fn set_config(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {

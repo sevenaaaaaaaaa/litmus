@@ -226,6 +226,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/curate/config", post(curate::set_config))
         .route("/field/curate/apply", post(curate::apply))
         .route("/field/curate/undo", post(curate::undo))
+        .route("/field/curate/excluded", get(curate::excluded))
         .route("/jobs/{id}/{action}", post(jobs::job_control))
         .route("/sources", get(sources::list).post(sources::upsert))
         .route("/sources/detect", get(sources::detect))

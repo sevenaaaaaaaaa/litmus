@@ -317,7 +317,7 @@ body.login > :not(#login){display:none!important}
 body.learning #doc .body{filter:blur(7px);opacity:.55;transition:filter var(--dur-4),opacity var(--dur-4);user-select:none}
 body.learning.peek #doc .body{filter:none;opacity:1;user-select:auto}
 .n[data-k="ext"] .sp{background:transparent;box-shadow:none;border:1.4px dashed var(--ink-3);width:6px;height:6px}
-.n[data-k="ext"] .t{font-style:italic}
+.n[data-k="ext"] .t{font-style:italic;color:var(--ink-2)}
 .extb{margin:-6px 0 18px;padding:12px 14px;border-radius:var(--r-md);background:var(--paper);box-shadow:inset 0 0 0 1px var(--rule);display:flex;flex-direction:column;gap:2px;font-size:var(--fs-2);color:var(--ink-2)}
 .extb b{font:600 var(--fs-1) var(--f-mono);letter-spacing:.08em;color:var(--ink-3)}.extb span{color:var(--ink)}.extb small{font:400 var(--fs-1) var(--f-mono);word-break:break-all}
 .extb .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
@@ -489,7 +489,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 </style>
 </head>
 <body>
-<div id="drag" aria-hidden="true"></div>
+<div id="drag" aria-hidden="true" title="拖动移动窗口，双击放大"></div>
 <div id="field" data-z="mid" aria-label="知识场：拖动平移，捏合或按住 Ctrl 滚动缩放">
   <canvas id="stain"></canvas>
   <div id="nodes"></div>
@@ -509,6 +509,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
   </div>
   <button class="ib" id="b-fit" title="看全（F）" aria-label="看全"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
   <button class="ib" id="b-theme" title="明暗" aria-label="切换明暗"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
+  <button class="ib" id="b-trash" title="回收站：删掉的、筛掉的都在这里，能找回" aria-label="回收站"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v4M9 7v4"/></svg></button>
   <button class="ib" id="b-help" title="用法与旧功能位置（?）" aria-label="帮助"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6.2a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3V10"/><circle cx="8" cy="12.4" r=".6" fill="currentColor"/></svg></button>
 </div>
 
@@ -1638,7 +1639,7 @@ const CMDS = [
   ['/明暗', '切换明暗', toggleTheme],
   ['/新建', '新建一篇文档（可接标题：/新建 周报）', () => newDoc('')],
   ['/最近', '最近打开和最近改过的文档', openRecent],
-  ['/回收站', '找回删掉的文档', openTrash],
+  ['/回收站', '找回删掉的文档和筛掉的库外条目（右上角也有入口）', openTrash],
   ['/同步', '把外部编辑器里的改动合进来', syncNow],
   ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
   ['/导入', '选择文件导入（也可以直接拖进窗口）', pickFiles],
@@ -1961,14 +1962,22 @@ function renderLinks(n){
 /* 回收站 */
 async function openTrash(){
   const box = openPanel('回收站', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
-  let d; try { d = await api('/trash'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
-  const es = d.entries || [];
-  box.innerHTML = (es.length ? es.map(x => '<div class="row"><div class="grow"><span>' + esc(x.path.split('/').pop().replace(/\.md$/, '')) + '</span><small>' + esc(x.path) + (x.days_left != null ? ' · 还会保留 ' + x.days_left + ' 天' : '') + '</small></div><button class="btn" data-restore="' + esc(x.path) + '">找回</button></div>').join('')
-    : '<p class="empty">回收站是空的。</p>') + '<p class="hint">删掉的文档在这里保留 ' + (d.retention_days || 30) + ' 天，之后自动清掉。</p>';
+  let d, x = {items:[]};
+  try { [d, x] = await Promise.all([api('/trash'), api('/field/curate/excluded').catch(() => ({items:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const es = d.entries || [], xs = x.items || [];
+  box.innerHTML = '<label>库里删掉的</label>' + (es.length ? es.map(e => '<div class="row"><div class="grow"><span>' + esc(e.path.split('/').pop().replace(/\.md$/, '')) + '</span><small>' + esc(e.path) + (e.days_left != null ? ' · 还会保留 ' + e.days_left + ' 天' : '') + '</small></div><button class="btn" data-restore="' + esc(e.path) + '">找回</button></div>').join('')
+    : '<p class="empty">没有。</p>') + '<p class="hint">删掉的文档在这里保留 ' + (d.retention_days || 30) + ' 天，之后自动清掉。</p>' +
+    '<label>库外拿掉的（筛选剔掉的，原件一直在原处）</label>' + (xs.length ? xs.slice(0, 300).map(e => '<div class="row"><div class="grow"><span>' + esc(e.title) + '</span><small>' + esc([e.src, e.loc].filter(Boolean).join(' · ')) + '</small></div><button class="btn" data-back="' + esc(e.key) + '">放回场上</button></div>').join('') + (xs.length > 300 ? '<p class="hint">还有 ' + (xs.length - 300) + ' 篇，去 /筛选 的「撤销」里整批放回。</p>' : '')
+    : '<p class="empty">没有。</p>');
   box.querySelectorAll('[data-restore]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     try { await api('/trash/restore', {method:'POST', json:{path:b.dataset.restore}}); b.closest('.row').remove(); await refreshNow(); const m = byPath.get(b.dataset.restore); if (m) flash(m); toast('已找回 <b>' + esc(b.dataset.restore) + '</b>'); }
     catch(e){ b.disabled = false; toast('<b>没找回来</b>：' + esc(e.message || e), true); }
+  });
+  box.querySelectorAll('[data-back]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/field/curate/undo', {method:'POST', json:{keys:[b.dataset.back]}}); b.closest('.row').remove(); await refreshNow(); const m = byPath.get(b.dataset.back); if (m) flash(m); toast('放回场上了'); }
+    catch(e){ b.disabled = false; toast('<b>没放回来</b>：' + esc(e.message || e), true); }
   });
 }
 
@@ -3613,7 +3622,7 @@ function wireCurate(){
     try {
       const r = await api('/field/curate/apply', {method:'POST', json:{drop, keep}});
       await refreshNow(); pollJobs(true);
-      toastAct('删了 ' + (r.trashed + r.hidden) + ' 篇：' + (r.trashed ? '库里 ' + r.trashed + ' 篇进了回收站' : '') + (r.trashed && r.hidden ? '，' : '') + (r.hidden ? '库外 ' + r.hidden + ' 篇不再上场' : '') + (r.failed.length ? '；' + r.failed.length + ' 篇没删成' : ''), '撤销', async () => { await api('/field/curate/undo', {method:'POST', json:{batch:r.batch}}).catch(e => toast(esc(e.message), true)); await refreshNow(); toast('放回来了'); });
+      toastAct('删了 ' + (r.trashed + r.hidden) + ' 篇：' + (r.trashed ? '库里 ' + r.trashed + ' 篇进了回收站' : '') + (r.trashed && r.hidden ? '，' : '') + (r.hidden ? '库外 ' + r.hidden + ' 篇不再上场' : '') + (r.failed.length ? '；' + r.failed.length + ' 篇没删成' : '') + '（右上角回收站能找回）', '撤销', async () => { await api('/field/curate/undo', {method:'POST', json:{batch:r.batch}}).catch(e => toast(esc(e.message), true)); await refreshNow(); toast('放回来了'); });
       openCurate();
     } catch(e){ b.disabled = false; toast('<b>没删成</b>：' + esc(e.message || e), true); }
   };
@@ -3646,8 +3655,9 @@ function wireExtBanner(n, d){
     try {
       const r = await api('/field/ext/import', {method:'POST', json:{p:n.p, mode:how}});
       await refreshNow(); const m = byPath.get(r.path);
-      if (m){ flash(m); openDoc(m); }
-      toast(how === 'move' && r.moved ? '已移进库，存为 <b>' + esc(r.path) + '</b>' + (r.asset ? '；原件在 <b>' + esc(r.asset) + '</b>' : '') : '已导入为 <b>' + esc(r.path) + '</b>' + (how === 'copy' ? '，原件留在原处' : ''));
+      /* 原地变身：虚线圈（库外）换成实心点（库里），同一个位置，先亮一下再打开 */
+      if (m){ m.el.classList.add('fresh'); setTimeout(() => { m.el.classList.remove('fresh'); kick(); }, 3200); flash(m); openDoc(m); }
+      toastAct('入库了：<b>' + esc(r.path) + '</b>。场上那个虚线圈变成了实心点，以后改的是库里这篇' + (how === 'move' && r.moved ? (r.asset ? '；原件移进了 <b>' + esc(r.asset) + '</b>' : '；原件已移走') : '；原件留在原处，不再出现在场上'), '好', () => {});
     } catch(e){ b.disabled = false; toast('<b>没导入成</b>：' + esc(e.message || e), true); }
   });
 }
@@ -3690,7 +3700,7 @@ function toggleTheme(){
 }
 $('b-theme').onclick = toggleTheme;
 function openHelp(){ $('help').classList.add('on'); $('help').scrollTop = 0; }
-$('b-help').onclick = openHelp; $('help-x').onclick = () => $('help').classList.remove('on');
+$('b-help').onclick = openHelp; $('b-trash').onclick = () => openTrash(); $('help-x').onclick = () => $('help').classList.remove('on');
 async function rebuild(){
   $('help').classList.remove('on'); toast('正在整体重排…');
   try { await loadField({rebuild:true}); fit(); toast('重排好了'); } catch(e){ toast('<b>重排失败</b>：' + esc(e.message || e), true); }
@@ -3734,6 +3744,19 @@ if (DESK){
   addEventListener('resize', () => document.documentElement.classList.toggle('fullscreen', innerHeight >= screen.height - 2));
 }
 
+
+/* 桌面：顶部空白处拖动窗口、双击放大（WKWebView 不认 -webkit-app-region，要调 Tauri 的窗口命令） */
+if (DESK){
+  const win = cmd => window.__TAURI_INTERNALS__.invoke('plugin:window|' + cmd, {label:'main'}).catch(() => {});
+  const grab = e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    if (e.detail === 2) win('toggle_maximize'); else win('start_dragging');
+  };
+  $('drag').addEventListener('mousedown', grab);
+  /* 阅读页的顶栏空白处也能拖 */
+  document.querySelector('#sheet header').addEventListener('mousedown', e => { if (e.target === e.currentTarget) grab(e); });
+}
 /* ───────── 启动 ───────── */
 readColors();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); kick(); });

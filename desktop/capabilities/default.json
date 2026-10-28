@@ -1,13 +1,20 @@
 {
   "identifier": "default",
   "description": "Litmus desktop window",
-  "windows": ["main", "sticky"],
+  "windows": [
+    "main",
+    "sticky"
+  ],
   "remote": {
-    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+    "urls": [
+      "http://127.0.0.1:*",
+      "http://localhost:*"
+    ]
   },
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
     "allow-desktop-shell"
   ]
 }

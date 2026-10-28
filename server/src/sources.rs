@@ -103,6 +103,9 @@ struct Index {
     items: Vec<Item>,
     #[serde(default)]
     scans: HashMap<String, Value>,
+    /// 已经入库的库外条目：key → 库里的路径。入了库就以库里那篇为准，原件不再上场、重扫也不回来。
+    #[serde(default)]
+    imported: HashMap<String, String>,
 }
 
 fn dir(root: &Path) -> PathBuf {
@@ -119,6 +122,12 @@ fn save_sources(root: &Path, list: &[Source]) -> std::io::Result<()> {
     std::fs::create_dir_all(root.join(".litmus/local"))?;
     std::fs::write(cfg_path(root), serde_json::to_vec_pretty(&json!({ "sources": list })).unwrap_or_default())
 }
+/// 索引是「读出来改、再整份写回」：几个来源同时扫描时要排队，不然后写的会盖掉先写的。
+fn ix_lock() -> std::sync::MutexGuard<'static, ()> {
+    static L: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
+    L.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn load_index(root: &Path) -> Index {
     std::fs::read_to_string(dir(root).join("index.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
@@ -161,6 +170,7 @@ pub fn all_items(root: &Path) -> Vec<Item> {
 
 /// 从索引里拿掉这些条目（筛选剔除），返回拿掉的原样（放回时用）。
 pub fn take_items(root: &Path, keys: &[&str]) -> Vec<(String, Value)> {
+    let _ixg = ix_lock();
     let mut ix = load_index(root);
     let mut out = Vec::new();
     ix.items.retain(|i| {
@@ -184,6 +194,7 @@ pub fn put_items(root: &Path, items: Vec<Value>) {
     if items.is_empty() {
         return;
     }
+    let _ixg = ix_lock();
     let mut ix = load_index(root);
     let keys: std::collections::HashSet<String> = items.iter().map(|i| i.key.clone()).collect();
     ix.items.retain(|i| !keys.contains(&i.key));
@@ -196,10 +207,12 @@ pub fn put_items(root: &Path, items: Vec<Value>) {
 pub fn corpus(root: &Path) -> Vec<(Item, String, String)> {
     let enabled: HashMap<String, String> = load_sources(root).into_iter().filter(|s| s.enabled).map(|s| (s.id, s.name)).collect();
     let hidden = super::curate::hidden_keys(root);
-    load_index(root)
+    let ix = load_index(root);
+    let imported: std::collections::HashSet<String> = ix.imported.iter().filter(|(_, p)| root.join(p).exists()).map(|(k, _)| k.clone()).collect();
+    ix
         .items
         .into_iter()
-        .filter(|it| !hidden.contains(&it.key))
+        .filter(|it| !hidden.contains(&it.key) && !imported.contains(&it.key))
         .filter_map(|it| {
             let name = enabled.get(&it.src)?.clone();
             let t = read_text(root, &it.hash);
@@ -1036,6 +1049,7 @@ pub async fn remove(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath(id):
         return err(StatusCode::NOT_FOUND, "没有这个来源").into_response();
     }
     let _ = save_sources(&root, &list);
+    let _ixg = ix_lock();
     let mut ix = load_index(&root);
     ix.items.retain(|i| i.src != id);
     ix.scans.remove(&id);
@@ -1060,13 +1074,16 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
         let ix0 = load_index(&root);
         let prev: HashMap<String, Item> = ix0.items.iter().filter(|i| i.src == s.id).map(|i| (i.key.clone(), i.clone())).collect();
         // 分批交付：已扫到的 + 还没扫到的旧条目（这样中途场上不会少东西），完成时再按本轮结果收口
-        let excluded = super::curate::excluded_keys(&root);
+        let mut excluded = super::curate::excluded_keys(&root);
+        // 已经入库的也不再收回来（库里那篇还在的话）
+        excluded.extend(ix0.imported.iter().filter(|(_, p)| root.join(p).exists()).map(|(k, _)| k.clone()));
         let flush = |part: &[Item]| {
             let part: Vec<Item> = part.iter().filter(|i| !excluded.contains(&i.key)).cloned().collect();
             // 分批上场前先过筛选规则：像过程文档的直接扣下，不会先出现再消失
             let fresh: Vec<Item> = part.iter().filter(|i| !prev.contains_key(&i.key)).cloned().collect();
             super::curate::hold_new(&root, &fresh, &s.name, s.path.as_deref());
             let part = &part[..];
+            let _ixg = ix_lock();
             let mut ix = load_index(&root);
             let fresh: std::collections::HashSet<&str> = part.iter().map(|i| i.key.as_str()).collect();
             ix.items.retain(|i| i.src != s.id || !fresh.contains(i.key.as_str()));
@@ -1095,6 +1112,7 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
         }
         let pre = format!("ext:{}/", s.id);
         let held_n = super::curate::load_store(&root).held.keys().filter(|k| k.starts_with(&pre)).count();
+        let _ixg = ix_lock();
         let mut ix = load_index(&root);
         let state = match r {
             Ok(items) => {
@@ -1358,21 +1376,23 @@ pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
     drop(k);
-    // 移动：资产已存进库，再删原件；从索引里去掉这一条
+    // 移动：资产已存进库，再删原件
     let mut removed_original = false;
     if moved_to.is_some() {
         removed_original = std::fs::remove_file(&it.loc).is_ok();
     }
-    if removed_original || mode == "copy" {
+    // 入了库就以库里那篇为准：这一条不再上场、重扫也不回来；场上的位置交给新的那篇（原地变成实心）
+    {
+        let _ixg = ix_lock();
         let mut ix = load_index(&root);
-        if removed_original {
-            ix.items.retain(|i| i.key != key);
-        }
+        ix.items.retain(|i| i.key != key);
+        ix.imported.insert(key.clone(), target.clone());
         save_index(&root, &ix);
+        super::field::carry_position(&root, &key, &target);
         REV.fetch_add(1, Ordering::SeqCst);
     }
     audit_log(&root.join(".litmus/local"), "ext-import", &json!({ "key": key, "to": target, "mode": mode, "moved": removed_original }));
-    Json(json!({ "path": target, "asset": moved_to.filter(|a| !a.is_empty()), "moved": removed_original, "original": it.loc })).into_response()
+    Json(json!({ "path": target, "asset": moved_to.filter(|a| !a.is_empty()), "moved": removed_original, "original": it.loc, "from": key })).into_response()
 }
 
 #[cfg(test)]

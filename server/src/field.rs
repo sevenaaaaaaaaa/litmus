@@ -206,6 +206,35 @@ fn field_json_path(root: &std::path::Path) -> PathBuf {
     root.join(".litmus/local").join("field.json")
 }
 
+/// 一篇换了路径（库外条目入库）：把它在场上的位置交给新路径，下次铺场时新的一篇原地出现。
+pub fn carry_position(root: &std::path::Path, from: &str, to: &str) {
+    let p = field_json_path(root);
+    let Ok(raw) = std::fs::read_to_string(&p) else { return };
+    let Ok(mut v) = serde_json::from_str::<Value>(&raw) else { return };
+    if let Some(pos) = v.get("pos").and_then(|x| x.get(from)).cloned() {
+        v["pos"][to] = pos;
+        let _ = std::fs::write(&p, serde_json::to_vec(&v).unwrap_or_default());
+    }
+}
+
+/// 库里的文档开头「> 导入自 `原处`」：原处已经入了库，库外那条就不再上场
+/// （兼容 0.18 之前导入、没记在 imported 里的）。
+fn imported_origins(docs: &[(String, String, String)]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for (_, _, text) in docs {
+        for l in text.lines().take(8) {
+            let Some(rest) = l.strip_prefix("> 导入自 ") else { continue };
+            // 只认本地路径：网址可能是一整个接口共用的，按它去重会误伤同源的其他条目
+            if let Some(a) = rest.strip_prefix('`') {
+                if let Some(b) = a.find('`') {
+                    out.insert(a[..b].to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
 fn load_prev(root: &std::path::Path) -> HashMap<String, (f32, f32)> {
     let Ok(s) = std::fs::read_to_string(field_json_path(root)) else { return HashMap::new() };
     let Ok(v) = serde_json::from_str::<Value>(&s) else { return HashMap::new() };
@@ -274,8 +303,12 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
             .collect();
         // 库外来源：原处索引的文字一起铺进场里（path 以 ext: 开头，不可写）
         let ext = super::sources::corpus(&root2);
+        let origins = imported_origins(&docs);
         let mut ext_meta: HashMap<String, (String, String, i64, String)> = HashMap::new();
         for (it, src_name, text) in ext {
+            if origins.contains(&it.loc) {
+                continue;
+            }
             ext_meta.insert(it.key.clone(), (src_name, it.date.clone(), it.mtime, it.kind.clone()));
             docs.push((it.key, it.title, text));
         }
@@ -2194,7 +2227,21 @@ for line in sys.stdin:
         assert!(dir.path().join("Assets/imported/页面.html").is_file() && !o.join("页面.html").exists());
         assert!(std::fs::read_to_string(dir.path().join(hv["path"].as_str().unwrap())).unwrap().contains("](Assets/imported/页面.html)"));
         let (_, d2) = call(&app, &token, "GET", "/field/data", "").await;
-        assert_eq!(d2["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 1);
+        // 入了库就以库里那篇为准：复制进库的原件也不再以库外虚线圈出现，场上只有库里那三篇
+        assert_eq!(d2["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 0, "{d2}");
+        let was = d["docs"].as_array().unwrap().iter().find(|x| x["p"] == key.as_str()).unwrap().clone();
+        let now = d2["docs"].as_array().unwrap().iter().find(|x| x["p"] == imp["path"]).unwrap().clone();
+        assert_eq!((now["x"].clone(), now["y"].clone()), (was["x"].clone(), was["y"].clone()), "入库的那篇原地出现，接替虚线圈的位置");
+        // 重新扫描也不回来（原件还在原处）
+        let (_, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            if call(&app, &token, "GET", "/sources", "").await.1["sources"][0]["scan"]["running"] == false {
+                break;
+            }
+        }
+        let (_, d2) = call(&app, &token, "GET", "/field/data", "").await;
+        assert_eq!(d2["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 0, "{d2}");
         // 停用来源：场里的库外节点消失；移除：索引清掉，原文件不动
         let mut src: Value = list["sources"][0].clone();
         src["enabled"] = serde_json::json!(false);
