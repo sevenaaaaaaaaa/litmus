@@ -217,6 +217,25 @@ pub fn carry_position(root: &std::path::Path, from: &str, to: &str) {
     }
 }
 
+/// 整个文件夹换了位置：底下每篇在场上的位置都跟过去，不让它们在场上跳一下。
+pub fn carry_prefix(root: &std::path::Path, from: &str, to: &str) {
+    let p = field_json_path(root);
+    let Ok(raw) = std::fs::read_to_string(&p) else { return };
+    let Ok(mut v) = serde_json::from_str::<Value>(&raw) else { return };
+    let pre = format!("{from}/");
+    let moved: Vec<(String, Value)> = match v.get("pos").and_then(|x| x.as_object()) {
+        Some(m) => m.iter().filter(|(k, _)| k.starts_with(&pre)).map(|(k, x)| (format!("{to}/{}", &k[pre.len()..]), x.clone())).collect(),
+        None => return,
+    };
+    if moved.is_empty() {
+        return;
+    }
+    for (k, x) in moved {
+        v["pos"][k] = x;
+    }
+    let _ = std::fs::write(&p, serde_json::to_vec(&v).unwrap_or_default());
+}
+
 /// 库里的文档开头「> 导入自 `原处`」：原处已经入了库，库外那条就不再上场
 /// （兼容 0.18 之前导入、没记在 imported 里的）。
 fn imported_origins(docs: &[(String, String, String)]) -> std::collections::HashSet<String> {
@@ -2411,6 +2430,87 @@ for line in sys.stdin:
             }
         }
         assert!(list["sources"][0]["scan"]["error"].as_str().unwrap().contains("linkto"), "{list}");
+    }
+
+    /// 0.20 接回来的：评论（正文、回复、解决）、移动时位置和评论跟着走、文件夹移动改链接、
+    /// 复制不覆盖、回收站按份找回和彻底删除、分支名校验、笔记库不能同步到 GitHub。
+    #[tokio::test]
+    async fn restored_classic_features_keep_their_promises() {
+        let (app, t, dir) = app();
+        seed(&app, &t).await;
+        let root = dir.path();
+        let pos = |p: &str| -> Value {
+            let v: Value = serde_json::from_str(&std::fs::read_to_string(root.join(".litmus/local/field.json")).unwrap()).unwrap();
+            v["pos"][p].clone()
+        };
+        call(&app, &t, "GET", "/field/data", "").await;
+        let before = pos("Notes/同步/协议.md");
+        assert!(!before.is_null());
+
+        // 评论：正文要存下（以前 add 把 text 丢了）
+        let (st, r) = call(&app, &t, "POST", "/comments", r#"{"path":"Notes/同步/协议.md","op":"add","start":2,"end":6,"quote":"同步协议","text":"这里要写清楚","author":"我"}"#).await;
+        assert_eq!(st, 200);
+        let id = r["comments"][0]["id"].as_str().unwrap().to_string();
+        assert_eq!(r["comments"][0]["text"], "这里要写清楚");
+        let (_, r) = call(&app, &t, "POST", "/comments", &format!(r#"{{"path":"Notes/同步/协议.md","op":"reply","id":"{id}","text":"好","author":"我"}}"#)).await;
+        assert_eq!(r["comments"][0]["replies"][0]["text"], "好");
+
+        // 改名：位置、评论跟过去
+        let (st, _) = call(&app, &t, "POST", "/doc/move", r#"{"from":"Notes/同步/协议.md","to":"Notes/同步/同步协议.md"}"#).await;
+        assert_eq!(st, 200);
+        assert_eq!(pos("Notes/同步/同步协议.md"), before, "改名后场上的位置应跟过去");
+        let (_, r) = call(&app, &t, "GET", &format!("/comments?path={}", urlenc("Notes/同步/同步协议.md")), "").await;
+        assert_eq!(r["comments"].as_array().unwrap().len(), 1, "评论应跟过去");
+
+        // 文件夹移动：按路径写的链接改好，位置、评论跟过去
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc("Notes/发布/索引.md")), "# 索引\n\n见 [[Notes/同步/冲突]] 和 [多设备](Notes/同步/设备.md)。").await;
+        call(&app, &t, "GET", "/field/data", "").await;
+        let dev = pos("Notes/同步/设备.md");
+        let (st, r) = call(&app, &t, "POST", "/dir/move", r#"{"from":"Notes/同步","to":"Notes/协作/同步"}"#).await;
+        assert_eq!(st, 200, "{r}");
+        assert!(r["relinked"].as_u64().unwrap() >= 1);
+        let idx = std::fs::read_to_string(root.join("Notes/发布/索引.md")).unwrap();
+        assert!(idx.contains("[[Notes/协作/同步/冲突]]") && idx.contains("](Notes/协作/同步/设备.md)"), "{idx}");
+        assert_eq!(pos("Notes/协作/同步/设备.md"), dev);
+        let (_, r) = call(&app, &t, "GET", &format!("/comments?path={}", urlenc("Notes/协作/同步/同步协议.md")), "").await;
+        assert_eq!(r["comments"].as_array().unwrap().len(), 1, "文件夹移动后评论也跟过去");
+
+        // 复制不覆盖
+        let (st, _) = call(&app, &t, "POST", "/doc/copy", r#"{"from":"Notes/发布/站点.md","to":"Notes/发布/部署.md"}"#).await;
+        assert_eq!(st, 409);
+        assert!(std::fs::read_to_string(root.join("Notes/发布/部署.md")).unwrap().contains("部署流程"));
+        let (st, _) = call(&app, &t, "POST", "/dir/copy", r#"{"from":"Notes/没有","to":"Notes/没有 副本"}"#).await;
+        assert_eq!(st, 404);
+        assert!(!root.join("Notes/没有 副本").exists(), "源不存在时不该留下空文件夹");
+
+        // 回收站：同一路径删两次，找回最近那份；按 trash 精确彻底删除
+        let p = urlenc("Notes/发布/域名.md");
+        call(&app, &t, "DELETE", &format!("/doc?path={p}"), "").await;
+        call(&app, &t, "PUT", &format!("/doc?path={p}"), "# 域名 第二版").await;
+        call(&app, &t, "DELETE", &format!("/doc?path={p}"), "").await;
+        let (_, tr) = call(&app, &t, "GET", "/trash", "").await;
+        let es = tr["entries"].as_array().unwrap();
+        assert_eq!(es.len(), 2);
+        assert!(es[0]["trash"].is_string());
+        let (st, _) = call(&app, &t, "POST", "/trash/restore", r#"{"path":"Notes/发布/域名.md"}"#).await;
+        assert_eq!(st, 200);
+        assert!(std::fs::read_to_string(root.join("Notes/发布/域名.md")).unwrap().contains("第二版"), "应找回最近删的那份");
+        let (_, tr) = call(&app, &t, "GET", "/trash", "").await;
+        let key = tr["entries"][0]["trash"].as_str().unwrap().to_string();
+        let (st, r) = call(&app, &t, "POST", "/trash/purge", &format!(r#"{{"path":"Notes/发布/域名.md","trash":"{key}"}}"#)).await;
+        assert_eq!((st, r["purged"].as_u64()), (200, Some(1)));
+        let (_, tr) = call(&app, &t, "GET", "/trash", "").await;
+        assert!(tr["entries"].as_array().unwrap().is_empty());
+
+        // 分支名：不能被 git 当成选项
+        for bad in ["-b", "--orphan=x", "a..b", "a b", ""] {
+            let (st, _) = call(&app, &t, "POST", "/git/checkout", &serde_json::json!({"name": bad, "create": true}).to_string()).await;
+            assert_eq!(st, 400, "分支名 {bad:?} 应被拒绝");
+        }
+        // 笔记库不能同步到 GitHub
+        let (st, r) = call(&app, &t, "POST", "/git/sync", r#"{"remote":"git@github.com:someone/notes.git"}"#).await;
+        assert_eq!(st, 400);
+        assert!(r.to_string().contains("GitHub"));
     }
 
     #[tokio::test]

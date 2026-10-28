@@ -509,6 +509,9 @@ async fn move_doc(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
     let relinked = relink_moved(&k.vault.root, &from, &to);
+    // 场上的位置和评论跟着走：改个名不该让它在场上跳走、评论丢掉
+    field::carry_position(&k.vault.root, &from, &to);
+    comments_follow(&k.vault.root, &from, &to);
     let _ = k.sync_all();
     Json(json!({ "from": from, "to": to, "relinked": relinked })).into_response()
 }
@@ -583,8 +586,12 @@ async fn move_dir(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     if let Err(e) = std::fs::rename(&src, &dst) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
+    // 指向这个文件夹里文档的链接、场上的位置、评论都跟过去
+    let relinked = relink_dir(&k.vault.root, &from, &to);
+    field::carry_prefix(&k.vault.root, &from, &to);
+    comments_follow(&k.vault.root, &from, &to);
     let _ = k.sync_all();
-    Json(json!({ "from": from, "to": to })).into_response()
+    Json(json!({ "from": from, "to": to, "relinked": relinked })).into_response()
 }
 
 /// 复制整个文件夹（含子目录）：文档走 put_doc（新 doc 身份，避免 CRDT 同源冲突），
@@ -607,6 +614,9 @@ async fn copy_dir(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     }
     let mut k = st.kernel.lock().unwrap();
     let root = k.vault.root.clone();
+    if !root.join(&from).is_dir() {
+        return err(StatusCode::NOT_FOUND, "源文件夹不存在").into_response();
+    }
     if root.join(&to).exists() {
         return err(StatusCode::CONFLICT, "目标文件夹已存在").into_response();
     }
@@ -1206,6 +1216,8 @@ async fn doc_autoname(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     }
     let final_stem = stem_of(&to);
     let relinked = rewrite_wikilinks(&root, &stem, &final_stem);
+    field::carry_position(&root, &path, &to);
+    comments_follow(&root, &path, &to);
     let _ = st.kernel.lock().unwrap().sync_all();
     Json(json!({ "path": to, "from": path, "title": title, "source": source, "renamed": true, "relinked": relinked })).into_response()
 }
@@ -1248,6 +1260,33 @@ fn relink_moved(root: &std::path::Path, from: &str, to: &str) -> usize {
     }
     if fs != ts {
         changed += rewrite_wikilinks(root, &fs, &ts);
+    }
+    changed
+}
+
+/// 文件夹改了位置：把 `[[from/…`、`](from/…` 这样按路径写的链接改到新文件夹
+/// （按文件名写的 [[名字]] 不受影响）。
+fn relink_dir(root: &std::path::Path, from: &str, to: &str) -> usize {
+    let (a, b) = (format!("{from}/"), format!("{to}/"));
+    let mut changed = 0usize;
+    let mut stack = vec![root.join("Notes")];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(s) = std::fs::read_to_string(&p) else { continue };
+            let out = s.replace(&format!("[[{a}"), &format!("[[{b}")).replace(&format!("]({a}"), &format!("]({b}"));
+            if out != s && std::fs::write(&p, &out).is_ok() {
+                changed += 1;
+            }
+        }
     }
     changed
 }
@@ -2252,6 +2291,10 @@ async fn copy_doc(
         return err(StatusCode::BAD_REQUEST, "源与目标相同").into_response();
     }
     let mut k = st.kernel.lock().unwrap();
+    // 复制不覆盖：目标已有一篇就拒绝（以前会静默把它冲掉）
+    if k.vault.root.join(&to).exists() {
+        return err(StatusCode::CONFLICT, "目标已存在").into_response();
+    }
     if let Err(e) = k.sync_throttled() {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
@@ -2530,6 +2573,7 @@ async fn trash_list(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
             let elapsed_d = now.saturating_sub(e.deleted_at) / 86_400;
             json!({
                 "path": e.path,
+                "trash": e.trash,
                 "deleted_at": e.deleted_at,
                 "days_left": if days == 0 { Value::Null } else { json!(days.saturating_sub(elapsed_d as u32)) },
             })
@@ -2550,7 +2594,9 @@ async fn trash_restore(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byte
     }
     let mut k = st.kernel.lock().unwrap();
     let mut entries = trash_load(&k.vault.root);
-    let Some(idx) = entries.iter().position(|e| e.path == path) else {
+    // 同一路径删过几次：给了 trash 就按它找，否则找回最近删的那一份（列表也是最近的在前）
+    let key = req.get("trash").and_then(|p| p.as_str());
+    let Some(idx) = entries.iter().rposition(|e| e.path == path && key.map_or(true, |t| e.trash == t)) else {
         return err(StatusCode::NOT_FOUND, "not in trash").into_response();
     };
     let src = trash_dir(&k.vault.root).join(&entries[idx].trash);
@@ -2588,8 +2634,10 @@ async fn trash_purge(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     let k = st.kernel.lock().unwrap();
     let mut entries = trash_load(&k.vault.root);
     let mut purged = 0usize;
+    let mut gone: Vec<String> = Vec::new();
     if all {
         for e in &entries {
+            gone.push(e.path.clone());
             let p = trash_dir(&k.vault.root).join(&e.trash);
             let _ = if p.is_dir() {
                 std::fs::remove_dir_all(&p)
@@ -2601,19 +2649,28 @@ async fn trash_purge(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
         entries.clear();
     } else {
         let path = path.unwrap();
-        if let Some(idx) = entries.iter().position(|e| e.path == path) {
+        let key = req.get("trash").and_then(|p| p.as_str());
+        if let Some(idx) = entries.iter().rposition(|e| e.path == path && key.map_or(true, |t| e.trash == t)) {
             let p = trash_dir(&k.vault.root).join(&entries[idx].trash);
             let _ = if p.is_dir() {
                 std::fs::remove_dir_all(&p)
             } else {
                 std::fs::remove_file(&p)
             };
-            entries.remove(idx);
+            gone.push(entries.remove(idx).path);
             purged += 1;
         }
     }
     if let Err(e) = trash_save(&k.vault.root, &entries) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    // 彻底删掉的文档，评论也一起清掉（库里同路径又有了一篇、或回收站里还有另一份时留着）
+    for p in gone {
+        if !k.vault.root.join(&p).exists() && !entries.iter().any(|e| e.path == p) {
+            if let Some(c) = comments_path(&k.vault.root, &p) {
+                let _ = std::fs::remove_file(c);
+            }
+        }
     }
     Json(json!({ "purged": purged })).into_response()
 }
@@ -5077,7 +5134,11 @@ async fn git_status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoR
     }
     let k = st.kernel.lock().unwrap();
     match kernel_deploy::gitops::status(&k.vault.root) {
-        Ok((branch, changes)) => Json(json!({ "branch": branch, "changes": changes })).into_response(),
+        Ok((branch, changes)) => Json(json!({
+            "branch": branch, "changes": changes,
+            "remote": kernel_deploy::gitops::remote_url(&k.vault.root),
+        }))
+        .into_response(),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
@@ -5125,18 +5186,22 @@ async fn git_checkout(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         return e.into_response();
     }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let name = req.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-    if name.is_empty() || name.contains("..") || name.contains(' ') {
-        return err(StatusCode::BAD_REQUEST, "invalid branch name").into_response();
+    let name = req.get("name").and_then(|n| n.as_str()).unwrap_or("").trim().to_string();
+    if !kernel_deploy::gitops::valid_branch(&name) {
+        return err(StatusCode::BAD_REQUEST, "分支名只能用字母、数字和 . _ / -，且不能以 - 开头").into_response();
     }
-    let k = st.kernel.lock().unwrap();
+    let mut k = st.kernel.lock().unwrap();
     let r = if req.get("create").and_then(|c| c.as_bool()).unwrap_or(false) {
         kernel_deploy::gitops::create_branch(&k.vault.root, &name)
     } else {
         kernel_deploy::gitops::checkout(&k.vault.root, &name)
     };
     match r {
-        Ok(()) => Json(json!({ "branch": name })).into_response(),
+        Ok(()) => {
+            // 切分支换掉了磁盘上的文件：索引跟着重建，场上才是这个分支的内容
+            let _ = k.sync_all();
+            Json(json!({ "branch": name })).into_response()
+        }
         Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
@@ -5146,13 +5211,18 @@ async fn git_sync(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
         return e.into_response();
     }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let remote = req.get("remote").and_then(|r| r.as_str()).unwrap_or("").to_string();
-    if remote.is_empty() {
-        return err(StatusCode::BAD_REQUEST, "需要 remote").into_response();
+    let remote = req.get("remote").and_then(|r| r.as_str()).unwrap_or("").trim().to_string();
+    let mut k = st.kernel.lock().unwrap();
+    // 笔记库的远端只能是自己的服务器：真实笔记一篇都不能进 GitHub
+    let effective = if remote.is_empty() || remote == "origin" { kernel_deploy::gitops::remote_url(&k.vault.root) } else { remote.clone() };
+    if effective.to_ascii_lowercase().contains("github.com") {
+        return err(StatusCode::BAD_REQUEST, "笔记库不能同步到 GitHub：请用你自己服务器上的仓库").into_response();
     }
-    let k = st.kernel.lock().unwrap();
     match kernel_deploy::gitops::sync(&k.vault.root, &remote) {
-        Ok((committed, detail)) => Json(json!({ "committed": committed, "detail": detail })).into_response(),
+        Ok((committed, detail)) => {
+            let _ = k.sync_all();
+            Json(json!({ "committed": committed, "detail": detail })).into_response()
+        }
         Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
@@ -6979,6 +7049,19 @@ fn comments_path(root: &std::path::Path, doc: &str) -> Option<std::path::PathBuf
     Some(root.join(".litmus/local").join("comments").join(format!("{doc}.json")))
 }
 
+/// 文档（或整个文件夹）挪了位置：评论文件跟着挪。目标已有评论时不覆盖。
+fn comments_follow(root: &std::path::Path, from: &str, to: &str) {
+    let base = root.join(".litmus/local").join("comments");
+    for (a, b) in [(base.join(format!("{from}.json")), base.join(format!("{to}.json"))), (base.join(from), base.join(to))] {
+        if a.exists() && !b.exists() {
+            if let Some(parent) = b.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&a, &b);
+        }
+    }
+}
+
 fn comments_read(root: &std::path::Path, doc: &str) -> Vec<Value> {
     let Some(p) = comments_path(root, doc) else { return Vec::new() };
     std::fs::read_to_string(p)
@@ -7037,6 +7120,7 @@ async fn comments_update(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
                 "start": req.get("start").and_then(|x| x.as_u64()).unwrap_or(0),
                 "end": req.get("end").and_then(|x| x.as_u64()).unwrap_or(0),
                 "quote": req.get("quote").cloned().unwrap_or(json!("")),
+                "text": req.get("text").cloned().unwrap_or(json!("")),
                 "author": req.get("author").cloned().unwrap_or(json!("协作者")),
                 "ts": now,
                 "resolved": false,

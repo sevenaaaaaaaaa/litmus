@@ -783,13 +783,13 @@ mod tests {
         std::fs::create_dir_all(&conv).unwrap();
         std::fs::write(
             conv.join("2026-10-01 对话.md"),
-            "---\ndate: 2026-10-01\ntype: conversation\n---\n\n# 2026-10-01 对话\n\n## 09:00 我\n\n讨论一下导出功能的方案，待办：先做长图\n\n## 09:01 studio\n\n好的。\n\n## 09:05 我\n\n决定：卡片按块分页\n\n## 09:06 studio\n\n明白。\n",
+            "---\ndate: 2026-10-01\ntype: conversation\n---\n\n# 2026-10-01 对话\n\n## 09:00 我\n\n讨论一下导出功能的方案，待办：先做长图\n\n## 09:01 studio\n\n好的。\n\n## 09:05 我\n\n决定：卡片按块分页\n\n## 09:06 studio\n\n明白。\n\n## 分页的细节\n\n每块一页。\n",
         ).unwrap();
         // 知识卡生成
         let r = conflow::digest(&s, "").unwrap();
         assert_eq!(r["source"], "Notes/Agent/2026-10-01 对话.md");
         assert_eq!(r["digest"], "Notes/Conflow/2026-10-01-知识卡.md");
-        assert_eq!(r["turns"], 4);
+        assert_eq!(r["turns"], 4, "回复里的 ## 小标题不算新的一轮");
         assert_eq!(r["points"], 2);
         // 知识卡内容：要点 / 决定 / 待办 三段齐备
         let md = std::fs::read_to_string(dir.path().join("Notes/Conflow/2026-10-01-知识卡.md")).unwrap();
@@ -800,6 +800,8 @@ mod tests {
         // 列表：最新一篇排序在前
         let list = conflow::list_conversations(&s).unwrap();
         assert_eq!(list[0]["date"], "2026-10-01");
+        assert_eq!(list[0]["turns"], 4);
+        assert!(md.contains("09:00 → 09:06"), "时长取最后一轮的时间：{md}");
         // 命令模式动词可达
         let out = agent::command_mode(&s, "总结对话");
         assert!(out.reply.contains("知识卡已生成"), "got: {}", out.reply);
@@ -1479,6 +1481,22 @@ pub mod conflow {
 
     pub const DIR: &str = "Notes/Conflow";
 
+    /// 一轮的开头是 `## HH:MM 角色`（append_conversation 写的格式）。回复正文里自己的
+    /// `## 小标题` 不算新的一轮——以前会被当成一轮，把要点和时长都算错。
+    pub fn turn_header(line: &str) -> Option<(String, String)> {
+        let rest = line.strip_prefix("## ")?;
+        let (time, role) = rest.split_once(' ')?;
+        let role = role.trim();
+        let ok_time = {
+            let (h, m) = time.split_once(':')?;
+            (1..=2).contains(&h.len()) && m.len() == 2 && h.chars().chain(m.chars()).all(|c| c.is_ascii_digit())
+        };
+        if !ok_time || role.is_empty() || role.contains(' ') || role.chars().count() > 16 {
+            return None;
+        }
+        Some((time.to_string(), role.to_string()))
+    }
+
     /// 列出库内对话文档（Notes/Agent 下含「对话」且 type: conversation 的文档）。
     pub fn list_conversations(server: &McpServer) -> Result<Vec<Value>, String> {
         let mut k = server.kernel.lock().map_err(|_| "内核锁异常".to_string())?;
@@ -1489,7 +1507,7 @@ pub mod conflow {
             if !rel.starts_with("Notes/Agent/") || !rel.contains("对话") || !rel.ends_with(".md") { continue }
             let text = std::fs::read_to_string(k.vault.root.join(&p)).unwrap_or_default();
             if !text.contains("type: conversation") { continue }
-            let turns = text.matches("\n## ").count();
+            let turns = text.lines().filter(|l| turn_header(l).is_some()).count();
             let date = rel.trim_end_matches(" 对话.md").rsplit('/').next().unwrap_or("").to_string();
             out.push(json!({ "path": rel, "date": date, "turns": turns, "bytes": text.len() }));
         }
@@ -1525,11 +1543,8 @@ pub mod conflow {
         let mut cur: Option<(String, String)> = None;
         let mut buf = String::new();
         for line in text.lines() {
-            if let Some(rest) = line.strip_prefix("## ") {
+            if let Some((time, role)) = turn_header(line) {
                 if let Some((t, r)) = cur.take() { turns.push((t, r, std::mem::take(&mut buf))); }
-                let mut it = rest.splitn(2, ' ');
-                let time = it.next().unwrap_or("").to_string();
-                let role = it.next().unwrap_or("").to_string();
                 cur = Some((time, role));
             } else if cur.is_some() {
                 buf.push_str(line);

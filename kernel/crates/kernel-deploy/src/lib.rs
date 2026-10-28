@@ -322,6 +322,31 @@ mod tests {
         assert!(!tracked.contains(".litmus/local"));
     }
 
+    /// 新库第一次开分支：原来的 main 要真的存在；切回去文件跟着换；分支名不能被当成选项；
+    /// 远端没配时不把地址改成字面的 "origin"。
+    #[test]
+    fn gitops_branches_on_a_fresh_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path();
+        std::fs::create_dir_all(v.join("Notes")).unwrap();
+        std::fs::write(v.join("Notes/a.md"), "# a").unwrap();
+        gitops::ensure_repo(v).unwrap();
+        assert_eq!(gitops::status(v).unwrap().0, "main", "还没存档时也该报 main 而不是 HEAD");
+        gitops::create_branch(v, "草稿/十月").unwrap();
+        std::fs::write(v.join("Notes/b.md"), "# b").unwrap();
+        gitops::commit_all(v, "b").unwrap();
+        let bs = gitops::branches(v).unwrap();
+        assert!(bs.contains(&"main".to_string()) && bs.contains(&"草稿/十月".to_string()), "{bs:?}");
+        gitops::checkout(v, "main").unwrap();
+        assert!(!v.join("Notes/b.md").exists());
+        for bad in ["-b", "--orphan", "a..b", "x.lock", "/x", ""] {
+            assert!(gitops::checkout(v, bad).is_err(), "{bad}");
+            assert!(gitops::create_branch(v, bad).is_err(), "{bad}");
+        }
+        assert!(gitops::sync(v, "origin").is_err());
+        assert!(gitops::remote_url(v).is_empty(), "不该把远端改成字面的 origin");
+    }
+
     #[test]
     fn local_target_reports_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -453,7 +478,7 @@ pub mod gitops {
 
     pub fn status(dir: &std::path::Path) -> Result<(String, usize), DeployError> {
         ensure_repo(dir)?;
-        let branch = git_stdout(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).trim().to_string();
+        let branch = current_branch(dir);
         let n = git_stdout(dir, &["status", "--porcelain"]).lines().count();
         Ok((branch, n))
     }
@@ -487,13 +512,65 @@ pub mod gitops {
         Ok(out.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
     }
 
+    /// 分支名只收字母数字和 `._/-`，不能以 `-` 开头（免得被 git 当成选项）。
+    pub fn valid_branch(name: &str) -> bool {
+        !name.is_empty()
+            && name.len() <= 100
+            && !name.starts_with('-')
+            && !name.starts_with('/')
+            && !name.ends_with('/')
+            && !name.ends_with(".lock")
+            && !name.contains("..")
+            && !name.contains("//")
+            && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | '_' | '/' | '-'))
+    }
+
+    /// 当前分支名。还没有任何存档时 rev-parse 只会说 "HEAD"，这时读 symbolic-ref 拿到 main。
+    pub fn current_branch(dir: &std::path::Path) -> String {
+        let b = git_stdout(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).trim().to_string();
+        if !b.is_empty() && b != "HEAD" {
+            return b;
+        }
+        let s = git_stdout(dir, &["symbolic-ref", "--short", "HEAD"]).trim().to_string();
+        if s.is_empty() { b } else { s }
+    }
+
+    fn has_commits(dir: &std::path::Path) -> bool {
+        std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["rev-parse", "--verify", "-q", "HEAD"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// origin 的地址（没有就是空）。
+    pub fn remote_url(dir: &std::path::Path) -> String {
+        git_stdout(dir, &["remote", "get-url", "origin"]).trim().to_string()
+    }
+
     pub fn create_branch(dir: &std::path::Path, name: &str) -> Result<(), DeployError> {
+        if !valid_branch(name) {
+            return Err(DeployError::Git(format!("分支名不合法：{name}")));
+        }
         ensure_repo(dir)?;
+        // 还没有任何存档：先存一次，原来的分支才真的存在，新分支从它分出去
+        if !has_commits(dir) {
+            commit_all(dir, "存档：开新分支前")?;
+        }
         _git(dir, &["checkout", "-b", name])
     }
 
     pub fn checkout(dir: &std::path::Path, name: &str) -> Result<(), DeployError> {
+        if !valid_branch(name) {
+            return Err(DeployError::Git(format!("分支名不合法：{name}")));
+        }
         ensure_repo(dir)?;
+        // 那个分支里要是存着本机数据目录（旧版本误提交的），切过去会把正在用的索引换掉
+        let tracked = git_stdout(dir, &["ls-tree", "-r", "--name-only", name, "--", ".litmus/local", ".thirdc"]);
+        if !tracked.trim().is_empty() {
+            return Err(DeployError::Git(format!("分支 {name} 里提交过本机数据目录（.litmus/local），切过去会覆盖正在用的索引：先在那个分支上把它移出 git 再切")));
+        }
         // 未提交的改动先兜底提交，防丢
         commit_all(dir, "wip: 切换工作区前自动存档")?;
         _git(dir, &["checkout", name])
@@ -501,16 +578,33 @@ pub mod gitops {
 
     pub fn sync(dir: &std::path::Path, remote: &str) -> Result<(bool, String), DeployError> {
         ensure_repo(dir)?;
+        let remote = remote.trim();
         let existing = git_stdout(dir, &["remote", "get-url", "origin"]);
-        if existing.trim().is_empty() {
+        // 空、或者就是写了「origin」：沿用已经配好的远端，别把地址改成字面的 "origin"
+        if remote.is_empty() || remote == "origin" {
+            if existing.trim().is_empty() {
+                return Err(DeployError::Git("还没有配置远端：填上你自己服务器上的仓库地址".into()));
+            }
+        } else if remote.starts_with('-') {
+            return Err(DeployError::Git(format!("远端地址不合法：{remote}")));
+        } else if existing.trim().is_empty() {
             _git(dir, &["remote", "add", "origin", remote])?;
         } else if existing.trim() != remote {
             _git(dir, &["remote", "set-url", "origin", remote])?;
         }
-        let _ = _git(dir, &["pull", "--rebase", "-q", "origin", "HEAD"]);
+        // 先把本地改动存档，再拉：带着未提交的改动 rebase 必然失败
         let n = commit_all(dir, "sync: 自动存档")?;
+        let branch = current_branch(dir);
+        let has_remote_branch = !git_stdout(dir, &["ls-remote", "--heads", "origin", &branch]).trim().is_empty();
+        if has_remote_branch {
+            if let Err(e) = _git(dir, &["pull", "--rebase", "-q", "origin", &branch]) {
+                // 冲突时别把仓库留在 rebase 一半的状态
+                let _ = _git(dir, &["rebase", "--abort"]);
+                return Err(DeployError::Git(format!("远端和本地改了同一处，没有合并（本地改动已存档，没丢）：{e}")));
+            }
+        }
         _git(dir, &["push", "-q", "-u", "origin", "HEAD"])?;
-        Ok((n > 0, format!("已同步（本地新提交 {n} 个）")))
+        Ok((n > 0, format!("已同步（本地新存档 {n} 个文件）")))
     }
 
     fn git_stdout(dir: &std::path::Path, args: &[&str]) -> String {
