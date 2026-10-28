@@ -154,7 +154,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 - [x] 协作光标 v2（选区 / 文档内光标 + 评论）· 内嵌终端（桌面端白名单命令）· 插件系统 v0~v3（含 agent 工具贡献与社区索引）· 设计宪法（[docs/spec/os.md](docs/spec/os.md)）
 - [ ] 桌面独占：全盘索引 · 本地小模型（[规划](docs/spec/desktop.md)）
 - [ ] 多端：Windows / Linux / Android / iOS 持续跟进（[规划](docs/spec/platform.md)）
-- [ ] 发布目标：GitHub Pages · 对象存储直传
+- [x] 发布目标：一键 wiki · GitHub Pages · 对象存储直传 · Cloudflare Pages · WebDAV
 - [ ] 远期：独立设备——无头 Linux 主机已是雏形（`litmus serve` + systemd），最终形态可能在 Linux 或微内核上（见设计宪法 §9）
 
 ---

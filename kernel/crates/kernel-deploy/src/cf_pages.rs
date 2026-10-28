@@ -38,13 +38,8 @@ pub fn deploy_cf_pages(
         .project
         .clone()
         .ok_or_else(|| DeployError::Missing("cf-pages 需要 project".into()))?;
-    let token = std::env::var(
-        target
-            .token_env
-            .clone()
-            .unwrap_or_else(|| "CF_API_TOKEN".into()),
-    )
-    .map_err(|e| DeployError::Missing(format!("缺少 API 令牌环境变量：{e}")))?;
+    let tn = target.token_env.clone().unwrap_or_else(|| "CF_API_TOKEN".into());
+    let token = crate::cred(&tn).ok_or_else(|| DeployError::Missing(format!("缺少 Cloudflare API 令牌：在 /凭证 存一条 {tn}（或设同名环境变量）")))?;
 
     // 整站指纹未变 → 跳过（真实 API 部署是整站的）
     let fp = site_fingerprint(site_dir)?;

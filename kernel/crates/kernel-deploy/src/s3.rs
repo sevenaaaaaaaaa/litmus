@@ -219,20 +219,10 @@ pub fn deploy_s3(
         .clone()
         .ok_or_else(|| DeployError::Missing("s3 目标需要 bucket".into()))?;
     let region = target.region.clone().unwrap_or_else(|| "us-east-1".into());
-    let access_key = std::env::var(
-        target
-            .access_key_env
-            .clone()
-            .unwrap_or_else(|| "AWS_ACCESS_KEY_ID".into()),
-    )
-    .map_err(|_| DeployError::Missing("缺少访问密钥环境变量（access_key_env）".into()))?;
-    let secret_key = std::env::var(
-        target
-            .secret_key_env
-            .clone()
-            .unwrap_or_else(|| "AWS_SECRET_ACCESS_KEY".into()),
-    )
-    .map_err(|_| DeployError::Missing("缺少密钥环境变量（secret_key_env）".into()))?;
+    let ak_name = target.access_key_env.clone().unwrap_or_else(|| "AWS_ACCESS_KEY_ID".into());
+    let sk_name = target.secret_key_env.clone().unwrap_or_else(|| "AWS_SECRET_ACCESS_KEY".into());
+    let access_key = crate::cred(&ak_name).ok_or_else(|| DeployError::Missing(format!("缺少访问密钥：在 /凭证 存一条 {ak_name}（或设同名环境变量）")))?;
+    let secret_key = crate::cred(&sk_name).ok_or_else(|| DeployError::Missing(format!("缺少密钥：在 /凭证 存一条 {sk_name}（或设同名环境变量）")))?;
     let prefix = target.prefix.clone().unwrap_or_default();
     let prefix = prefix.trim_matches('/');
 

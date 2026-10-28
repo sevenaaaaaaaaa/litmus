@@ -1064,6 +1064,37 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// 一键 wiki：只发选中的范围；[[链接]] 变成真链接、没发的变成文字；带「链到这里的」；
+    /// 只带被引用的附件；private / publish: false 的不发
+    #[test]
+    fn wiki_site_is_scoped_relinked_and_private_safe() {
+        let dir = tempdir().unwrap();
+        let vault = Vault::init(dir.path(), "我的库").unwrap();
+        let mut k = Kernel::open(vault).unwrap();
+        std::fs::create_dir_all(dir.path().join("Assets")).unwrap();
+        std::fs::write(dir.path().join("Assets/pub.png"), b"P").unwrap();
+        std::fs::write(dir.path().join("Assets/secret.png"), b"S").unwrap();
+        k.put_doc("Notes/公开/首页.md", "# 首页\n\n看 [[概念]] 和 [[私事]]，还有 [[日记]]。\n\n![](Assets/pub.png)\n").unwrap();
+        k.put_doc("Notes/公开/概念.md", "# 概念\n\n回 [[首页]]。\n").unwrap();
+        k.put_doc("Notes/公开/私事.md", "---\nprivate: true\n---\n# 私事\n\n不发。\n").unwrap();
+        k.put_doc("Notes/日记/日记.md", "# 日记\n\n![](Assets/secret.png)\n").unwrap();
+        k.put_doc("Notes/别处.md", "---\ntags: [wiki]\n---\n# 别处\n\n带标签的也发。\n").unwrap();
+        let out = dir.path().join("site");
+        let inc = vec!["Notes/公开".to_string(), "tag:wiki".to_string()];
+        let m = k.build_site_for(&out, None, None, &inc, Some("公开小站")).unwrap();
+        let names: Vec<&str> = m.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(names.contains(&"Assets/pub.png") && !names.contains(&"Assets/secret.png"), "{names:?}");
+        let home = std::fs::read_to_string(out.join(format!("{}.html", slugify("首页")))).unwrap();
+        assert!(home.contains("href=\"") && !home.contains("data-wiki"), "{home}");
+        assert!(home.contains("<span class=\"wikilink missing\">私事</span>") && home.contains("<span class=\"wikilink missing\">日记</span>"), "没发的变文字：{home}");
+        assert!(home.contains("链到这里的") && home.contains("← 公开小站"), "{home}");
+        let index = std::fs::read_to_string(out.join("index.html")).unwrap();
+        assert!(index.contains("公开小站") && index.contains("别处") && !index.contains("href=\"私事") && !index.contains("href=\"日记"), "{index}");
+        assert!(!index.contains("[[") && !index.contains("tags:") && !index.contains("![]"), "摘要里不该有 Markdown 记号：{index}");
+        assert!(index.contains("带标签的也发") && index.contains("看 概念 和 私事"), "{index}");
+        assert_eq!(names.iter().filter(|n| n.ends_with(".html") && **n != "index.html").count(), 3, "{names:?}");
+    }
+
     #[test]
     fn put_get_search_and_external_edit() {
         let dir = tempdir().unwrap();
@@ -1292,23 +1323,57 @@ impl Kernel {
         base_url: Option<&str>,
         icp: Option<&str>,
     ) -> Result<SiteManifest, SyncError> {
+        self.build_site_for(out, base_url, icp, &[], None)
+    }
+
+    /// 哪些文档要发：`include` 为空 = 全库；否则文件夹前缀、单篇路径或 `tag:标签`。
+    /// frontmatter 里写了 `publish: false` 或 `private: true` 的，无论如何都不发。
+    pub fn site_docs(&mut self, include: &[String]) -> Result<Vec<String>, SyncError> {
         self.sync_all()?;
+        let docs = list_docs(&self.vault).map_err(SyncError::Store)?;
+        let mut out = Vec::new();
+        for rel in docs {
+            let rel = rel.to_string_lossy().replace('\\', "/");
+            let raw = std::fs::read_to_string(self.vault.root.join(&rel)).unwrap_or_default();
+            let fm: Vec<String> = if raw.starts_with("---") { raw.lines().skip(1).take_while(|l| !l.starts_with("---")).map(|l| l.trim().to_lowercase()).collect() } else { Vec::new() };
+            if fm.iter().any(|l| l == "publish: false" || l == "private: true" || l == "publish: no") {
+                continue;
+            }
+            if include.is_empty() || include.iter().any(|inc| site_matches(inc, &rel, &raw, &fm)) {
+                out.push(rel);
+            }
+        }
+        Ok(out)
+    }
+
+    /// 生成站点（一键 wiki）：页面之间的 [[链接]] 换成真的链接、每页带「目录」和「链到这里的」，
+    /// 首页按文件夹分组、能搜；只拷被发出去的文档引用到的附件（发一部分时不把整个 Assets/ 带出去）。
+    pub fn build_site_for(
+        &mut self,
+        out: &std::path::Path,
+        base_url: Option<&str>,
+        icp: Option<&str>,
+        include: &[String],
+        site_title: Option<&str>,
+    ) -> Result<SiteManifest, SyncError> {
         std::fs::create_dir_all(out)?;
         let previous = read_manifest(out);
-
-        let docs = list_docs(&self.vault).map_err(SyncError::Store)?;
-        let mut entries: Vec<(String, String, String)> = Vec::new(); // (slug, title, excerpt)
+        let site_name = site_title.map(|s| s.to_string()).filter(|s| !s.trim().is_empty()).unwrap_or_else(|| self.vault.config.name.clone());
+        let docs = self.site_docs(include)?;
+        // 第一遍：每篇的名字、标题、正文
+        struct Page { rel: String, fname: String, title: String, excerpt: String, html: String }
+        let mut pages: Vec<Page> = Vec::new();
         let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for rel in &docs {
-            let rel_str = rel.to_string_lossy().into_owned();
-            let model = match self.get_doc(&rel_str) {
+        for rel_str in &docs {
+            let rel = std::path::Path::new(rel_str);
+            let model = match self.get_doc(rel_str) {
                 Ok(m) => m,
                 Err(_) => continue,
             };
             let title = model.title.clone().unwrap_or_else(|| {
                 rel.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| rel_str.clone())
             });
-            let html = match self.render_doc_html(&rel_str) {
+            let html = match self.render_doc_html(rel_str) {
                 Ok(h) => h,
                 Err(_) => to_html(&model),
             };
@@ -1322,29 +1387,80 @@ impl Kernel {
             // slug 去重
             let mut candidate = slug.clone();
             let mut n = 2;
-            while used.contains(&candidate) {
+            while used.contains(&candidate) || candidate == "index" {
                 candidate = format!("{slug}-{n}");
                 n += 1;
             }
             used.insert(candidate.clone());
-            let fname = format!("{candidate}.html");
-            write_if_changed(&out.join(&fname), html.as_bytes())?;
-            let excerpt: String = to_markdown(&model)
+            let md = to_markdown(&model);
+            // 去掉 frontmatter（「---」到下一个「---」）
+            let body = match md.strip_prefix("---").and_then(|r| r.find("\n---").map(|e| &r[e + 4..])) {
+                Some(rest) => rest.to_string(),
+                None => md.clone(),
+            };
+            let excerpt: String = body
                 .lines()
                 .filter(|l| {
                     let t = l.trim();
-                    !t.is_empty() && !t.starts_with('#') && !t.starts_with('>') && !t.starts_with('-')
+                    !t.is_empty() && !t.starts_with('#') && !t.starts_with('>') && !t.starts_with('-') && !t.starts_with("---") && !t.starts_with("![") && !t.starts_with("```")
                 })
                 .take(2)
+                .map(plain_line)
                 .collect::<Vec<_>>()
                 .join(" ")
                 .chars()
                 .take(140)
                 .collect();
-            entries.push((fname, title, excerpt));
+            pages.push(Page { rel: rel_str.clone(), fname: format!("{candidate}.html"), title, excerpt, html });
+        }
+        // 链接解析表：路径 / 去扩展名 / 文件名 / 标题（与壳里 resolveWiki 同一顺序）
+        let mut by_key: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (i, p) in pages.iter().enumerate() {
+            let low = p.rel.to_lowercase();
+            let stem = low.rsplit('/').next().unwrap_or(&low).trim_end_matches(".md").trim_end_matches(".html").to_string();
+            for k in [low.clone(), low.trim_end_matches(".md").to_string(), low.trim_start_matches("notes/").trim_end_matches(".md").to_string(), stem, p.title.to_lowercase()] {
+                by_key.entry(k).or_insert(i);
+            }
+        }
+        let resolve = |raw: &str| -> Option<usize> {
+            let t = pct_decode(raw.split(['|', '#', '^']).next().unwrap_or("")).trim().to_lowercase();
+            by_key.get(&t).or_else(|| by_key.get(t.trim_end_matches(".md"))).copied()
+        };
+        // 第二遍：改链接，记下谁链到谁
+        let mut backlinks: Vec<Vec<usize>> = vec![Vec::new(); pages.len()];
+        let mut bodies: Vec<String> = Vec::with_capacity(pages.len());
+        let mut asset_refs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for (i, p) in pages.iter().enumerate() {
+            let (html, targets) = site_relink(&p.html, &resolve, &|j| pages[j].fname.clone());
+            for j in targets {
+                if j != i && !backlinks[j].contains(&i) {
+                    backlinks[j].push(i);
+                }
+            }
+            for a in site_asset_refs(&html) {
+                asset_refs.insert(a);
+            }
+            bodies.push(html);
+        }
+        for (i, p) in pages.iter().enumerate() {
+            let back = if backlinks[i].is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "<aside class=\"lm-back\"><h4>链到这里的</h4><ul>{}</ul></aside>",
+                    backlinks[i].iter().map(|&j| format!("<li><a href=\"{}\">{}</a></li>", pages[j].fname, esc_html(&pages[j].title))).collect::<String>()
+                )
+            };
+            let nav = format!("<nav class=\"lm-nav\"><a href=\"index.html\">← {}</a></nav>", esc_html(&site_name));
+            let style = "<style>.lm-nav{max-width:46rem;margin:1rem auto 0;padding:0 1rem;font:14px/1.6 system-ui,sans-serif}.lm-nav a{text-decoration:none;opacity:.7}.lm-back{max-width:46rem;margin:3rem auto 2rem;padding:1rem;border-top:1px solid currentColor;opacity:.85;font:14px/1.7 system-ui,sans-serif}.lm-back h4{margin:0 0 .4rem;font-size:13px;letter-spacing:.06em;opacity:.7}.lm-back ul{margin:0;padding-left:1.1rem}span.wikilink.missing{opacity:.6}</style>";
+            let mut html = bodies[i].clone();
+            html = match html.find("</head>") { Some(k) => format!("{}{style}{}", &html[..k], &html[k..]), None => format!("{style}{html}") };
+            html = match html.find("<body").and_then(|k| html[k..].find('>').map(|e| k + e + 1)) { Some(k) => format!("{}{nav}{}", &html[..k], &html[k..]), None => format!("{nav}{html}") };
+            html = match html.rfind("</body>") { Some(k) => format!("{}{back}{}", &html[..k], &html[k..]), None => format!("{html}{back}") };
+            write_if_changed(&out.join(&p.fname), html.as_bytes())?;
         }
 
-        // 附件：保持 Assets/ 相对路径，文档里的引用才能直接工作
+        // 附件：保持 Assets/ 相对路径，文档里的引用才能直接工作。发一部分时只带被引用的
         let assets_root = self.vault.assets_dir();
         if assets_root.is_dir() {
             for entry in walkdir::WalkDir::new(&assets_root).into_iter().filter_map(|e| e.ok()) {
@@ -1352,6 +1468,10 @@ impl Kernel {
                     continue;
                 }
                 let rel = entry.path().strip_prefix(&self.vault.root).unwrap_or(entry.path());
+                let rel_s = rel.to_string_lossy().replace('\\', "/");
+                if !include.is_empty() && !asset_refs.contains(&rel_s) {
+                    continue;
+                }
                 let dest = out.join(rel);
                 if let Some(p) = dest.parent() {
                     std::fs::create_dir_all(p)?;
@@ -1361,32 +1481,63 @@ impl Kernel {
             }
         }
 
-        // index.html
+        // index.html：按文件夹分组，顶上一个搜索框（不依赖外部脚本）
         let profile_css = self.active_design().map(|p| p.to_css()).unwrap_or_default();
+        let common = {
+            let mut segs: Vec<Vec<&str>> = pages.iter().map(|p| p.rel.rsplit_once('/').map(|(d, _)| d.split('/').collect()).unwrap_or_default()).collect();
+            let mut pre: Vec<&str> = segs.first().cloned().unwrap_or_default();
+            for s2 in segs.iter_mut() {
+                let n = pre.iter().zip(s2.iter()).take_while(|(a, b)| a == b).count();
+                pre.truncate(n);
+            }
+            pre.join("/")
+        };
+        let mut groups: std::collections::BTreeMap<String, Vec<usize>> = std::collections::BTreeMap::new();
+        for (i, p) in pages.iter().enumerate() {
+            let dir = p.rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+            let g = dir.strip_prefix(&common).unwrap_or(dir).trim_start_matches('/').to_string();
+            groups.entry(g).or_default().push(i);
+        }
         let mut list = String::new();
-        for (fname, title, excerpt) in &entries {
-            list.push_str(&format!(
-                "<li><a href=\"{fname}\">{}</a><p>{}</p></li>\n",
-                esc_html(title),
-                esc_html(excerpt)
-            ));
+        for (g, idx) in &groups {
+            if !g.is_empty() || groups.len() > 1 {
+                list.push_str(&format!("<h2>{}</h2>\n", esc_html(if g.is_empty() { "其他" } else { g })));
+            }
+            list.push_str("<ul>\n");
+            for &i in idx {
+                let p = &pages[i];
+                list.push_str(&format!(
+                    "<li data-s=\"{}\"><a href=\"{}\">{}</a><p>{}</p></li>\n",
+                    esc_html(&format!("{} {}", p.title, p.excerpt).to_lowercase()),
+                    p.fname,
+                    esc_html(&p.title),
+                    esc_html(&p.excerpt)
+                ));
+            }
+            list.push_str("</ul>\n");
         }
         let index = format!(
-            "<!doctype html>\n<html lang=\"zh\"><head><meta charset=\"utf-8\">\n\
+            "<!doctype html>\n<html lang=\"zh\"><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
 <title>{}</title>\n<style>\n{}\n\
 body{{max-width:46rem;margin:2rem auto;padding:0 1rem;font:16px/1.7 system-ui,sans-serif}}\n\
 ul{{list-style:none;padding:0}}li{{padding:12px 0;border-bottom:1px solid #0002}}\n\
+h2{{font-size:14px;letter-spacing:.08em;opacity:.6;margin:2rem 0 0}}\n\
+#q{{width:100%;box-sizing:border-box;padding:10px 12px;font:inherit;border:1px solid #0003;border-radius:10px;margin:0 0 .5rem}}\n\
 a{{text-decoration:none;font-weight:600}}p{{margin:4px 0 0;opacity:.72;font-size:14px}}\n\
-</style></head><body><h1>{}</h1><ul>\n{}\n</ul></body></html>\n",
-            esc_html(&self.vault.config.name),
+</style></head><body><h1>{}</h1><input id=\"q\" type=\"search\" placeholder=\"搜索 {} 篇\">\n{}\n\
+<script>var q=document.getElementById('q');q.oninput=function(){{var v=q.value.trim().toLowerCase();document.querySelectorAll('li[data-s]').forEach(function(li){{li.style.display=!v||li.dataset.s.indexOf(v)>=0?'':'none'}})}};</script>\n\
+</body></html>\n",
+            esc_html(&site_name),
             profile_css,
-            esc_html(&self.vault.config.name),
+            esc_html(&site_name),
+            pages.len(),
             list
         );
         write_if_changed(&out.join("index.html"), index.as_bytes())?;
+        let entries: Vec<(String, String, String)> = pages.iter().map(|p| (p.fname.clone(), p.title.clone(), p.excerpt.clone())).collect();
 
         // llms.txt：让 agent 发现站点内容
-        let mut llms = format!("# {}\n\n", self.vault.config.name);
+        let mut llms = format!("# {}\n\n", site_name);
         for (fname, title, excerpt) in &entries {
             llms.push_str(&format!("- [{title}]({fname}) — {excerpt}\n"));
         }
@@ -1404,7 +1555,7 @@ a{{text-decoration:none;font-weight:600}}p{{margin:4px 0 0;opacity:.72;font-size
         }
 
         // 清理上一版残留（保留 .git 等非站点文件）
-        let manifest = collect_manifest(out, &self.vault.config.name, base_url)?;
+        let manifest = collect_manifest(out, &site_name, base_url)?;
         let manifest_before_icp = manifest.clone();
         let _ = manifest_before_icp;
         if let Some(prev) = previous {
@@ -1420,13 +1571,142 @@ a{{text-decoration:none;font-weight:600}}p{{margin:4px 0 0;opacity:.72;font-size
         if let Some(icp) = icp {
             self.inject_icp_footer(out, icp)?;
         }
-        let manifest = collect_manifest(out, &self.vault.config.name, base_url)?;
+        let manifest = collect_manifest(out, &site_name, base_url)?;
         std::fs::write(
             out.join("manifest.json"),
             serde_json::to_string_pretty(&manifest).unwrap_or_default(),
         )?;
         Ok(manifest)
     }
+}
+
+/// 摘要用：去掉 [[链接|别名]]、[文字](链接)、![图]、**粗** 这些记号，只留字
+fn plain_line(l: &str) -> String {
+    let cs: Vec<char> = l.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < cs.len() {
+        if cs[i] == '!' && cs.get(i + 1) == Some(&'[') {
+            if let Some(e) = (i..cs.len()).find(|&j| cs[j] == ')') { i = e + 1; continue; }
+        }
+        if cs[i] == '[' && cs.get(i + 1) == Some(&'[') {
+            if let Some(e) = (i + 2..cs.len().saturating_sub(1)).find(|&j| cs[j] == ']' && cs[j + 1] == ']') {
+                let inner: String = cs[i + 2..e].iter().collect();
+                out.push_str(inner.rsplit('|').next().unwrap_or(&inner).split('#').next().unwrap_or("").rsplit('/').next().unwrap_or(""));
+                i = e + 2;
+                continue;
+            }
+        }
+        if cs[i] == '[' {
+            if let Some(m) = (i..cs.len()).find(|&j| cs[j] == ']') {
+                if cs.get(m + 1) == Some(&'(') {
+                    if let Some(e) = (m..cs.len()).find(|&j| cs[j] == ')') {
+                        out.extend(&cs[i + 1..m]);
+                        i = e + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        if !matches!(cs[i], '*' | '`') {
+            out.push(cs[i]);
+        }
+        i += 1;
+    }
+    out.trim().to_string()
+}
+
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// 这一篇要不要发：`tag:x` 看 frontmatter 的 tags 与正文 #x；其余当路径或文件夹前缀
+fn site_matches(inc: &str, rel: &str, raw: &str, fm: &[String]) -> bool {
+    let inc = inc.trim();
+    if let Some(tag) = inc.strip_prefix("tag:") {
+        let t = tag.trim().trim_start_matches('#').to_lowercase();
+        if t.is_empty() {
+            return false;
+        }
+        let in_fm = fm.iter().any(|l| (l.starts_with("tags:") || l.starts_with("tag:")) && l.split(|c: char| matches!(c, '[' | ']' | ',' | ' ' | ':' | '"' | '\'')).any(|w| w == t)) || fm.iter().any(|l| l.trim_start_matches("- ").trim_matches('"') == t && l.starts_with("- "));
+        return in_fm || raw.to_lowercase().contains(&format!("#{t}"));
+    }
+    let p = inc.trim_end_matches('/');
+    !p.is_empty() && (rel == p || rel.starts_with(&format!("{p}/")))
+}
+
+/// 页面里的 [[链接]] 与指向 Notes/…md 的链接：发出去的换成 页面.html，没发出去的变成普通文字（不留死链、不漏路径）
+fn site_relink(html: &str, resolve: &dyn Fn(&str) -> Option<usize>, fname: &dyn Fn(usize) -> String) -> (String, Vec<usize>) {
+    let mut out = String::with_capacity(html.len());
+    let mut targets = Vec::new();
+    let mut rest = html;
+    while let Some(a) = rest.find("<a ") {
+        out.push_str(&rest[..a]);
+        let tail = &rest[a..];
+        let Some(gt) = tail.find('>') else { out.push_str(tail); rest = ""; break };
+        let Some(close) = tail.find("</a>") else { out.push_str(tail); rest = ""; break };
+        let tag = &tail[..=gt];
+        let label = &tail[gt + 1..close.max(gt + 1)];
+        let attr = |name: &str| -> Option<String> {
+            let k = tag.find(&format!("{name}=\""))? + name.len() + 2;
+            let e = tag[k..].find('"')? + k;
+            Some(tag[k..e].replace("&amp;", "&").replace("&quot;", "\""))
+        };
+        let wiki = attr("data-wiki");
+        let href = attr("href").unwrap_or_default();
+        let local = wiki.clone().or_else(|| {
+            let h = pct_decode(&href);
+            (h.starts_with("Notes/") && (h.ends_with(".md") || h.contains(".md#"))).then_some(h)
+        });
+        if let Some(t) = local {
+            match resolve(&t) {
+                Some(j) => {
+                    targets.push(j);
+                    let anchor = t.split_once('#').map(|(_, x)| format!("#{x}")).unwrap_or_default();
+                    out.push_str(&format!("<a class=\"wikilink\" href=\"{}{}\">{label}</a>", fname(j), esc_html(&anchor)));
+                }
+                None => out.push_str(&format!("<span class=\"wikilink missing\">{label}</span>")),
+            }
+        } else {
+            out.push_str(&tail[..close + 4]);
+        }
+        rest = &tail[close + 4..];
+    }
+    out.push_str(rest);
+    (out, targets)
+}
+
+/// 页面引用了哪些库里的附件（src= / href= 里以 Assets/ 开头的）
+fn site_asset_refs(html: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in ["src=\"", "href=\""] {
+        let mut rest = html;
+        while let Some(i) = rest.find(key) {
+            let v = &rest[i + key.len()..];
+            let e = v.find('"').unwrap_or(v.len());
+            let val = pct_decode(&v[..e]);
+            let val = val.split(['?', '#']).next().unwrap_or("").trim_start_matches("./").trim_start_matches('/').to_string();
+            if val.starts_with("Assets/") && !val.contains("..") {
+                out.push(val);
+            }
+            rest = &v[e..];
+        }
+    }
+    out
 }
 
 fn esc_html(s: &str) -> String {

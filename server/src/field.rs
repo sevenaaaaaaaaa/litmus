@@ -2721,6 +2721,44 @@ for line in sys.stdin:
         assert!(!o["conflicts"].as_array().unwrap().iter().any(|c| c["key"] == "端口"), "标为不算以后不再出现");
     }
 
+    /// 发布：新建目标（密钥进凭证库、litmus.toml 只写名字）；没设范围的要确认才发整个库；
+    /// 一键 wiki 只发范围里的；不能发到鹿蕊代码仓库；看清单能提示像密钥的内容
+    #[tokio::test]
+    async fn publishing_is_scoped_confirmed_and_keeps_secrets_out_of_config() {
+        let (app, t, dir) = app();
+        seed(&app, &t).await;
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc("Notes/发布/密钥.md")), "# 密钥\n\nopenai 用 sk-abcdef0123456789").await;
+        let root = dir.path();
+        let (st, r) = call(&app, &t, "POST", "/publish/targets", r#"{"target":{"name":"站","kind":"s3","endpoint":"http://127.0.0.1:9","bucket":"b","access_key_env":"s3_ak","secret_key_env":"s3_sk"},"secrets":{"s3_ak":"AKIAXXX","s3_sk":"topsecret"},"default":true}"#).await;
+        assert_eq!(st, 200, "{r}");
+        let toml = std::fs::read_to_string(root.join("litmus.toml")).unwrap();
+        assert!(toml.contains("[[publish.targets]]") && toml.contains("s3_ak") && !toml.contains("topsecret") && !toml.contains("AKIAXXX"), "{toml}");
+        assert_eq!(kernel_core::secrets::get(root, "s3_sk").as_deref(), Some("topsecret"));
+        // 没设范围：要确认
+        let (st, r) = call(&app, &t, "POST", "/publish/deploy", r#"{"target":"站"}"#).await;
+        assert_eq!(st, 409, "{r}");
+        assert_eq!(r["needs_confirm"], true);
+        // 看清单：范围里的、像密钥的
+        let (_, p) = call(&app, &t, "POST", "/publish/preview", r#"{"include":["Notes/发布"]}"#).await;
+        assert_eq!(p["count"], 4, "{p}");
+        assert!(p["warn"].as_array().unwrap().iter().any(|w| w["path"] == "Notes/发布/密钥.md"), "{p}");
+        // 一键 wiki 到本机：只发范围里的
+        let (st, _) = call(&app, &t, "POST", "/publish/targets", r#"{"target":{"name":"本机","kind":"local","dir":"site-test","include":["Notes/同步"],"title":"同步小站"}}"#).await;
+        assert_eq!(st, 200);
+        let (st, r) = call(&app, &t, "POST", "/publish/deploy", r#"{"target":"本机"}"#).await;
+        assert_eq!(st, 200, "{r}");
+        let index = std::fs::read_to_string(root.join("site-test/index.html")).unwrap();
+        assert!(index.contains("同步小站") && index.contains("同步协议") && !index.contains("发布站点"), "{index}");
+        // 不能发到鹿蕊的代码仓库
+        let (st, r) = call(&app, &t, "POST", "/publish/targets", r#"{"target":{"name":"错","kind":"git","remote":"https://github.com/sevenaaaaaaaaa/litmus.git"}}"#).await;
+        assert_eq!(st, 400, "{r}");
+        // 删掉
+        let (st, r) = call(&app, &t, "DELETE", &format!("/publish/targets?name={}", urlenc("站")), "").await;
+        assert_eq!(st, 200);
+        assert!(!r["targets"].as_array().unwrap().iter().any(|x| x["name"] == "站"));
+        assert!(!std::fs::read_to_string(root.join("litmus.toml")).unwrap().contains("s3_ak"));
+    }
+
     #[tokio::test]
     async fn field_api_requires_token() {
         let (app, _t, _d) = app();

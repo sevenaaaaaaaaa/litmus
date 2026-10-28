@@ -165,7 +165,7 @@ pub struct AuthConfig {
 }
 
 /// 发布配置。
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishConfig {
     /// 站点构建目录（相对库根；git 目标会改写到各自的部署目录）
     #[serde(default = "default_site_dir")]
@@ -202,6 +202,13 @@ pub struct ChecksConfig {
 
 fn default_site_dir() -> String {
     ".litmus/local/site".into()
+}
+
+impl Default for PublishConfig {
+    fn default() -> Self {
+        // 和 serde 缺省一致：没有 [publish] 表时也是 .litmus/local/site（以前 derive 出来是空串 = 库根）
+        serde_json::from_value(serde_json::json!({})).expect("PublishConfig 缺省")
+    }
 }
 
 /// 一个发布目标。
@@ -252,6 +259,13 @@ pub struct PublishTarget {
     /// ICP 备案号（domestic 时必填，注入页脚）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icp: Option<String>,
+    // ---- 发什么（0.24 起）----
+    /// 只发这些：文件夹前缀（`Notes/公开`）、单篇路径，或 `tag:标签`。空 = 整个库（旧行为，部署前要确认）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
+    /// 站点标题（缺省用库名）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 /// 页面消化后端配置。

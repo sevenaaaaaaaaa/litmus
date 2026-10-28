@@ -666,7 +666,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>导出</td><td>阅读页「更多」：Markdown、Word、HTML、打印成 PDF</td></tr>
         <tr><td>双链、目录</td><td>阅读页底部「链出 / 链入」；页头「目录」</td></tr>
         <tr><td>AI 模型</td><td>/设置：接口地址、模型、密钥，可测试连通</td></tr>
-        <tr><td>发布、站点、部署</td><td>「更多」→ 发布为公开网页；/发布 管目标、构建与部署；/展示 整库翻页</td></tr>
+        <tr><td>发布、站点、部署</td><td>「更多」→ 发布为公开网页；/发布 →「做一个 wiki」：选文件夹、标签或视角，看清单再发；新建 GitHub Pages、对象存储、Cloudflare Pages、WebDAV 目标（密钥进凭证库）；/展示 整库翻页</td></tr>
         <tr><td>插件、设计规范、连接器</td><td>/插件（命令与视图会进 / 指令）、/设计、/连接</td></tr>
         <tr><td>git 存档、分支、备份</td><td>/存档：存档、切换和新建分支、同步到自己的服务器；/备份</td></tr>
         <tr><td>看板 / 视图</td><td>/视图 加一句描述</td></tr>
@@ -1368,7 +1368,9 @@ async function pickAction(a, btn){
       {label:'意思相近的（' + near.size + '）', run:() => pickMany([...near], true)},
       {label:'同一种（' + ({ext:'库外', memo:'随手记', doc:'文档', source:'采集原文', answer:'答案'}[seed[0].k] || '文档') + '）', run:() => pickMany(nodes.filter(n => n.k === seed[0].k), true)},
       '-',
-      {label:'反选视野内', run:() => { const v = nodes.filter(inView); pickMany(v.filter(n => !ps.has(n)), false); }}
+      {label:'反选视野内', run:() => { const v = nodes.filter(inView); pickMany(v.filter(n => !ps.has(n)), false); }},
+      '-',
+      ...(seed.some(n => n.k !== 'ext') ? [{label:'加密分享这 ' + seed.filter(n => n.k !== 'ext').length + ' 篇…', run:() => shareDocs(seed.filter(n => n.k !== 'ext'))}, {label:'做成一个 wiki…', run:() => openWiki(null)}] : [])
     ]);
     return;
   }
@@ -2800,16 +2802,115 @@ async function publishDoc(n){
     $('pub-copy').onclick = () => copyText(url);
   } catch(e){ box.innerHTML = '<p class="bad">发布失败：' + esc(e.message || e) + '</p>'; }
 }
+/* ───────── 发布：一键 wiki（选范围 → 看清单 → 发），发布目标（GitHub Pages、对象存储、Cloudflare Pages、WebDAV） ───────── */
+const PUB_KIND = {local:'只在本机生成', git:'GitHub Pages / Git', s3:'对象存储（S3 / R2 / OSS / COS）', 'cf-pages':'Cloudflare Pages', webdav:'WebDAV'};
+let wikiDraft = null;
+const incLabel = x => x.startsWith('tag:') ? '#' + x.slice(4) : x.replace(/^Notes\//, '') || x;
 async function openPublish(){
   const box = openPanel('发布', '<span class="thinking"><i></i><i></i><i></i> 正在读取发布目标</span>');
   let d, l; try { [d, l] = await Promise.all([api('/publish/targets'), api('/publish').catch(() => ({items:[]}))]); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
-  const kind = {local:'本地', git:'Git Pages', s3:'S3 兼容', 'cf-pages':'Cloudflare Pages'};
-  box.innerHTML = '<label>发布目标</label>' + ((d.targets || []).length ? d.targets.map(t => '<div class="row"><div class="grow"><span>' + esc(t.name) + (t.is_default ? ' · 默认' : '') + '</span><small>' + esc(kind[t.kind] || t.kind) + (t.dir ? ' · ' + esc(t.dir) : '') + '</small></div><button class="btn" data-build="' + esc(t.name) + '">构建站点</button><button class="btn pri" data-deploy="' + esc(t.name) + '">部署</button></div>').join('') : '<p class="empty">还没有发布目标。在 litmus.toml 里加 [[publish.targets]]，见 docs/spec/publish-targets.md。</p>') +
-    '<p class="hint">站点目录 ' + esc(d.site_dir || '') + (d.base_url ? ' · 公开地址 ' + esc(d.base_url) : '') + '</p><p id="pub-msg"></p>' +
+  const ts = d.targets || [];
+  box.innerHTML = '<label>一键 wiki</label><p class="hint" style="margin-top:0">挑一部分文档做成一个能搜、能互相跳转的小站：选文件夹、标签或此刻的视角，先看清单再发。写了 <code>private: true</code> 或 <code>publish: false</code> 的永远不发。</p><div class="acts" style="margin-top:0"><button class="btn pri" id="wk-new">做一个 wiki</button></div>' +
+    '<label>发布目标</label>' + (ts.length ? ts.map(t => '<div class="row"><div class="grow"><span>' + esc(t.name) + (t.is_default ? ' · 默认' : '') + '</span><small>' + esc(PUB_KIND[t.kind] || t.kind) + ' · ' + ((t.include || []).length ? '发 ' + t.include.map(incLabel).map(esc).join('、') : (t.kind === 'local' ? '整个库' : '<span class="bad">没设范围：会发整个库</span>')) + (t.public_base_url ? ' · ' + esc(t.public_base_url) : '') + '</small></div>' +
+      '<button class="btn" data-wk="' + esc(t.name) + '">改范围</button>' + (t.name !== 'local' || t.kind !== 'local' ? '<button class="btn" data-ed="' + esc(t.name) + '">设置</button>' : '') + '<button class="btn pri" data-deploy="' + esc(t.name) + '">发布</button></div>').join('') : '') +
+    '<div class="acts"><button class="btn" id="pt-new">新建发布目标</button></div><p class="hint">站点目录 ' + esc(d.site_dir || '') + '</p><p id="pub-msg"></p>' +
     '<label>已发布的单篇网页</label>' + ((l.items || []).length ? l.items.slice(0, 30).map(i => '<div class="row"><div class="grow"><span>' + esc(i.url) + '</span><small>' + ((i.bytes || 0) / 1024).toFixed(1) + ' KB</small></div><a class="btn" href="' + esc(i.url.startsWith('http') ? i.url : BASE + i.url) + '" target="_blank" rel="noopener">打开</a></div>').join('') : '<p class="empty">还没有。阅读页「⋯」→「发布为公开网页」。</p>');
-  const msg = $('pub-msg');
-  box.querySelectorAll('[data-build]').forEach(b => b.onclick = async () => { b.disabled = true; msg.className = ''; msg.textContent = '正在构建…'; try { const r = await api('/publish/site', {method:'POST', json:{target:b.dataset.build}}); msg.className = 'ok'; msg.textContent = '站点已构建：' + r.files + ' 个文件 → ' + r.site_dir; } catch(e){ msg.className = 'bad'; msg.textContent = '构建失败：' + (e.message || e); } b.disabled = false; });
-  box.querySelectorAll('[data-deploy]').forEach(b => b.onclick = async () => { b.disabled = true; msg.className = ''; msg.textContent = '正在部署…'; try { const r = await api('/publish/deploy', {method:'POST', json:{target:b.dataset.deploy}}); msg.className = 'ok'; msg.textContent = '已部署到 ' + r.target + '：上传 ' + r.uploaded + '，跳过 ' + r.skipped + (r.url ? ' · ' + r.url : ''); } catch(e){ msg.className = 'bad'; msg.textContent = '部署失败：' + (e.message || e); } b.disabled = false; });
+  $('wk-new').onclick = () => openWiki(null, ts);
+  $('pt-new').onclick = () => editTarget(null);
+  box.querySelectorAll('[data-wk]').forEach(b => b.onclick = () => openWiki(ts.find(t => t.name === b.dataset.wk), ts));
+  box.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editTarget(ts.find(t => t.name === b.dataset.ed)));
+  box.querySelectorAll('[data-deploy]').forEach(b => b.onclick = () => deployTarget(ts.find(t => t.name === b.dataset.deploy), $('pub-msg'), b));
+}
+async function deployTarget(t, msg, btn, confirmAll){
+  if (btn) btn.disabled = true; msg.className = ''; msg.textContent = '正在生成站点并发布…';
+  try {
+    const r = await api('/publish/deploy', {method:'POST', json:{target:t.name, confirm_all:!!confirmAll}});
+    msg.className = 'ok'; msg.innerHTML = '发布好了：' + r.uploaded + ' 个文件' + (r.skipped ? '（' + r.skipped + ' 个没变）' : '') + (r.url ? ' · <a href="' + esc(/^https?:/.test(r.url) ? r.url : BASE + r.url) + '" target="_blank" rel="noopener">' + esc(r.url) + '</a>' : r.detail ? ' · ' + esc(r.detail) : '') + (DESK && !r.url && r.detail && /站点已在 /.test(r.detail) ? ' <button class="btn" id="pub-reveal">在访达里打开</button>' : '');
+    const rv = document.getElementById('pub-reveal'); if (rv) rv.onclick = () => window.__TAURI_INTERNALS__.invoke('desktop_reveal_path', {p:r.detail.replace(/^站点已在 /, '') + '/index.html'}).catch(() => {});
+  } catch(e){
+    if (e.status === 409 && /整个库/.test(e.message || '')){
+      msg.className = 'bad'; msg.innerHTML = esc(e.message) + ' <button class="btn danger" id="pub-all">确实要整个库公开</button> <button class="btn" id="pub-scope">先选范围</button>';
+      $('pub-all').onclick = () => deployTarget(t, msg, null, true); $('pub-scope').onclick = () => openWiki(t);
+    } else { msg.className = 'bad'; msg.textContent = '没发成：' + (e.message || e); }
+  }
+  if (btn) btn.disabled = false;
+}
+/* 一键 wiki：范围 → 清单 → 发 */
+async function openWiki(t, ts){
+  if (!ts){ try { ts = (await api('/publish/targets')).targets || []; } catch(e){ ts = []; } }
+  /* 总能先在本机生成看看效果 */
+  if (!ts.some(x => x.kind === 'local')) ts = ts.concat([{name:'local', kind:'local'}]);
+  wikiDraft = {target:t ? t.name : (ts.find(x => x.is_default) || ts.find(x => x.kind !== 'local') || ts[0]).name, include:t ? (t.include || []).slice() : [], title:t && t.title || ''};
+  if (!t && reading && reading.k !== 'ext' && !wikiDraft.include.length) wikiDraft.include.push(reading.p.slice(0, reading.p.lastIndexOf('/')));
+  let tree = {dirs:[]}; try { tree = await api('/tree'); } catch(e){}
+  const dirs = new Set(); const walk = ds => (ds || []).forEach(x => { dirs.add(x.path); walk(x.dirs); }); walk(tree.dirs);
+  nodes.forEach(n => { if (n.k !== 'ext' && n.p.startsWith('Notes/')){ const i = n.p.lastIndexOf('/'); if (i > 6) dirs.add(n.p.slice(0, i)); } });
+  const render = () => {
+    const box = openPanel('一键 wiki', '<label>发哪些</label><div class="chips" id="wk-inc">' + (wikiDraft.include.length ? wikiDraft.include.map((x, i) => '<button class="chip" data-rm="' + i + '" title="点一下拿掉"><span>' + esc(incLabel(x)) + ' ×</span></button>').join('') : '<span class="hint" style="margin:0">还没选：下面加一个文件夹、一个标签，或者用此刻的视角</span>') + '</div>' +
+      '<div class="acts"><select id="wk-dir" class="sel" style="width:auto;max-width:280px"><option value="">加一个文件夹…</option>' + [...dirs].sort((a, b) => a.localeCompare(b, 'zh')).map(x => '<option value="' + esc(x) + '">' + esc(x.replace(/^Notes\//, '')) + '</option>').join('') + '</select><input type="text" id="wk-tag" placeholder="#标签" style="width:120px"><button class="btn" id="wk-addtag">加标签</button>' + (lastRel.length ? '<button class="btn" id="wk-view">用此刻亮着的 ' + lastRel.filter(x => x.norm > .3).length + ' 篇</button>' : '') + (picks.length ? '<button class="btn" id="wk-pick">用选中的 ' + picks.length + ' 篇</button>' : '') + '</div>' +
+      '<label for="wk-title">站点名</label><input type="text" id="wk-title" value="' + esc(wikiDraft.title) + '" placeholder="比如：我的读书笔记">' +
+      '<label for="wk-target">发到</label><select id="wk-target" class="sel">' + (ts.length ? ts : [{name:'local', kind:'local'}]).map(x => '<option value="' + esc(x.name) + '"' + (x.name === wikiDraft.target ? ' selected' : '') + '>' + esc(x.name) + ' · ' + esc(PUB_KIND[x.kind] || x.kind) + '</option>').join('') + '</select><p class="hint">要发到网上，先在「发布」里新建一个目标（GitHub Pages、对象存储、Cloudflare Pages）。</p>' +
+      '<div id="wk-pre"></div><div class="acts"><button class="btn" id="wk-look">看清单</button><button class="btn pri" id="wk-go" disabled>发布</button><button class="btn" id="wk-back">返回</button></div><p id="wk-msg"></p>');
+    box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { wikiDraft.include.splice(+b.dataset.rm, 1); render(); });
+    $('wk-dir').onchange = () => { const v = $('wk-dir').value; if (v && !wikiDraft.include.includes(v)) wikiDraft.include.push(v); render(); };
+    $('wk-addtag').onclick = () => { const v = $('wk-tag').value.trim().replace(/^#/, ''); if (v && !wikiDraft.include.includes('tag:' + v)) wikiDraft.include.push('tag:' + v); render(); };
+    if ($('wk-view')) $('wk-view').onclick = () => { lastRel.filter(x => x.norm > .3 && x.n.k !== 'ext').forEach(x => { if (!wikiDraft.include.includes(x.n.p)) wikiDraft.include.push(x.n.p); }); render(); };
+    if ($('wk-pick')) $('wk-pick').onclick = () => { picks.filter(n => n.k !== 'ext').forEach(n => { if (!wikiDraft.include.includes(n.p)) wikiDraft.include.push(n.p); }); render(); };
+    $('wk-title').oninput = () => { wikiDraft.title = $('wk-title').value; };
+    $('wk-target').onchange = () => { wikiDraft.target = $('wk-target').value; };
+    $('wk-back').onclick = openPublish;
+    $('wk-look').onclick = async () => {
+      if (!wikiDraft.include.length){ toast('先选要发的文件夹、标签或文档'); return; }
+      const pre = $('wk-pre'); pre.innerHTML = '<span class="thinking"><i></i><i></i><i></i> 正在看</span>';
+      let r; try { r = await api('/publish/preview', {method:'POST', json:{include:wikiDraft.include}}); } catch(e){ pre.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+      pre.innerHTML = '<div class="changes"><p><b>' + r.count + '</b> 篇会发出去</p>' + (r.warn.length ? '<p class="bad">' + r.warn.length + ' 篇里像有不该公开的东西，先看看：</p>' + r.warn.slice(0, 10).map(w => '<p class="bad">《' + esc((byPath.get(w.path) || {}).full || w.path) + '》：' + esc(w.why.join('、')) + ' <a href="#" data-see="' + esc(w.path) + '">打开</a></p>').join('') : '<p>没看到像密钥、密码、内网地址的东西</p>') + '</div>' +
+        '<details class="more"><summary>看看是哪些</summary><div class="diff">' + r.docs.map(esc).join('\n') + '</div></details>';
+      pre.querySelectorAll('[data-see]').forEach(a => a.onclick = e => { e.preventDefault(); const n = byPath.get(a.dataset.see); if (n){ closePanel(); openDoc(n); } });
+      $('wk-go').disabled = !r.count;
+    };
+    $('wk-go').onclick = async () => {
+      const m = $('wk-msg'); m.className = ''; m.textContent = '正在保存范围…'; $('wk-go').disabled = true;
+      const t0 = ts.find(x => x.name === wikiDraft.target) || {name:'local', kind:'local'};
+      const tg = Object.assign({}, t0, {include:wikiDraft.include, title:wikiDraft.title || null}); delete tg.is_default; delete tg.dir;
+      try { await api('/publish/targets', {method:'POST', json:{target:tg}}); }
+      catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); $('wk-go').disabled = false; return; }
+      await deployTarget(tg, m, $('wk-go'));
+    };
+  };
+  render();
+}
+/* 新建 / 改发布目标：密钥存进这台设备的凭证库，litmus.toml 里只写名字 */
+function editTarget(t){
+  const k0 = t ? t.kind : 'git', v = t || {};
+  const F = (id, label, val, ph, type) => '<label for="' + id + '">' + label + '</label><input type="' + (type || 'text') + '" id="' + id + '" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off">';
+  const box = openPanel(t ? '发布目标：' + t.name : '新建发布目标', F('pt-name', '名字', v.name, '比如 我的站') + '<label for="pt-kind">种类</label><select id="pt-kind" class="sel">' + Object.entries(PUB_KIND).map(([k, n]) => '<option value="' + k + '"' + (k === k0 ? ' selected' : '') + '>' + n + '</option>').join('') + '</select><div id="pt-f"></div>' +
+    '<label class="row" style="margin-top:12px"><input type="checkbox" id="pt-def"' + (v.is_default ? ' checked' : '') + '><div class="grow"><span>设为默认目标</span></div></label>' +
+    '<p class="hint">密钥、令牌只存进这台设备加密的凭证库（/凭证），litmus.toml 里只写名字。笔记不会进鹿蕊的代码仓库：给站点单独建一个仓库。</p><div class="acts"><button class="btn pri" id="pt-save">保存</button>' + (t ? '<button class="btn" id="pt-del">删除这个目标</button>' : '') + '<button class="btn" id="pt-back">返回</button></div><p id="pt-msg"></p>');
+  const fields = () => {
+    const k = $('pt-kind').value, sec = (id, label, ph) => F(id, label + '（存进凭证库）', '', ph || (t ? '已存的话留空表示不改' : ''), 'password');
+    $('pt-f').innerHTML = k === 'git' ? F('pt-remote', '仓库地址', v.remote, 'https://github.com/你的名字/你的名字.github.io.git') + F('pt-branch', '分支', v.branch, 'gh-pages（用户站点仓库填 main）') + sec('pt-tok', 'GitHub 令牌（要 Contents 写权限；用 ssh 地址可不填）') + F('pt-url', '公开地址', v.public_base_url, 'https://你的名字.github.io/')
+      : k === 's3' ? F('pt-ep', 'Endpoint', v.endpoint, 'https://<账号>.r2.cloudflarestorage.com 或 https://oss-cn-hangzhou.aliyuncs.com') + F('pt-bucket', 'Bucket', v.bucket) + F('pt-region', 'Region', v.region, 'auto / us-east-1 / oss-cn-hangzhou') + F('pt-prefix', '路径前缀（可选）', v.prefix, 'wiki/') + sec('pt-ak', 'Access Key') + sec('pt-sk', 'Secret Key') + F('pt-url', '公开地址', v.public_base_url, 'https://wiki.example.com/')
+      : k === 'cf-pages' ? F('pt-acc', 'Account ID', v.account_id) + F('pt-proj', 'Pages 项目名', v.project) + sec('pt-tok', 'API 令牌（Pages 编辑权限）') + F('pt-url', '公开地址', v.public_base_url, 'https://项目名.pages.dev/')
+      : k === 'webdav' ? F('pt-ep', 'WebDAV 地址', v.endpoint, 'https://dav.jianguoyun.com/dav/wiki/') + sec('pt-ak', '用户名') + sec('pt-sk', '密码')
+      : F('pt-dir', '生成到（库里的文件夹）', v.dir, 'site');
+  };
+  $('pt-kind').onchange = fields; fields();
+  $('pt-back').onclick = openPublish;
+  if ($('pt-del')) $('pt-del').onclick = async e => { const b = e.currentTarget; if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; } try { await api('/publish/targets?name=' + encodeURIComponent(t.name), {method:'DELETE'}); openPublish(); } catch(x){ toast(esc(x.message || x), true); } };
+  $('pt-save').onclick = async () => {
+    const g = id => { const el = $(id); return el ? el.value.trim() : ''; }, k = $('pt-kind').value, name = g('pt-name');
+    const slug = name.replace(/[^\w]+/g, '_').toLowerCase() || 'site';
+    const tg = {name, kind:k, include:v.include || [], title:v.title || null};
+    const secrets = {};
+    if (k === 'git'){ Object.assign(tg, {remote:g('pt-remote'), branch:g('pt-branch') || 'gh-pages', public_base_url:g('pt-url') || null, token_env:v.token_env || 'github_token', force:true}); if (g('pt-tok')) secrets[tg.token_env] = g('pt-tok'); if (/github\.com[/:]sevenaaaaaaaaa\/litmus(\.git)?\/?$/i.test(tg.remote)){ $('pt-msg').className = 'bad'; $('pt-msg').textContent = '不能发到鹿蕊的代码仓库'; return; } }
+    else if (k === 's3'){ Object.assign(tg, {endpoint:g('pt-ep'), bucket:g('pt-bucket'), region:g('pt-region') || null, prefix:g('pt-prefix') || null, public_base_url:g('pt-url') || null, access_key_env:v.access_key_env || 's3_access_key_' + slug, secret_key_env:v.secret_key_env || 's3_secret_key_' + slug}); if (g('pt-ak')) secrets[tg.access_key_env] = g('pt-ak'); if (g('pt-sk')) secrets[tg.secret_key_env] = g('pt-sk'); }
+    else if (k === 'cf-pages'){ Object.assign(tg, {account_id:g('pt-acc'), project:g('pt-proj'), public_base_url:g('pt-url') || null, token_env:v.token_env || 'cf_api_token'}); if (g('pt-tok')) secrets[tg.token_env] = g('pt-tok'); }
+    else if (k === 'webdav'){ Object.assign(tg, {endpoint:g('pt-ep'), access_key_env:v.access_key_env || 'webdav_user_' + slug, secret_key_env:v.secret_key_env || 'webdav_pass_' + slug}); if (g('pt-ak')) secrets[tg.access_key_env] = g('pt-ak'); if (g('pt-sk')) secrets[tg.secret_key_env] = g('pt-sk'); }
+    else Object.assign(tg, {dir:g('pt-dir') || null});
+    Object.keys(tg).forEach(x => { if (tg[x] === '' || tg[x] == null) delete tg[x]; });
+    try { await api('/publish/targets', {method:'POST', json:{target:tg, secrets, default:$('pt-def').checked}}); toast('发布目标 <b>' + esc(name) + '</b> 存好了'); openPublish(); }
+    catch(e){ $('pt-msg').className = 'bad'; $('pt-msg').textContent = e.message || String(e); }
+  };
 }
 function presentAll(){
   const url = location.origin + BASE + '/presentation?token=' + encodeURIComponent(token);
@@ -3372,6 +3473,11 @@ function setH1(md, title){
 /* ═══════════ F3 加密分享 ═══════════ */
 const b64u = buf => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const b64s = buf => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+/* 几篇一起分享：拼成一页（带目录），一起加密 */
+function shareDocs(list){
+  if (list.length === 1) return shareDoc(list[0]);
+  shareDoc({p:list[0].p, full:list.length + ' 篇：' + list.slice(0, 3).map(n => n.full || n.title).join('、') + (list.length > 3 ? '…' : ''), many:list});
+}
 function shareDoc(n){
   const box = openPanel('加密分享', '<p class="hint" style="margin-top:0">在你的浏览器里加密，再把密文存出去；密钥只在链接的 # 后面，存放它的服务器看不到内容。</p>' +
     '<label for="sh-pw">密码（可选）</label><input type="password" id="sh-pw" autocomplete="new-password" placeholder="不填：密钥直接放在链接里，拿到链接就能看">' +
@@ -3384,9 +3490,14 @@ async function makeShare(n, pw, days){
   try {
     if (editing) await flushSave();
     if (!window.crypto || !crypto.subtle) throw new Error('当前页面不能用浏览器加密（需要 https 或本机地址）');
-    const res = await fetch(BASE + '/export/html?path=' + encP(n.p), {headers:{authorization:'Bearer ' + token}});
-    if (!res.ok) throw new Error('导出正文失败：' + (await res.text()).slice(0, 120));
-    const html = await res.text();
+    const one = async m => { const res = await fetch(BASE + '/export/html?path=' + encP(m.p), {headers:{authorization:'Bearer ' + token}}); if (!res.ok) throw new Error('导出《' + (m.full || m.title) + '》失败：' + (await res.text()).slice(0, 120)); return res.text(); };
+    let html;
+    if (n.many){
+      msg.textContent = '正在拼成一页…';
+      const parts = [];
+      for (const [i, m] of n.many.entries()){ const doc = new DOMParser().parseFromString(await one(m), 'text/html'); const head = [...doc.querySelectorAll('style')].map(x => x.outerHTML).join(''); const body = (doc.querySelector('article') || doc.querySelector('main') || doc.body).innerHTML; parts.push({i, m, head, body}); }
+      html = '<!doctype html><html lang="zh"><head><meta charset="utf-8">' + (parts[0] ? parts[0].head : '') + '</head><body><nav><h2>' + esc(n.full) + '</h2><ol>' + parts.map(x => '<li><a href="#d' + x.i + '">' + esc(x.m.full || x.m.title) + '</a></li>').join('') + '</ol></nav>' + parts.map(x => '<section id="d' + x.i + '"><hr>' + x.body + '</section>').join('') + '</body></html>';
+    } else html = await one(n);
     const plain = new TextEncoder().encode(JSON.stringify({title:n.full, html}));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     let key, frag = '', salt = null, iter = null;

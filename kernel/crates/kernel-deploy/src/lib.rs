@@ -53,12 +53,28 @@ pub struct DeployReport {
 
 /// 该目标的站点目录（相对库根）。
 pub fn target_dir(target: &PublishTarget, default_site_dir: &str) -> PathBuf {
-    if let Some(d) = &target.dir {
-        return PathBuf::from(d);
+    // 站点目录不能是库根、Notes/、Assets/ 本身或它们里面：生成站点时会清掉上一版的残留文件。
+    // 以前 site_dir 缺省成空串，站点就直接生成在库根里
+    let safe = |d: &str| -> Option<PathBuf> {
+        // 绝对路径（发到 nginx 的目录之类）照旧可以；只拦根目录本身
+        let a = d.trim();
+        if std::path::Path::new(a).is_absolute() {
+            return (a.trim_end_matches('/').len() > 1).then(|| PathBuf::from(a));
+        }
+        let t = d.trim().trim_matches('/').trim_start_matches("./");
+        let first = t.split('/').next().unwrap_or("");
+        if t.is_empty() || t == "." || t.contains("..") || std::path::Path::new(t).is_absolute() || matches!(first, "Notes" | "Assets") {
+            None
+        } else {
+            Some(PathBuf::from(t))
+        }
+    };
+    if let Some(d) = target.dir.as_deref().and_then(safe) {
+        return d;
     }
     match target.kind.as_str() {
         "git" => PathBuf::from(format!(".litmus/local/deploy/{}", target.name)),
-        _ => PathBuf::from(default_site_dir),
+        _ => safe(default_site_dir).unwrap_or_else(|| PathBuf::from(".litmus/local/site")),
     }
 }
 
@@ -128,6 +144,23 @@ fn walkdir_lite(dir: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+thread_local! {
+    static SECRETS: std::cell::RefCell<Option<Box<dyn Fn(&str) -> Option<String>>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 部署时去哪拿密钥：先看环境变量，再问调用方（服务端接的是加密的凭证库）。
+/// `*_env` 字段写的名字两边通用：环境变量叫这个，凭证库里也叫这个。
+pub fn with_secrets<R>(lookup: impl Fn(&str) -> Option<String> + 'static, run: impl FnOnce() -> R) -> R {
+    SECRETS.with(|s| *s.borrow_mut() = Some(Box::new(lookup)));
+    let r = run();
+    SECRETS.with(|s| *s.borrow_mut() = None);
+    r
+}
+
+pub(crate) fn cred(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty()).or_else(|| SECRETS.with(|s| s.borrow().as_ref().and_then(|f| f(name)))).filter(|v| !v.is_empty())
 }
 
 /// 执行一次部署。
@@ -253,7 +286,22 @@ fn deploy_git(site_dir: &Path, target: &PublishTarget) -> Result<DeployReport, D
     }
     push.push("origin");
     push.push(&branch);
-    git(site_dir, &push)?;
+    // https 的 GitHub 远端：凭证库里有 github_token 就用它推（不写进仓库配置、不进命令历史）
+    let header;
+    let mut args: Vec<&str> = Vec::new();
+    if remote.starts_with("https://github.com/") {
+        if let Some(t) = cred(target.token_env.as_deref().unwrap_or("github_token")) {
+            header = format!("http.https://github.com/.extraheader=AUTHORIZATION: basic {}", b64(format!("x-access-token:{t}").as_bytes()));
+            args.push("-c");
+            args.push(&header);
+        }
+    }
+    args.extend(push.iter());
+    git(site_dir, &args).map_err(|e| match e {
+        // 推送失败时把令牌从报错里抹掉
+        DeployError::Git(m) => DeployError::Git(m.split("AUTHORIZATION").next().unwrap_or("").to_string()),
+        other => other,
+    })?;
 
     let files = walk(site_dir)?;
     Ok(DeployReport {
@@ -271,6 +319,19 @@ fn deploy_git(site_dir: &Path, target: &PublishTarget) -> Result<DeployReport, D
         ),
         url: Some(remote),
     })
+}
+
+fn b64(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<(), DeployError> {
@@ -345,6 +406,20 @@ mod tests {
         }
         assert!(gitops::sync(v, "origin").is_err());
         assert!(gitops::remote_url(v).is_empty(), "不该把远端改成字面的 origin");
+    }
+
+    /// 站点目录不能落在库根、Notes/、Assets/ 里（生成时会清掉上一版残留）
+    #[test]
+    fn site_dir_never_lands_on_the_vault_itself() {
+        let mut t = target("x", "local");
+        for bad in ["", ".", "/", "Notes", "Notes/site", "Assets/x", "../out"] {
+            t.dir = Some(bad.into());
+            assert_eq!(target_dir(&t, ""), std::path::PathBuf::from(".litmus/local/site"), "{bad:?}");
+        }
+        t.dir = Some("site".into());
+        assert_eq!(target_dir(&t, ""), std::path::PathBuf::from("site"));
+        t.dir = Some("/srv/site".into());
+        assert_eq!(target_dir(&t, ""), std::path::PathBuf::from("/srv/site"), "绝对路径照旧");
     }
 
     #[test]

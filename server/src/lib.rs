@@ -327,7 +327,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/chat/stream", post(chat_stream))
         .route("/agent/apply", post(agent_apply))
         .route("/publish", get(publish_list).post(publish))
-        .route("/publish/targets", get(publish_targets))
+        .route("/publish/targets", get(publish_targets).post(publish_target_put).delete(publish_target_delete))
+        .route("/publish/preview", post(publish_preview))
         .route("/publish/site", post(publish_site))
         .route("/publish/deploy", post(publish_deploy))
         .route("/publish/{name}", get(publish_file))
@@ -4651,11 +4652,184 @@ fn publish_targets_of(k: &kernel_core::Kernel) -> Vec<Value> {
         out.push(json!({
             "name": t.name, "kind": t.kind, "dir": dir.display().to_string(),
             "remote": t.remote, "branch": t.branch, "bucket": t.bucket,
-            "endpoint": t.endpoint, "project": t.project,
+            "endpoint": t.endpoint, "project": t.project, "region": t.region, "prefix": t.prefix,
+            "account_id": t.account_id, "public_base_url": t.public_base_url,
+            "access_key_env": t.access_key_env, "secret_key_env": t.secret_key_env, "token_env": t.token_env,
+            "include": t.include, "title": t.title,
             "is_default": cfg.default_target.as_deref() == Some(t.name.as_str()),
         }));
     }
     out
+}
+
+/// 站点生成目录不能是库本身（或 Notes/、Assets/ 里面）：生成时会清掉上一版残留
+fn site_out_ok(root: &std::path::Path, out: &std::path::Path) -> Result<(), String> {
+    let r = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let o = out.canonicalize().unwrap_or_else(|_| out.to_path_buf());
+    if o == r || o.starts_with(r.join("Notes")) || o.starts_with(r.join("Assets")) || r.starts_with(&o) {
+        return Err("站点目录不能是库本身或 Notes/、Assets/ 里面：在发布目标里换一个目录".into());
+    }
+    Ok(())
+}
+
+/// 发出去的地方不能是鹿蕊自己的代码仓库（公开仓库里一篇真实笔记都不能有）
+fn publish_guard(t: &kernel_core::PublishTarget) -> Option<String> {
+    let r = t.remote.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+    let r = r.trim_end_matches('/').trim_end_matches(".git");
+    if r.ends_with("github.com/sevenaaaaaaaaa/litmus") || r.ends_with("github.com:sevenaaaaaaaaa/litmus") {
+        return Some("不能发到鹿蕊的代码仓库：给站点另建一个仓库（比如 你的名字.github.io）".into());
+    }
+    None
+}
+
+/// 发布前看一眼：会发哪些、有没有像密钥、密码、内网地址这样不该公开的
+fn leak_hints(text: &str) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    let low = text.to_lowercase();
+    let pats: [(&str, &'static str); 9] = [("sk-", "像 API 密钥（sk-…）"), ("ghp_", "像 GitHub 令牌"), ("github_pat_", "像 GitHub 令牌"), ("akia", "像 AWS 访问密钥"), ("-----begin", "像私钥"), ("password", "写着 password"), ("密码：", "写着「密码：」"), ("token:", "写着 token:"), ("192.168.", "有内网地址")];
+    for (p, why) in pats {
+        if low.contains(p) && !out.contains(&why) {
+            out.push(why);
+        }
+    }
+    out
+}
+
+/// POST /publish/preview {target? | include?}：这次会发哪些文档、哪些里面像有不该公开的
+async fn publish_preview(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let mut k = st.kernel.lock().unwrap();
+    let include: Vec<String> = match req.get("include").and_then(|v| v.as_array()) {
+        Some(a) => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+        None => {
+            let name = req.get("target").and_then(|v| v.as_str()).unwrap_or("");
+            k.vault.config.publish.targets.iter().find(|t| t.name == name).map(|t| t.include.clone()).unwrap_or_default()
+        }
+    };
+    let docs = match k.site_docs(&include) {
+        Ok(d) => d,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+    let root = k.vault.root.clone();
+    let mut warn = Vec::new();
+    for d in &docs {
+        let t = std::fs::read_to_string(root.join(d)).unwrap_or_default();
+        let hs = leak_hints(&t);
+        if !hs.is_empty() {
+            warn.push(json!({ "path": d, "why": hs }));
+        }
+    }
+    Json(json!({ "count": docs.len(), "docs": docs.iter().take(500).collect::<Vec<_>>(), "all": include.is_empty(), "warn": warn })).into_response()
+}
+
+/// POST /publish/targets {target:{…}, secrets?:{名字:值}, default?:bool}：新建或改一个发布目标（写进 litmus.toml）；
+/// 密钥只存进这台设备的加密凭证库，litmus.toml 里只写名字。DELETE /publish/targets?name= 删掉。
+async fn publish_target_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let Ok(mut t) = serde_json::from_value::<kernel_core::PublishTarget>(req.get("target").cloned().unwrap_or(json!({}))) else { return err(StatusCode::BAD_REQUEST, "发布目标格式不对").into_response() };
+    t.name = t.name.trim().to_string();
+    if t.name.is_empty() || t.name.contains(['/', '\\', '"', '\n']) || t.name == "local" && t.kind != "local" {
+        return err(StatusCode::BAD_REQUEST, "给目标起个名字（不能有 / \\ 引号）").into_response();
+    }
+    if !matches!(t.kind.as_str(), "local" | "git" | "s3" | "cf-pages" | "webdav") {
+        return err(StatusCode::BAD_REQUEST, "种类只能是 local / git / s3 / cf-pages / webdav").into_response();
+    }
+    t.include = t.include.iter().map(|x| x.trim().trim_end_matches('/').to_string()).filter(|x| !x.is_empty() && !x.contains("..")).collect();
+    if let Some(e) = publish_guard(&t) {
+        return err(StatusCode::BAD_REQUEST, e).into_response();
+    }
+    if t.kind == "git" && t.remote.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        return err(StatusCode::BAD_REQUEST, "GitHub Pages / Git 目标要填仓库地址").into_response();
+    }
+    if t.kind == "s3" && (t.endpoint.is_none() || t.bucket.is_none()) {
+        return err(StatusCode::BAD_REQUEST, "对象存储要填 endpoint 和 bucket").into_response();
+    }
+    let mut k = st.kernel.lock().unwrap();
+    let root = k.vault.root.clone();
+    if let Some(sec) = req.get("secrets").and_then(|v| v.as_object()) {
+        for (name, v) in sec {
+            if let Some(v) = v.as_str().filter(|v| !v.is_empty()) {
+                if let Err(e) = kernel_core::secrets::put(&root, name, v, &format!("发布目标 {}", t.name)) {
+                    return err(StatusCode::CONFLICT, e).into_response();
+                }
+            }
+        }
+    }
+    let make_default = req.get("default").and_then(|v| v.as_bool()).unwrap_or(false);
+    let cfg_path = root.join("litmus.toml");
+    let r = (|| -> Result<(), String> {
+        let raw = std::fs::read_to_string(&cfg_path).map_err(|e| e.to_string())?;
+        let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("litmus.toml 格式有误：{e}"))?;
+        if !doc.contains_key("publish") {
+            doc["publish"] = toml_edit::table();
+        }
+        let pubt = doc["publish"].as_table_mut().ok_or("litmus.toml 里的 publish 不是一个表")?;
+        if !pubt.contains_key("targets") {
+            pubt["targets"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
+        }
+        let arr = pubt["targets"].as_array_of_tables_mut().ok_or("publish.targets 不是 [[publish.targets]]")?;
+        let tv = toml_edit::ser::to_document(&t).map_err(|e| e.to_string())?;
+        let table = tv.as_table().clone();
+        let pos = arr.iter().position(|x| x.get("name").and_then(|n| n.as_str()) == Some(t.name.as_str()));
+        match pos {
+            Some(i) => *arr.get_mut(i).unwrap() = table,
+            None => arr.push(table),
+        }
+        if make_default {
+            pubt["default_target"] = toml_edit::value(t.name.as_str());
+        }
+        let tmp = cfg_path.with_extension("tmp");
+        std::fs::write(&tmp, doc.to_string()).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &cfg_path).map_err(|e| e.to_string())
+    })();
+    if let Err(e) = r {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    let cfg = &mut k.vault.config.publish;
+    match cfg.targets.iter_mut().find(|x| x.name == t.name) {
+        Some(x) => *x = t.clone(),
+        None => cfg.targets.push(t.clone()),
+    }
+    if make_default {
+        cfg.default_target = Some(t.name.clone());
+    }
+    Json(json!({ "ok": true, "targets": publish_targets_of(&k) })).into_response()
+}
+
+async fn publish_target_delete(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let name = q.get("name").cloned().unwrap_or_default();
+    let mut k = st.kernel.lock().unwrap();
+    let cfg_path = k.vault.root.join("litmus.toml");
+    let r = (|| -> Result<(), String> {
+        let raw = std::fs::read_to_string(&cfg_path).map_err(|e| e.to_string())?;
+        let mut doc: toml_edit::DocumentMut = raw.parse().map_err(|e| format!("litmus.toml 格式有误：{e}"))?;
+        if let Some(arr) = doc.get_mut("publish").and_then(|p| p.get_mut("targets")).and_then(|t| t.as_array_of_tables_mut()) {
+            arr.retain(|x| x.get("name").and_then(|n| n.as_str()) != Some(name.as_str()));
+        }
+        if doc.get("publish").and_then(|p| p.get("default_target")).and_then(|d| d.as_str()) == Some(name.as_str()) {
+            if let Some(p) = doc.get_mut("publish").and_then(|p| p.as_table_mut()) {
+                p.remove("default_target");
+            }
+        }
+        std::fs::write(&cfg_path, doc.to_string()).map_err(|e| e.to_string())
+    })();
+    if let Err(e) = r {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    k.vault.config.publish.targets.retain(|t| t.name != name);
+    if k.vault.config.publish.default_target.as_deref() == Some(name.as_str()) {
+        k.vault.config.publish.default_target = None;
+    }
+    Json(json!({ "ok": true, "targets": publish_targets_of(&k) })).into_response()
 }
 
 async fn publish_targets(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
@@ -4684,12 +4858,16 @@ async fn publish_site(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let cfg = k.vault.config.publish.clone();
     let dir = match cfg.targets.iter().find(|t| t.name == target_name) {
         Some(t) => kernel_deploy::target_dir(t, &cfg.site_dir),
-        None => std::path::PathBuf::from(&cfg.site_dir),
+        None => kernel_deploy::target_dir(&kernel_core::PublishTarget { kind: "local".into(), ..Default::default() }, &cfg.site_dir),
     };
     let out = k.vault.root.join(&dir);
+    if let Err(e) = site_out_ok(&k.vault.root, &out) {
+        return err(StatusCode::BAD_REQUEST, e).into_response();
+    }
     let base = cfg.base_url.clone();
     let icp = cfg.targets.iter().find(|t| t.name == target_name).and_then(|t| t.icp.clone());
-    match k.build_site(&out, base.as_deref(), icp.as_deref()) {
+    let tg = cfg.targets.iter().find(|t| t.name == target_name).cloned().unwrap_or_default();
+    match k.build_site_for(&out, base.as_deref(), icp.as_deref(), &tg.include, tg.title.as_deref()) {
         Ok(m) => Json(json!({
             "site_dir": dir.display().to_string(),
             "files": m.files.len(),
@@ -4737,11 +4915,22 @@ async fn publish_deploy(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         let Some(target) = target else {
             return err(StatusCode::BAD_REQUEST, format!("未知目标：{name}")).into_response();
         };
+        if let Some(e) = publish_guard(&target) {
+            return err(StatusCode::BAD_REQUEST, e).into_response();
+        }
+        // 没选范围 = 整个库：要明确确认一次（以前点「部署」就会把整个库公开）
+        if target.include.is_empty() && target.kind != "local" && !req.get("confirm_all").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let n = kernel_core::list_docs(&k.vault).map(|d| d.len()).unwrap_or(0);
+            return (StatusCode::CONFLICT, Json(json!({ "error": format!("这个目标没设范围，会把整个库（{n} 篇）公开发出去"), "needs_confirm": true, "count": n }))).into_response();
+        }
         let dir = k.vault.root.join(kernel_deploy::target_dir(&target, &cfg.site_dir));
+        if let Err(e) = site_out_ok(&k.vault.root, &dir) {
+            return err(StatusCode::BAD_REQUEST, e).into_response();
+        }
         let sidecar = k.vault.sidecar();
-        let base = cfg.base_url.clone();
+        let base = cfg.base_url.clone().or_else(|| target.public_base_url.clone());
         let icp = target.icp.clone();
-        if let Err(e) = k.build_site(&dir, base.as_deref(), icp.as_deref()) {
+        if let Err(e) = k.build_site_for(&dir, base.as_deref(), icp.as_deref(), &target.include, target.title.as_deref()) {
             return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
         }
         (dir, target, sidecar, base)
@@ -4766,7 +4955,9 @@ async fn publish_deploy(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
 
     let t2 = target.clone();
     let sidecar2 = sidecar.clone();
-    let r = tokio::task::spawn_blocking(move || kernel_deploy::deploy(&dir, &sidecar2, &t2))
+    let vroot = st.kernel.lock().unwrap().vault.root.clone();
+    // 部署用的密钥从加密的凭证库里拿（环境变量照旧优先）
+    let r = tokio::task::spawn_blocking(move || kernel_deploy::with_secrets(move |n| kernel_core::secrets::get(&vroot, n), || kernel_deploy::deploy(&dir, &sidecar2, &t2)))
         .await
         .unwrap_or_else(|j| Err(kernel_deploy::DeployError::Io(std::io::Error::other(format!("join: {j}")))));
     match r {
@@ -4816,7 +5007,10 @@ pub fn maybe_auto_publish(state: &Arc<AppState>, sidecar: &std::path::Path) {
         name: n, kind: "local".into(), dir: None, ..Default::default()
     })) else { return; };
 
-    let dir = state.kernel.lock().unwrap().vault.root.join(kernel_deploy::target_dir(&target, "site"));
+    let (dir, vroot0) = { let k = state.kernel.lock().unwrap(); (k.vault.root.join(kernel_deploy::target_dir(&target, &k.vault.config.publish.site_dir)), k.vault.root.clone()) };
+    if site_out_ok(&vroot0, &dir).is_err() {
+        return;
+    }
     let base = {
         let k = state.kernel.lock().unwrap();
         k.vault.config.publish.base_url.clone()
@@ -4824,7 +5018,7 @@ pub fn maybe_auto_publish(state: &Arc<AppState>, sidecar: &std::path::Path) {
     let icp = target.icp.clone();
     if let Err(e) = {
         let mut k = state.kernel.lock().unwrap();
-        k.build_site(&dir, base.as_deref(), icp.as_deref())
+        k.build_site_for(&dir, base.as_deref(), icp.as_deref(), &target.include, target.title.as_deref())
     } {
         audit_log(sidecar, "auto-publish", &json!({ "error": e.to_string() }));
         return;
@@ -4832,8 +5026,12 @@ pub fn maybe_auto_publish(state: &Arc<AppState>, sidecar: &std::path::Path) {
     let st2 = state.clone();
     let t2 = target.clone();
     let sc = sidecar.to_path_buf();
+    let vroot = state.kernel.lock().unwrap().vault.root.clone();
     std::thread::spawn(move || {
-        let r = kernel_deploy::deploy(&dir, &sc, &t2);
+        if publish_guard(&t2).is_some() {
+            return;
+        }
+        let r = kernel_deploy::with_secrets(move |n| kernel_core::secrets::get(&vroot, n), || kernel_deploy::deploy(&dir, &sc, &t2));
         audit_log(&sc, "auto-publish", &match r {
             Ok(rep) => json!({ "target": rep.target, "uploaded": rep.uploaded, "skipped": rep.skipped, "detail": rep.detail }),
             Err(e) => json!({ "error": e.to_string() }),

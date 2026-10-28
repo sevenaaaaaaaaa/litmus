@@ -18,10 +18,10 @@ pub fn backup_webdav(
         .endpoint
         .clone()
         .ok_or_else(|| DeployError::Missing("webdav 需要 endpoint（如 https://dav.jianguoyun.com/dav/kb/）".into()))?;
-    let user = std::env::var(target.access_key_env.clone().unwrap_or_else(|| "WEBDAV_USER".into()))
-        .map_err(|_| DeployError::Missing("缺 WEBDAV 用户名环境变量".into()))?;
-    let pass = std::env::var(target.secret_key_env.clone().unwrap_or_else(|| "WEBDAV_PASS".into()))
-        .map_err(|_| DeployError::Missing("缺 WEBDAV 密码环境变量".into()))?;
+    let un = target.access_key_env.clone().unwrap_or_else(|| "WEBDAV_USER".into());
+    let pn = target.secret_key_env.clone().unwrap_or_else(|| "WEBDAV_PASS".into());
+    let user = crate::cred(&un).ok_or_else(|| DeployError::Missing(format!("缺 WebDAV 用户名：在 /凭证 存一条 {un}（或设同名环境变量）")))?;
+    let pass = crate::cred(&pn).ok_or_else(|| DeployError::Missing(format!("缺 WebDAV 密码：在 /凭证 存一条 {pn}（或设同名环境变量）")))?;
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(60))
