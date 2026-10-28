@@ -284,6 +284,31 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 #help .close{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px))}
 
 /* 通用面板（回收站 / 最近 / 设置 / 移动） */
+/* 终端：从底边升起的抽屉，可以拖高；收起不断 */
+#term{position:fixed;z-index:45;left:0;right:0;bottom:0;height:var(--term-h,38vh);background:var(--sheet);box-shadow:0 -1px 0 var(--rule),0 -24px 60px -30px oklch(var(--ink-c) / .3);display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+#term[hidden]{display:none}
+#term-grip{position:absolute;top:-4px;left:0;right:0;height:8px;cursor:ns-resize}
+#term .thead{display:flex;align-items:center;gap:6px;padding:6px 10px 6px 14px;border-bottom:1px solid var(--rule)}
+#term .thead .tb{flex:none;white-space:nowrap}
+#term-tabs{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto}
+#term .tab{font:500 var(--fs-1)/1 var(--f-ui);color:var(--ink-2);background:none;border:0;border-radius:var(--r-sm);padding:6px 8px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+#term .tab.on{color:var(--ink);background:var(--litmus-wash)}
+#term .tab.dead{color:var(--ink-3)}
+#term .tab i{font-style:normal;color:var(--ink-3);padding:0 2px}
+#term .tab i:hover{color:var(--ink)}
+#term .tb{font:500 var(--fs-1)/1 var(--f-ui);color:var(--ink-2);background:none;border:0;border-radius:var(--r-sm);padding:6px 8px;cursor:pointer}
+#term .tb:hover,#term .tab:hover{background:var(--litmus-wash);color:var(--ink)}
+#term-views{flex:1;min-height:0;position:relative;padding:6px 4px 4px 12px}
+#term-views .tview{position:absolute;inset:6px 4px 4px 12px}
+.chip.disk b{color:var(--ink-2)}
+.dkr{display:flex;flex-direction:column;margin:6px 0 4px}
+.dkr .dk{display:flex;flex-direction:column;gap:3px;text-align:left;background:none;border:0;border-bottom:1px solid var(--rule);padding:10px 4px;cursor:pointer;color:var(--ink)}
+.dkr .dk:hover{background:var(--litmus-wash)}
+.dkr .dk b{font:600 var(--fs-2)/1.35 var(--f-ui)}
+.dkr .dk small{font:400 var(--fs-1)/1.3 var(--f-mono);color:var(--ink-3)}
+.dkr .dk span{font:400 var(--fs-1)/1.5 var(--f-ui);color:var(--ink-2)}
+.dkr mark,.dkb mark{background:var(--litmus-wash);color:var(--ink)}
+.dkb{white-space:pre-wrap;font:400 var(--fs-1)/1.6 var(--f-mono);color:var(--ink-2);background:var(--paper);border-radius:var(--r-sm);padding:12px 14px;max-height:46vh;overflow:auto}
 #panel{position:fixed;inset:0;z-index:75;background:oklch(var(--paper-c) / .55);backdrop-filter:blur(var(--blur-1));-webkit-backdrop-filter:blur(var(--blur-1));display:grid;place-items:center;padding:16px}
 #panel .pbox{width:min(560px,100%);max-height:78vh;overflow:auto;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule);box-sizing:border-box}
 #panel header{display:flex;align-items:center;gap:10px;padding:14px 14px 10px 20px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--sheet)}
@@ -612,6 +637,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 <div id="tour"><div class="k"><span id="t-k"></span><span>← → 或空格 · Esc 结束</span></div><h3 id="t-h"></h3><p id="t-p"></p>
   <div class="nav"><button id="t-prev">上一站</button><button id="t-next">下一站</button><button id="t-open">展开阅读</button><button id="t-x">结束</button></div></div>
 
+<div id="term" hidden aria-label="终端"><div id="term-grip" aria-hidden="true"></div><div class="thead"><div id="term-tabs" role="tablist"></div><button class="tb" id="term-save" title="把选中的输出（没选就是最近 60 行）存成一篇随手记">存成笔记</button><button class="tb" id="term-hide" title="收起（Ctrl+`）：里面的程序照跑">收起</button></div><div id="term-views"></div></div>
 <div id="toast" role="status"></div>
 
 <div id="panel" hidden><div class="pbox" role="dialog" aria-modal="true" aria-labelledby="p-title">
@@ -689,6 +715,8 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
         <tr><td>数据源</td><td>/数据源：下载、文稿、截图、各处的 md、Claude Code / Codex 会话、LinkTo 等连接器、Google、任意 JSON 接口；原处索引（虚线圈），打开后移进库、复制进库或先学习</td></tr>
         <tr><td>GitHub、Notion、Sanity、OpenFlow、MFlow、WebsFlow、PayFlow、inFlow</td><td>/数据源 → 手动添加：接进来（原处索引）；阅读页「更多」→ 发到…：发回去（GitHub 提交、Notion 新建子页面、Sanity 草稿、OpenFlow 草稿文章、MFlow 选题队列、WebsFlow 按这篇做新页面、inFlow 写进工作区记忆；PayFlow 只读），都要确认</td></tr>
+        <tr><td>终端（桌面 App）</td><td>/终端 或 Ctrl+`：在下面开一个真终端，默认在库的文件夹里；收起不断、可开几个；「存成笔记」把选中的输出存成一篇</td></tr>
+        <tr><td>全盘索引（桌面 App）</td><td>/全盘：这台电脑上的文件按名字和内容找；打开后「找」的时候顺带给出电脑上的结果，值得的「收进库里」。索引只在这台电脑上</td></tr>
         <tr><td>清理会话、过程文档</td><td>/筛选，或「帮我把会话和过程文档剔除」：规则先分、拿不准的交给 AI，出清单你改判后再删；库里的进回收站，库外的不再上场、原件不动，可整批撤销</td></tr>
         <tr><td>上手引导、这一版的新东西</td><td>/上手 重新走一遍；/新东西 再看这一版多了什么</td></tr>
         <tr><td>后台进度</td><td>左上角「鹿蕊」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
@@ -2002,6 +2030,8 @@ const CMDS = [
   ['/对话', '和 Agent 的对话记录（Conflow 对话流），一键提炼成知识卡', openConflow],
   ['/记住', '让 Agent 记住一件事（/记住 周报不超过 300 字）', () => openMemory()],
   ['/凭证', 'API 密钥等凭证（只在本机）', openSecrets],
+  ['/终端', '桌面 App：在下面开一个终端（默认在库的文件夹里；Ctrl+` 开合）', () => openTerm()],
+  ['/全盘', '桌面 App：这台电脑上的文件按名字和内容找（/全盘 关键词）', () => openDisk('')],
   ['/昵称', '别处同时开着这篇时，他们看到的你的名字', openNick],
   ['/库', '切换、新建或连接知识库', openVaults],
   ['/退出登录', '网页版退出登录', logout],
@@ -2053,6 +2083,7 @@ function onInput(){
     const rel = await react(s);
     if (q.value !== s) return;
     hints(rel, v);
+    if (v === '找') diskHint(s);
     clearTimeout(softT); softT = setTimeout(() => softFit(rel), 600);
   }, 110);
 }
@@ -2213,6 +2244,7 @@ $('s-more').onclick = () => {
     {label:'复制一份', run:() => duplicateDoc(n)},
     {label:'复制文件路径', run:() => copyText(n.p)},
     {label:'所在文件夹…', run:() => openFolders(n.p.slice(0, n.p.lastIndexOf('/')))},
+    ...(DESK && n.k !== 'ext' ? [{label:'在终端里打开所在文件夹', run:() => openTerm({fresh:true, cwd:n.p.slice(0, n.p.lastIndexOf('/'))})}] : []),
     '-',
     ...(isMd ? [{label:'评论' + (cmts.path === n.p && cmts.list.length ? '（' + cmts.list.length + '）' : '') + '…', run:() => openComments()}] : []),
     ...(isConv ? [{label:'提炼成知识卡', run:() => conflowDigest(n.p)}] : []),
@@ -2452,6 +2484,195 @@ function openNick(){
   $('nk-go').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
   setTimeout(() => inp.focus(), 30);
 }
+/* ═══════════ 桌面独占：内嵌终端（真 shell，关掉面板不断，回来接着用） ═══════════ */
+const term = {tabs:[], cur:null, open:false, lib:null};
+function deskOnly(what){ if (DESK) return true; toast(what + '只在桌面 App 里有：网页版不能碰你电脑上的东西'); return false; }
+function loadXterm(){
+  if (term.lib) return term.lib;
+  term.lib = new Promise((ok, bad) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = BASE + '/assets/xterm.css'; document.head.appendChild(css);
+    const s = document.createElement('script'); s.src = BASE + '/assets/xterm.js'; s.onload = () => ok(); s.onerror = () => { term.lib = null; bad(new Error('终端组件没加载上')); }; document.head.appendChild(s);
+  });
+  return term.lib;
+}
+/* 终端配色跟着纸与墨走：把 oklch 量成 xterm 认得的颜色 */
+function termTheme(){
+  const cv = termTheme.c || (termTheme.c = document.createElement('canvas')); cv.width = cv.height = 1;
+  const g = cv.getContext('2d', {willReadFrequently:true}), cs = getComputedStyle(document.documentElement);
+  const hex = v => { g.clearRect(0, 0, 1, 1); g.fillStyle = 'oklch(' + cs.getPropertyValue(v).trim() + ')'; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; return '#' + [d[0], d[1], d[2]].map(x => x.toString(16).padStart(2, '0')).join(''); };
+  const sel = hex('--litmus-c');
+  return {background:hex('--sheet-c'), foreground:hex('--ink-c'), cursor:hex('--litmus-c'), cursorAccent:hex('--sheet-c'), selectionBackground:sel + '55'};
+}
+async function openTerm(opts){
+  if (!deskOnly('终端')) return;
+  opts = opts || {};
+  try { await loadXterm(); } catch(e){ toast(esc(e.message), true); return; }
+  const box = $('term'); box.hidden = false; term.open = true; document.body.classList.add('term-on');
+  if (opts.fresh || !term.tabs.length){
+    /* 页面刷新过：先接回 daemon 里还开着的 */
+    if (!term.tabs.length && !opts.fresh){ try { const r = await api('/desktop/terms'); (r.terms || []).filter(t => t.alive).forEach(t => termTab(t.id, t.cwd)); } catch(e){} }
+    if (opts.fresh || !term.tabs.length) termTab(null, opts.cwd);
+  }
+  termShow(opts.fresh ? term.tabs[term.tabs.length - 1] : term.cur || term.tabs[0]);
+}
+function termTab(id, cwd){
+  const T = window.Terminal.Terminal || window.Terminal, F = window.FitAddon.FitAddon || window.FitAddon;
+  const x = new T({fontFamily:getComputedStyle(document.documentElement).getPropertyValue('--font-mono') || 'monospace', fontSize:13, lineHeight:1.25, cursorBlink:true, scrollback:5000, allowProposedApi:false, theme:termTheme(), macOptionIsMeta:true});
+  const fit = new F(); x.loadAddon(fit);
+  const el = document.createElement('div'); el.className = 'tview'; $('term-views').appendChild(el); x.open(el);
+  const t = {id, cwd:cwd || '', x, fit, el, ws:null, dead:false, n:(termTab.n = (termTab.n || 0) + 1)};
+  term.tabs.push(t);
+  x.onData(d => { if (t.ws && t.ws.readyState === 1) t.ws.send(JSON.stringify({t:'in', d})); });
+  x.onResize(({cols, rows}) => { if (t.ws && t.ws.readyState === 1) t.ws.send(JSON.stringify({t:'resize', c:cols, r:rows})); });
+  termConnect(t);
+  termTabs();
+  return t;
+}
+function termConnect(t){
+  try { t.fit.fit(); } catch(e){}
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const qs = 'token=' + encodeURIComponent(token) + '&cols=' + (t.x.cols || 100) + '&rows=' + (t.x.rows || 30) + (t.id ? '&id=' + encodeURIComponent(t.id) : t.cwd ? '&cwd=' + encodeURIComponent(t.cwd) : '');
+  const ws = new WebSocket(proto + '://' + location.host + BASE + '/desktop/term?' + qs); ws.binaryType = 'arraybuffer'; t.ws = ws;
+  let first = true;
+  ws.onmessage = ev => {
+    if (typeof ev.data !== 'string'){ t.x.write(new Uint8Array(ev.data)); return; }
+    let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+    if (m.t === 'hello'){ if (t.id && t.id === m.id && first) t.x.reset(); t.id = m.id; t.cwd = m.cwd; t.shell = m.shell; first = false; termTabs(); }
+    if (m.t === 'exit'){ t.dead = true; t.x.write('\r\n\x1b[2m[已退出' + (m.code ? '，返回 ' + m.code : '') + '。按任意键关掉这个标签]\x1b[0m\r\n'); termTabs(); const d = t.x.onData(() => { d.dispose(); termClose(t); }); }
+  };
+  ws.onclose = () => { if (!t.dead && term.tabs.includes(t)) t.x.write('\r\n\x1b[2m[和终端断开了。重开 App 后会接回来]\x1b[0m\r\n'); };
+}
+function termTabs(){
+  $('term-tabs').innerHTML = term.tabs.map((t, i) => '<button class="tab' + (t === term.cur ? ' on' : '') + (t.dead ? ' dead' : '') + '" data-i="' + i + '" title="' + esc(t.cwd) + '">' + esc((t.cwd.split('/').filter(Boolean).pop() || '终端') ) + '<i data-x="' + i + '" aria-label="关掉">×</i></button>').join('') + '<button class="tab add" id="term-add" title="新开一个">＋</button>';
+  $('term-tabs').querySelectorAll('[data-i]').forEach(b => b.onclick = e => { const i = +b.dataset.i; if (e.target.dataset.x != null) termClose(term.tabs[i]); else termShow(term.tabs[i]); });
+  $('term-add').onclick = () => openTerm({fresh:true, cwd:term.cur && term.cur.cwd});
+}
+function termShow(t){
+  if (!t) return;
+  term.cur = t; term.tabs.forEach(x => x.el.hidden = x !== t); termTabs();
+  requestAnimationFrame(() => { try { t.fit.fit(); } catch(e){} t.x.focus(); });
+}
+async function termClose(t){
+  if (!t) return;
+  if (!t.dead && t.id){ try { await api('/desktop/terms/close', {method:'POST', json:{id:t.id}}); } catch(e){} }
+  t.dead = true; try { t.ws && t.ws.close(); } catch(e){} t.x.dispose(); t.el.remove();
+  term.tabs = term.tabs.filter(x => x !== t);
+  if (term.cur === t) term.cur = term.tabs[term.tabs.length - 1] || null;
+  if (!term.tabs.length){ hideTerm(); return; }
+  termShow(term.cur);
+}
+function hideTerm(){ $('term').hidden = true; term.open = false; document.body.classList.remove('term-on'); }
+function toggleTerm(){ if (term.open) hideTerm(); else openTerm(); }
+/* 选中的输出存成随手记 */
+async function termSave(){
+  const t = term.cur; if (!t) return;
+  let s = t.x.getSelection();
+  if (!s.trim()){ const b = t.x.buffer.active, out = []; for (let i = Math.max(0, b.length - 60); i < b.length; i++){ const l = b.getLine(i); if (l) out.push(l.translateToString(true)); } s = out.join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
+  if (!s.trim()){ toast('终端里还没有东西'); return; }
+  const title = '终端 · ' + (t.cwd.split('/').filter(Boolean).pop() || '输出') + ' · ' + new Date().toLocaleString();
+  try {
+    const p = 'Notes/随手记/' + title.replace(/[\/\\:*?"<>|#^\[\]]/g, '-') + '.md';
+    await api('/doc?path=' + encP(p), {method:'PUT', body:'# ' + title + '\n\n在 `' + t.cwd + '` 里：\n\n```\n' + s + '\n```\n'});
+    await refreshNow(); const n = byPath.get(p);
+    toastAct('存成了一篇：<b>' + esc(title) + '</b>' + (t.x.getSelection().trim() ? '' : '（没选中，存的是最近的 60 行）'), '打开', () => n && openDoc(n));
+  } catch(e){ toast('<b>没存上</b>：' + esc(e.message || e), true); }
+}
+(() => {
+  const h = $('term-grip'); let y0 = 0, h0 = 0;
+  const mv = e => { const v = Math.max(140, Math.min(innerHeight - 120, h0 + (y0 - e.clientY))); document.documentElement.style.setProperty('--term-h', v + 'px'); if (term.cur) try { term.cur.fit.fit(); } catch(err){} };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); try { localStorage.setItem('litmus_term_h', getComputedStyle(document.documentElement).getPropertyValue('--term-h')); } catch(e){} };
+  h.addEventListener('pointerdown', e => { y0 = e.clientY; h0 = $('term').offsetHeight; addEventListener('pointermove', mv); addEventListener('pointerup', up); e.preventDefault(); });
+  try { const v = localStorage.getItem('litmus_term_h'); if (v) document.documentElement.style.setProperty('--term-h', v); } catch(e){}
+  $('term-hide').onclick = hideTerm; $('term-save').onclick = termSave;
+  /* 换主题、换配色预设：终端跟着换 */
+  const retheme = () => { if (!term.tabs.length) return; const th = termTheme(); term.tabs.forEach(t => { t.x.options.theme = th; }); };
+  new MutationObserver(retheme).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme', 'class']});
+  new MutationObserver(retheme).observe(document.head, {childList:true});
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+  addEventListener('resize', () => { if (term.open && term.cur) try { term.cur.fit.fit(); } catch(e){} });
+  /* Ctrl+`：开合终端（macOS 上 ⌃` 也是它） */
+  document.addEventListener('keydown', e => { if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || e.code === 'Backquote')){ if (!DESK) return; e.preventDefault(); toggleTerm(); } }, true);
+})();
+
+/* ═══════════ 桌面独占：全盘索引（这台电脑上的文件按名字、内容都能找；不铺到场上） ═══════════ */
+let disk = {on:false, t:0};
+async function loadDisk(){ if (!DESK) return; try { const r = await api('/desktop/disk'); disk.on = !!(r.conf && r.conf.enabled); disk.st = r; } catch(e){ disk.on = false; } }
+const diskWhen = s => s ? new Date(s * 1000).toLocaleDateString() : '';
+const diskSnip = s => esc(s || '').replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>');
+const diskSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n > 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+const diskDir = p => p.slice(0, p.lastIndexOf('/')) || '/';
+/* 一行输入「找」的时候：在提示里多给两三个「这台电脑上」的 */
+function diskHint(s){
+  clearTimeout(disk.t); if (!DESK || !disk.on || s.trim().length < 2) return;
+  disk.t = setTimeout(async () => {
+    let r; try { r = await api('/desktop/disk/search?limit=3&q=' + encodeURIComponent(s.trim())); } catch(e){ return; }
+    if (q.value !== s || intentOf(s) !== '找') return;
+    const h = $('hints'); h.querySelectorAll('.chip.disk').forEach(x => x.remove());
+    (r.results || []).slice(0, vw < 720 ? 1 : 2).forEach(x => { const b = document.createElement('button'); b.className = 'chip disk'; b.dataset.v = '盘'; b.title = x.path; b.innerHTML = '<b>电脑上</b><span>' + esc(x.title || x.name) + '</span>'; b.onclick = () => openDiskItem(x); h.appendChild(b); });
+    if ((r.results || []).length){ const b = document.createElement('button'); b.className = 'chip disk more'; b.innerHTML = '<span>电脑上的全部…</span>'; b.onclick = () => openDisk(s.trim()); h.appendChild(b); }
+  }, 260);
+}
+async function openDisk(qs){
+  if (!deskOnly('全盘索引')) return;
+  const box = openPanel('这台电脑上', '<span class="thinking"><i></i><i></i><i></i></span>');
+  $('panel').querySelector('.pbox').style.width = 'min(760px,100%)';
+  await loadDisk(); const r = disk.st || {}, c = r.conf || {roots:['~'], exclude:[], content:true}, j = r.job || {};
+  if (!disk.on){
+    box.innerHTML = '<p class="hint" style="margin-top:0">把这台电脑上的文件也索引起来：一行输入「找」的时候顺带给出电脑上的结果，文稿、下载、项目里的 md、Word、PDF 都能按名字和内容找到。</p>' +
+      '<ul class="hint"><li>索引只存在这台电脑上（' + esc(r.dir || '~/.config/litmus/disk') + '），不进库、不同步、不备份，网页版碰不到。</li><li>跳过隐藏文件夹、系统和应用目录、依赖（node_modules 之类）和别的知识库。</li><li>不往场上铺；值得的再一篇篇「收进库里」。</li></ul>' +
+      '<label>扫哪里（逗号分隔）</label><input type="text" id="dk-roots" value="' + esc((c.roots || ['~']).join(', ')) + '">' +
+      '<label>不扫这些（可选）</label><input type="text" id="dk-ex" placeholder="比如 ~/Movies, ~/私人" value="' + esc((c.exclude || []).join(', ')) + '">' +
+      '<label class="row chk"><input type="checkbox" id="dk-ct"' + (c.content !== false ? ' checked' : '') + '><div class="grow"><span>也读内容</span><small>不勾只按文件名找；勾了第一次会久一些（后台慢慢读，可以暂停）</small></div></label>' +
+      '<div class="acts"><button class="btn pri" id="dk-on">打开全盘索引</button><span id="dk-m"></span></div>';
+    $('dk-on').onclick = async () => {
+      const split = v => v.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+      try { await api('/desktop/disk', {method:'POST', json:{enabled:true, roots:split($('dk-roots').value), exclude:split($('dk-ex').value), content:$('dk-ct').checked}}); disk.on = true; pollJobs(true); toast('在后台扫，左上角看进度；扫到的马上就能搜'); openDisk(qs); }
+      catch(e){ $('dk-m').className = 'bad'; $('dk-m').textContent = e.message || String(e); }
+    };
+    return;
+  }
+  const busy = j.running;
+  box.innerHTML = '<input type="text" id="dk-q" placeholder="找电脑上的文件：名字或内容（三个字以上按内容找）" value="' + esc(qs || '') + '">' +
+    '<p class="hint" id="dk-s">' + (busy ? (j.paused ? '暂停了 · ' : '正在扫 · ') + esc(j.phase || '') + ' ' + (j.total ? j.done + '/' + j.total : j.seen || '') + ' · ' : '') + '已索引 ' + (r.files || 0).toLocaleString() + ' 个文件，其中 ' + (r.texts || 0).toLocaleString() + ' 个读了内容' + (r.last ? ' · 上次扫完 ' + diskWhen(r.last) : '') + '</p>' +
+    '<div id="dk-r" class="dkr"></div>' +
+    '<details class="more"><summary>设置</summary><label>扫哪里</label><input type="text" id="dk-roots" value="' + esc(c.roots.join(', ')) + '"><label>不扫这些</label><input type="text" id="dk-ex" value="' + esc((c.exclude || []).join(', ')) + '">' +
+    '<label class="row chk"><input type="checkbox" id="dk-ct"' + (c.content !== false ? ' checked' : '') + '><div class="grow"><span>也读内容</span></div></label>' +
+    '<div class="acts"><button class="btn" id="dk-save">保存并重扫</button><button class="btn" id="dk-scan"' + (busy ? ' disabled' : '') + '>现在重扫</button><button class="btn" id="dk-off">关掉</button><button class="btn" id="dk-clear">关掉并清空索引</button><span id="dk-m"></span></div></details>';
+  const run = async () => {
+    const s = $('dk-q').value.trim(), out = $('dk-r'); if (!s){ out.innerHTML = ''; return; }
+    let rr; try { rr = await api('/desktop/disk/search?limit=60&q=' + encodeURIComponent(s)); } catch(e){ out.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+    if ($('dk-q').value.trim() !== s) return;
+    const list = rr.results || [];
+    out.innerHTML = list.length ? list.map((x, i) => '<button class="dk" data-i="' + i + '"><b>' + esc(x.title && x.title !== x.name.replace(/\.[^.]+$/, '') ? x.title : x.name) + '</b><small>' + esc(diskDir(x.path).replace(/^\/Users\/[^/]+/, '~')) + ' · ' + diskWhen(x.mtime) + ' · ' + diskSize(x.size) + '</small>' + (x.snippet ? '<span>' + diskSnip(x.snippet) + '</span>' : '') + '</button>').join('') : '<p class="hint">没找到。' + (s.length < 3 ? '两个字只比文件名，多打一个字就按内容找。' : '') + '</p>';
+    out.querySelectorAll('[data-i]').forEach(b => b.onclick = () => openDiskItem(list[+b.dataset.i], s));
+  };
+  let tt = 0; $('dk-q').addEventListener('input', () => { clearTimeout(tt); tt = setTimeout(run, 180); }); run();
+  const split = v => v.split(/[,，]/).map(x => x.trim()).filter(Boolean), m = $('dk-m');
+  const post = async (json, msg) => { try { await api('/desktop/disk', {method:'POST', json}); pollJobs(true); toast(msg); openDisk($('dk-q') ? $('dk-q').value : qs); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+  $('dk-save').onclick = () => post({roots:split($('dk-roots').value), exclude:split($('dk-ex').value), content:$('dk-ct').checked, scan:true}, '保存了，在后台重扫');
+  $('dk-scan').onclick = () => post({scan:true}, '在后台重扫：只读变了的');
+  $('dk-off').onclick = () => post({enabled:false}, '关掉了：索引留着，再打开不用从头扫');
+  $('dk-clear').onclick = async () => { const b = $('dk-clear'); if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '确认清空'; return; } await post({enabled:false, clear:true}, '全盘索引关掉并清空了'); disk.on = false; };
+}
+async function openDiskItem(x, back){
+  let d; try { d = await api('/desktop/disk/peek?path=' + encodeURIComponent(x.path)); } catch(e){ toast(esc(e.message || e), true); return; }
+  const box = openPanel(d.title || d.name, '<p class="hint" style="margin-top:0"><code>' + esc(d.path.replace(/^\/Users\/[^/]+/, '~')) + '</code> · ' + diskWhen(d.mtime) + ' · ' + diskSize(d.size) + (d.exists ? '' : ' · <b class="bad">这个文件已经不在了</b>') + '</p>' +
+    (d.body ? '<pre class="dkb">' + esc(d.body.slice(0, 6000)) + (d.body.length > 6000 ? '\n…' : '') + '</pre>' : '<p class="hint">没有读到文字（图片、压缩包之类只按名字收录）。</p>') +
+    '<div class="acts">' + (d.body && d.exists ? '<button class="btn pri" id="dki-in">收进库里</button>' : '') + '<button class="btn" id="dki-open"' + (d.exists ? '' : ' disabled') + '>用默认程序打开</button><button class="btn" id="dki-rev"' + (d.exists ? '' : ' disabled') + '>在文件夹里显示</button><button class="btn" id="dki-term">在终端里打开这个文件夹</button>' + (back != null ? '<button class="btn" id="dki-back">返回</button>' : '') + '<span id="dki-m"></span></div>');
+  $('panel').querySelector('.pbox').style.width = 'min(760px,100%)';
+  const inv = (c, a) => window.__TAURI_INTERNALS__.invoke(c, a).catch(e => toast(esc(e), true));
+  $('dki-open').onclick = () => inv('desktop_open_path', {p:d.path});
+  $('dki-rev').onclick = () => inv('desktop_reveal_path', {p:d.path});
+  $('dki-term').onclick = () => { closePanel(); openTerm({fresh:true, cwd:diskDir(d.path)}); };
+  if ($('dki-back')) $('dki-back').onclick = () => openDisk(back);
+  if ($('dki-in')) $('dki-in').onclick = async () => {
+    const b = $('dki-in'); b.disabled = true;
+    try { const r = await api('/desktop/disk/import', {method:'POST', json:{path:d.path}}); closePanel(); await refreshNow(); const n = byPath.get(r.path); toastAct('收进库里了：<b>' + esc(r.path) + '</b>（原件留着）', '打开', () => n && openDoc(n)); if (n) openDoc(n); }
+    catch(e){ b.disabled = false; $('dki-m').className = 'bad'; $('dki-m').textContent = e.message || String(e); }
+  };
+  box.scrollTop = 0;
+}
+
 function collectTopic(topic){
   if (!topic){
     const box = openPanel('按主题采集', '<label for="ct-t">主题</label><input type="text" id="ct-t" placeholder="比如：向量数据库"><p class="hint">从维基、HN、arXiv 等公开来源找几篇相关资料，转成 Markdown 存进库里，并落到场上。</p><div class="acts"><button class="btn pri" id="ct-go">开始采集</button></div>');
@@ -4353,7 +4574,7 @@ function scheduleFieldRefresh(gap){
 }
 function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
 function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
-const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库', wizard:'搬家'};
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库', wizard:'搬家', disk:'全盘索引'};
 function renderJobs(j){
   const b = $('jobs'); if (!b) return;
   const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
@@ -4714,7 +4935,7 @@ loadField().then(() => {
   setTimeout(initOnboarding, nodes.length ? 1800 : 600);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
-loadPlugins(); presence();
+loadPlugins(); presence(); loadDisk();
 window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>

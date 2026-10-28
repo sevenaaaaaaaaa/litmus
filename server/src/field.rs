@@ -2212,6 +2212,170 @@ for line in sys.stdin:
         assert!(t["message"].as_str().unwrap().contains("websflow_api_key"), "{t}");
     }
 
+    fn desktop_app() -> (axum::Router, String, tempfile::TempDir, std::sync::Arc<crate::AppState>) {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = kernel_core::Vault::init(dir.path(), "desk-test").unwrap();
+        let mut st = std::sync::Arc::try_unwrap(crate::build_state(vault).unwrap()).ok().unwrap();
+        st.desktop = true;
+        let st = std::sync::Arc::new(st);
+        (crate::router(st.clone()), st.token.clone(), dir, st)
+    }
+
+    #[tokio::test]
+    async fn disk_index_finds_files_on_this_computer() {
+        let (app, token, _dir, _st) = desktop_app();
+        let tree = tempfile::tempdir().unwrap();
+        let idx = tempfile::tempdir().unwrap();
+        std::env::set_var("LITMUS_DISK_DIR", idx.path());
+        let t = tree.path();
+        for (p, body) in [
+            ("文稿/增长复盘.md", "# 增长复盘\n\n本月北极星指标涨了百分之十二。"),
+            ("文稿/会议/周会纪要.txt", "周会：讨论了定价调整和渠道预算。"),
+            ("dev/proj/README.md", "# 项目说明\n\n用 rust 写的同步引擎。"),
+            ("dev/proj/node_modules/pkg/README.md", "# 依赖里的说明\n\n不该被索引。"),
+            (".secret/x.md", "# 隐藏\n\n不该被索引。"),
+            ("照片/IMG_0001.jpg", "not really a jpeg"),
+            ("别的库/litmus.toml", ""),
+            ("别的库/Notes/a.md", "# 别的库里的\n\n不该被索引。"),
+        ] {
+            let f = t.join(p);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(&f, body).unwrap();
+        }
+        // 网页版（非桌面）没有这些接口
+        let (web, wtoken, _wd) = app_plain();
+        let (st, _) = call(&web, &wtoken, "GET", "/desktop/disk", "").await;
+        assert_eq!(st, 404);
+        let (st, _) = call(&web, &wtoken, "GET", "/desktop/terms", "").await;
+        assert_eq!(st, 404);
+        // 关着的时候搜不到东西
+        let (_, r) = call(&app, &token, "GET", "/desktop/disk/search?q=%E5%A2%9E%E9%95%BF", "").await;
+        assert_eq!(r["off"], true);
+        let (st, r) = call(&app, &token, "POST", "/desktop/disk", &serde_json::json!({"enabled": true, "roots": [t.to_string_lossy()]}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["started"], true);
+        let wait = || async {
+            for _ in 0..300 {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                let (_, s) = call(&app, &token, "GET", "/desktop/disk", "").await;
+                if s["job"]["running"] == false {
+                    return s;
+                }
+            }
+            panic!("全盘索引一直没扫完");
+        };
+        let s = wait().await;
+        assert_eq!(s["files"], 4, "4 个文件：两篇文稿、项目 README、照片；依赖、隐藏、别的库都不要：{s}");
+        assert_eq!(s["texts"], 3);
+        let names = |r: &Value| r["results"].as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let enc = |q: &str| urlenc(q);
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("北极星指标")), "").await;
+        assert_eq!(names(&r), vec!["增长复盘.md"], "按内容找：{r}");
+        assert!(r["results"][0]["snippet"].as_str().unwrap().contains('\u{2}'), "片段里标出命中：{r}");
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("IMG")), "").await;
+        assert_eq!(names(&r), vec!["IMG_0001.jpg"], "按名字找");
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("周会")), "").await;
+        assert_eq!(names(&r), vec!["周会纪要.txt"], "两个字只比名字");
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("不该被索引")), "").await;
+        assert!(names(&r).is_empty(), "{r}");
+        // 看一眼、收进库里
+        let f = t.join("文稿/增长复盘.md").to_string_lossy().to_string();
+        let (st, pk) = call(&app, &token, "GET", &format!("/desktop/disk/peek?path={}", enc(&f)), "").await;
+        assert_eq!(st, 200);
+        assert!(pk["body"].as_str().unwrap().contains("百分之十二"));
+        let (st, _) = call(&app, &token, "GET", &format!("/desktop/disk/peek?path={}", enc("/etc/passwd")), "").await;
+        assert_eq!(st, 404, "不在索引里的不给看");
+        let (st, r) = call(&app, &token, "POST", "/desktop/disk/import", &serde_json::json!({"path": f}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        let (_, d) = call(&app, &token, "GET", &format!("/doc?path={}", enc(r["path"].as_str().unwrap())), "").await;
+        let src = d["source"].as_str().unwrap();
+        assert!(src.starts_with("# 增长复盘") && src.contains("导入自 `") && src.contains("百分之十二"), "{src}");
+        assert!(std::path::Path::new(&f).exists(), "原件留着");
+        // 删掉一个、改一个，再扫：增量
+        std::fs::remove_file(t.join("照片/IMG_0001.jpg")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(t.join("文稿/会议/周会纪要.txt"), "周会：这次只讨论了招聘。").unwrap();
+        let (_, _) = call(&app, &token, "POST", "/desktop/disk", r#"{"scan":true}"#).await;
+        let s = wait().await;
+        assert_eq!(s["files"], 3, "{s}");
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("讨论了招聘")), "").await;
+        assert_eq!(names(&r), vec!["周会纪要.txt"]);
+        let (_, r) = call(&app, &token, "GET", &format!("/desktop/disk/search?q={}", enc("定价调整")), "").await;
+        assert!(names(&r).is_empty(), "旧内容不留：{r}");
+        // 关掉、清空
+        let (_, _) = call(&app, &token, "POST", "/desktop/disk", r#"{"enabled":false,"clear":true}"#).await;
+        let (_, s) = call(&app, &token, "GET", "/desktop/disk", "").await;
+        assert_eq!(s["files"], 0);
+        assert_eq!(s["conf"]["enabled"], false);
+    }
+
+    fn app_plain() -> (axum::Router, String, tempfile::TempDir) {
+        app()
+    }
+
+    #[tokio::test]
+    async fn terminal_runs_a_real_shell_and_reattaches() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message as M;
+        let (app, token, dir, _st) = desktop_app();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        let url = format!("ws://{addr}/desktop/term?token={token}&cols=80&rows=24");
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let hello: Value = match ws.next().await.unwrap().unwrap() { M::Text(t) => serde_json::from_str(t.as_str()).unwrap(), m => panic!("{m:?}") };
+        assert_eq!(hello["t"], "hello");
+        let id = hello["id"].as_str().unwrap().to_string();
+        let cwd = std::path::Path::new(hello["cwd"].as_str().unwrap()).canonicalize().unwrap();
+        assert_eq!(cwd, dir.path().canonicalize().unwrap(), "默认在库的文件夹里");
+        ws.send(M::text(serde_json::json!({"t": "in", "d": "echo LIT$((40+2))MUS; echo $LITMUS_VAULT\r"}).to_string())).await.unwrap();
+        let mut seen = String::new();
+        tokio::time::timeout(std::time::Duration::from_secs(10), read_until(&mut ws, "LIT42MUS", &mut seen)).await.expect("shell 没回话");
+        drop(ws);
+        // 关掉面板再连：接着上次的会话，先回放输出
+        let (mut ws2, _) = tokio_tungstenite::connect_async(format!("{url}&id={id}")).await.unwrap();
+        let hello2: Value = match ws2.next().await.unwrap().unwrap() { M::Text(t) => serde_json::from_str(t.as_str()).unwrap(), m => panic!("{m:?}") };
+        assert_eq!(hello2["id"], id.as_str());
+        let mut again = String::new();
+        tokio::time::timeout(std::time::Duration::from_secs(5), read_until(&mut ws2, "LIT42MUS", &mut again)).await.expect("没回放");
+        // 列表里有它；关掉后进程结束
+        let (_, l) = call_raw(addr, &token, "GET", "/desktop/terms", "").await;
+        assert!(l["terms"].as_array().unwrap().iter().any(|t| t["id"] == id.as_str()), "{l}");
+        ws2.send(M::text(serde_json::json!({"t": "in", "d": "exit\r"}).to_string())).await.unwrap();
+        let mut exit = None;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while let Some(Ok(m)) = ws2.next().await {
+                if let M::Text(t) = m {
+                    let v: Value = serde_json::from_str(t.as_str()).unwrap();
+                    if v["t"] == "exit" { exit = Some(v); break; }
+                }
+            }
+        }).await;
+        assert_eq!(exit.expect("没收到退出")["code"], 0);
+        // 别的网站借浏览器连：拒绝
+        let req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url.as_str()).map(|mut r| { r.headers_mut().insert("origin", "https://evil.example".parse().unwrap()); r }).unwrap();
+        assert!(tokio_tungstenite::connect_async(req).await.is_err());
+    }
+
+    type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+    async fn read_until(ws: &mut Ws, want: &str, seen: &mut String) {
+        use futures_util::StreamExt;
+        while !seen.contains(want) {
+            match ws.next().await {
+                Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(b))) => seen.push_str(&String::from_utf8_lossy(&b)),
+                Some(Ok(_)) => {}
+                _ => break,
+            }
+        }
+    }
+
+    async fn call_raw(addr: std::net::SocketAddr, token: &str, method: &str, uri: &str, body: &str) -> (u16, Value) {
+        let c = reqwest::Client::new();
+        let r = c.request(method.parse().unwrap(), format!("http://{addr}{uri}")).bearer_auth(token).body(body.to_string()).send().await.unwrap();
+        let st = r.status().as_u16();
+        (st, r.json().await.unwrap_or(Value::Null))
+    }
+
     #[tokio::test]
     async fn curate_asks_the_model_only_about_unsure_docs() {
         let (app, token, dir) = app();

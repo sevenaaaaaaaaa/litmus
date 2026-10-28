@@ -326,6 +326,9 @@ fn ocr(path: &Path) -> Option<String> {
 }
 
 /// 本地文件 → (标题, 正文, 种类, 备注)。不认识或抽不出来返回 None 或带备注。
+pub fn extract_file_pub(p: &Path) -> Option<(String, String, String, Option<String>)> {
+    extract_file(p)
+}
 fn extract_file(p: &Path) -> Option<(String, String, String, Option<String>)> {
     let ext = p.extension()?.to_str()?.to_ascii_lowercase();
     let stem = p.file_stem()?.to_string_lossy().to_string();

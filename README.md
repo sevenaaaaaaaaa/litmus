@@ -151,8 +151,9 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 - [x] 五模式 · Flow 画布三视图 · 50 设计风格 · Memo 热力图 · 桌面壳
 - [x] 启动预热 · 监听式同步 · 性能门禁
 - [x] 生态矩阵接入框架就绪：**Conflow 对话流已内置**（对话自动归档 + 一键知识卡）；OpenFlow、MFlow、WebsFlow、PayFlow、inFlow 已接入（/数据源 接进来，WebsFlow、inFlow 也能发回去）
-- [x] 协作光标 v2（选区 / 文档内光标 + 评论）· 内嵌终端（桌面端白名单命令）· 插件系统 v0~v3（含 agent 工具贡献与社区索引）· 设计宪法（[docs/spec/os.md](docs/spec/os.md)）
-- [ ] 桌面独占：全盘索引 · 本地小模型（[规划](docs/spec/desktop.md)）
+- [x] 协作光标 v2（选区 / 文档内光标 + 评论）· 内嵌终端（桌面端真 shell，/终端 或 Ctrl+`）· 插件系统 v0~v3（含 agent 工具贡献与社区索引）· 设计宪法（[docs/spec/os.md](docs/spec/os.md)）
+- [x] 桌面独占：全盘索引（/全盘，索引只在本机）
+- [ ] 桌面独占：本地小模型（[规划](docs/spec/desktop.md)）
 - [ ] 多端：Windows / Linux / Android / iOS 持续跟进（[规划](docs/spec/platform.md)）
 - [x] 发布目标：一键 wiki · GitHub Pages · 对象存储直传 · Cloudflare Pages · WebDAV
 - [ ] 远期：独立设备——无头 Linux 主机已是雏形（`litmus serve` + systemd），最终形态可能在 Linux 或微内核上（见设计宪法 §9）

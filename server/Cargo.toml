@@ -30,7 +30,14 @@ hex.workspace = true
 toml_edit = "0.22"
 # 后台扫描线程调低优先级（Linux setpriority）
 libc = "0.2"
+# 全盘索引（0.27，桌面独占）：独立的 SQLite/FTS5 库，放在这台设备的用户目录
+rusqlite.workspace = true
+
+# 内嵌终端（0.27，桌面独占）：真 PTY。手机上没有终端，不编进去
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+portable-pty = "0.8"
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio-tungstenite = "0.29"
 tower.workspace = true

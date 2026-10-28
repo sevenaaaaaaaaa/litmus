@@ -36,6 +36,8 @@ mod jobs;
 mod organize;
 mod sources;
 mod share;
+mod disk;
+mod terminal;
 
 pub struct AppState {
     pub kernel: Arc<Mutex<Kernel>>,
@@ -257,6 +259,9 @@ pub fn router(state: Arc<AppState>) -> Router {
             ([("content-type","text/html; charset=utf-8"),("cache-control","no-cache")], include_str!("../web/sticky.html"))
         }))
         .route("/assets/tokens.css", get(tokens_css))
+        // 终端组件（xterm.js，MIT）：只有打开终端时才加载
+        .route("/assets/xterm.js", get(|| async { ([("content-type", "text/javascript; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.js")) }))
+        .route("/assets/xterm.css", get(|| async { ([("content-type", "text/css; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.css")) }))
         .route("/icon48.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon48.png").as_slice()) }))
         .route("/manifest-pwa.json", get(|| async { axum::response::Json(serde_json::json!({"name":"鹿蕊 Litmus","short_name":"鹿蕊","start_url":"/","display":"standalone","background_color":"#22252d","theme_color":"#22252d"})) }))
         .route("/sw.js", get(|| async {
@@ -302,6 +307,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/desktop/info", get(desktop_info))
         .route("/desktop/import", post(desktop_import))
         .route("/desktop/terminal", post(desktop_terminal))
+        .route("/desktop/term", get(terminal::ws))
+        .route("/desktop/terms", get(terminal::list))
+        .route("/desktop/terms/close", post(terminal::close))
+        .route("/desktop/disk", get(disk::status).post(disk::configure))
+        .route("/desktop/disk/search", get(disk::find))
+        .route("/desktop/disk/peek", get(disk::peek))
+        .route("/desktop/disk/import", post(disk::import))
         .route("/desktop/scan", get(desktop_scan))
         .route("/desktop/quarantine", post(desktop_quarantine))
         .route("/desktop/pull", post(desktop_pull))

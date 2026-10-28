@@ -744,6 +744,15 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "can": if j.running { json!(["stop"]) } else { json!([]) },
         }));
     }
+    let dj = super::disk::snapshot();
+    if st.desktop && recent(dj.running, dj.finished) {
+        out.push(json!({
+            "id": "disk", "kind": "disk", "title": "全盘索引",
+            "state": if dj.running { if dj.paused { "paused" } else { "running" } } else if dj.error.is_some() && dj.files == 0 { "error" } else { "done" },
+            "done": if dj.total > 0 { dj.done } else { dj.seen }, "total": dj.total, "phase": dj.phase, "items": dj.files, "error": dj.error, "finished": dj.finished,
+            "can": if dj.running { json!(["pause", "resume", "stop"]) } else { json!([]) },
+        }));
+    }
     let held = super::curate::load_store(&root).held.len();
     let pending = {
         let r = root.clone();
@@ -767,6 +776,8 @@ pub async fn job_control(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath
         super::sources::import_stop(&root)
     } else if id == "wizard" && action == "stop" {
         super::wizard::stop(&root)
+    } else if id == "disk" {
+        super::disk::control(&action)
     } else if id == "curate" && action == "stop" {
         super::curate::job_stop(&root)
     } else if id == "patrol" && action == "stop" {
