@@ -332,6 +332,12 @@ struct DigestStore {
 fn digest_path(root: &Path) -> PathBuf {
     root.join(".litmus/local").join("digest.json")
 }
+/// digest.json 的读改写要排队：后台学习和「收下 / 不要」同时写时，后写的会把先写的冲掉
+/// （收下的又变回待收下，再收一次就多出一篇「… 2」）。
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+fn store_lock() -> std::sync::MutexGuard<'static, ()> {
+    STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 fn load_store(root: &Path) -> DigestStore {
     std::fs::read_to_string(digest_path(root)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
@@ -427,17 +433,24 @@ fn today() -> String {
 /// 挑要学的条目：指定的 key，或某个来源（不指定就是所有启用的来源）里还没学过的，最近的在前。
 fn pick(root: &Path, keys: &[String], source: Option<&str>, limit: usize) -> Vec<(super::sources::Item, String, String)> {
     let store = load_store(root);
-    let mut all = super::sources::corpus(root);
+    let mut all = super::sources::corpus_meta(root);
     all.sort_by(|a, b| b.0.mtime.cmp(&a.0.mtime));
-    all.into_iter()
-        .filter(|(it, _, text)| {
-            if !keys.is_empty() {
-                return keys.contains(&it.key);
-            }
-            source.map(|s| it.src == s).unwrap_or(true) && store.done.get(&it.key) != Some(&it.hash) && text.chars().count() >= 80
-        })
-        .take(limit)
-        .collect()
+    let mut out = Vec::new();
+    for (it, name) in all {
+        if out.len() >= limit {
+            break;
+        }
+        let want = if !keys.is_empty() { keys.contains(&it.key) } else { source.map(|s| it.src == s).unwrap_or(true) && store.done.get(&it.key) != Some(&it.hash) };
+        if !want {
+            continue;
+        }
+        let text = super::sources::item_text(root, &it.hash);
+        if keys.is_empty() && text.chars().count() < 80 {
+            continue;
+        }
+        out.push((it, name, text));
+    }
+    out
 }
 
 /// POST /field/digest {keys?, source?, limit?, dry?}
@@ -532,6 +545,7 @@ pub async fn digest_start(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
                     };
                     let hash = it.hash.clone();
                     let _ = tokio::task::spawn_blocking(move || {
+                        let _g = store_lock();
                         let mut s = load_store(&root3);
                         s.drafts.retain(|x| !(x.key == d.key && x.status == "pending"));
                         s.drafts.push(d);
@@ -608,10 +622,14 @@ pub async fn digest_accept(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     let ids: Vec<String> = req.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
     let folder = req.get("folder").and_then(|v| v.as_str()).filter(|f| f.starts_with("Notes") && !f.contains("..")).map(|f| f.trim_end_matches('/').to_string()).unwrap_or_else(|| "Notes/学习".into());
     let root = root_of(&st);
+    let _g = store_lock();
     let mut store = load_store(&root);
     let mut written = Vec::new();
     let now = now_secs();
     let mut learn: Value = read_synced(&root, "learn.json", "field-learn.json").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "cards": {} }));
+    if !learn.is_object() {
+        learn = json!({ "cards": {} });
+    }
     if !learn["cards"].is_object() {
         learn["cards"] = json!({});
     }
@@ -648,6 +666,7 @@ pub async fn digest_reject(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let ids: Vec<String> = req.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
     let root = root_of(&st);
+    let _g = store_lock();
     let mut store = load_store(&root);
     let mut n = 0;
     for d in store.drafts.iter_mut().filter(|d| d.status == "pending" && ids.contains(&d.id)) {
@@ -687,7 +706,7 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "id": format!("scan:{id}"), "kind": "scan", "title": format!("接入「{}」", names.get(&id).cloned().unwrap_or(id.clone())),
             "state": if x.running { if x.paused { "paused" } else { "running" } } else if x.error.is_some() { "error" } else { "done" },
             "done": x.seen, "total": x.total, "phase": x.phase, "items": x.items, "error": x.error, "finished": x.finished,
-            "can": if x.running { json!(["pause", "resume", "stop"]) } else { json!([]) },
+            "can": if x.running && x.controllable { json!(["pause", "resume", "stop"]) } else { json!([]) },
         }));
     }
     if let Some(d) = digests().lock().unwrap().get(&root).cloned().filter(|d| recent(d.running, d.finished)) {

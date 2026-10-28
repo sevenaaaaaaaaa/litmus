@@ -205,20 +205,27 @@ pub fn put_items(root: &Path, items: Vec<Value>) {
 
 /// 知识场要的：所有已启用来源的条目 + 正文（截断）。筛掉的、等确认的不上场。
 pub fn corpus(root: &Path) -> Vec<(Item, String, String)> {
+    corpus_meta(root).into_iter().map(|(it, name)| { let t = read_text(root, &it.hash); (it, name, t) }).collect()
+}
+
+/// 同 corpus，但不读正文：只是挑几篇时先按元数据筛，挑中的再读（大库里不用把每篇都读进内存）。
+pub fn corpus_meta(root: &Path) -> Vec<(Item, String)> {
     let enabled: HashMap<String, String> = load_sources(root).into_iter().filter(|s| s.enabled).map(|s| (s.id, s.name)).collect();
     let hidden = super::curate::hidden_keys(root);
     let ix = load_index(root);
     let imported: std::collections::HashSet<String> = ix.imported.iter().filter(|(_, p)| root.join(p).exists()).map(|(k, _)| k.clone()).collect();
-    ix
-        .items
+    ix.items
         .into_iter()
         .filter(|it| !hidden.contains(&it.key) && !imported.contains(&it.key))
         .filter_map(|it| {
             let name = enabled.get(&it.src)?.clone();
-            let t = read_text(root, &it.hash);
-            Some((it, name, t))
+            Some((it, name))
         })
         .collect()
+}
+
+pub fn item_text(root: &Path, hash: &str) -> String {
+    read_text(root, hash)
 }
 
 pub fn find_item(root: &Path, key: &str) -> Option<(Item, Source)> {
@@ -371,6 +378,9 @@ pub struct ScanState {
     pub paused: bool,
     #[serde(default)]
     pub started: u64,
+    /// 能不能暂停、停下：文件夹和 agent 会话的扫描逐条看暂停/停下，接口类的来源一口气拉完
+    #[serde(default)]
+    pub controllable: bool,
     #[serde(skip)]
     pub stop: bool,
 }
@@ -382,7 +392,7 @@ pub fn scans_snapshot() -> HashMap<String, ScanState> {
 /// 暂停 / 继续 / 停下一次扫描（做完手上这一个文件就生效）。
 pub fn scan_control(id: &str, action: &str) -> bool {
     let mut sc = scans().lock().unwrap();
-    let Some(x) = sc.get_mut(id).filter(|x| x.running) else { return false };
+    let Some(x) = sc.get_mut(id).filter(|x| x.running && x.controllable) else { return false };
     match action {
         "pause" => x.paused = true,
         "resume" => x.paused = false,
@@ -502,6 +512,7 @@ fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl)
     }
     let want: Vec<String> = if s.exts.is_empty() { TEXT_EXTS.iter().chain(DOC_EXTS.iter()).map(|x| x.to_string()).collect() } else { s.exts.iter().map(|x| x.to_ascii_lowercase()).collect() };
     ctl.phase("数文件");
+    let root_c = root.canonicalize().ok();
     let mut cand: Vec<(PathBuf, std::fs::Metadata, String)> = Vec::new();
     let mut stack = vec![base.clone()];
     while let Some(d) = stack.pop() {
@@ -511,7 +522,10 @@ fn scan_folder(root: &Path, s: &Source, prev: &HashMap<String, Item>, ctl: &Ctl)
             let name = e.file_name().to_string_lossy().to_string();
             let Ok(meta) = e.metadata() else { continue };
             if meta.is_dir() {
-                if s.recursive && !skip_dir(&name) {
+                // 来源是库的上级文件夹（比如「文稿」里放着库）：库自己、以及别的库都不扫，
+                // 否则库里的文档会以「库外」再出现一次，移进库时还会删到库里的原文件
+                let is_vault = p == root || p.join("litmus.toml").is_file() || p.join("thirdc.toml").is_file() || root_c.as_ref().map_or(false, |r| p.canonicalize().ok().as_ref() == Some(r));
+                if s.recursive && !skip_dir(&name) && !is_vault {
                     stack.push(p);
                 }
                 continue;
@@ -694,11 +708,15 @@ fn scan_mcp(root: &Path, st: &Arc<AppState>, s: &Source) -> Result<Vec<Item>, St
 fn fill_secrets(root: &Path, s: &str) -> String {
     let rows = secrets_load(root);
     let mut out = s.to_string();
-    while let Some(i) = out.find("{{secret:") {
+    // 从替换后的值后面接着找：值里要是正好含有「{{secret:」，从头找会无限循环
+    let mut from = 0;
+    while let Some(off) = out[from..].find("{{secret:") {
+        let i = from + off;
         let Some(j) = out[i..].find("}}") else { break };
         let name = out[i + 9..i + j].trim().to_string();
         let val = rows.iter().find(|r| r.get("name").and_then(|n| n.as_str()) == Some(name.as_str())).and_then(|r| r.get("value").and_then(|v| v.as_str())).unwrap_or("").to_string();
         out.replace_range(i..i + j + 2, &val);
+        from = i + val.len();
     }
     out
 }
@@ -1013,7 +1031,9 @@ pub async fn upsert(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) 
             return err(StatusCode::BAD_REQUEST, format!("找不到文件夹 {}", p.display())).into_response();
         }
         // 不许把库自己当来源（会重复）
-        if p.starts_with(&root) || root.starts_with(&p) && (p.join("litmus.toml").exists() || p.join("thirdc.toml").exists()) {
+        // 库里面的文件夹不能当来源（会重复）；库的上级可以，扫描时会跳过库本身
+        let (pc, rc) = (p.canonicalize().unwrap_or_else(|_| p.clone()), root.canonicalize().unwrap_or_else(|_| root.clone()));
+        if pc.starts_with(&rc) || p.join("litmus.toml").exists() || p.join("thirdc.toml").exists() {
             return err(StatusCode::BAD_REQUEST, "这是知识库自己的文件夹，不用再当数据源").into_response();
         }
     }
@@ -1066,7 +1086,8 @@ pub fn start_scan(st: &Arc<AppState>, root: &Path, s: Source) -> bool {
         if sc.get(&id).map(|x| x.running).unwrap_or(false) {
             return false;
         }
-        sc.insert(id.clone(), ScanState { running: true, started: now_secs(), phase: "排队".into(), ..Default::default() });
+        let controllable = matches!(s.kind.as_str(), "folder" | "agent");
+        sc.insert(id.clone(), ScanState { running: true, started: now_secs(), phase: "排队".into(), controllable, ..Default::default() });
     }
     let st2 = st.clone();
     let root = root.to_path_buf();
@@ -1323,8 +1344,12 @@ pub fn import_one(st: &AppState, root: &Path, key: &str, mode: &str, folder: Opt
     let Some((it, s)) = find_item(root, &key) else { return Err((StatusCode::NOT_FOUND, "库外的这篇找不到了".into())) };
     let root = root.to_path_buf();
     let folder = folder.filter(|f| f.starts_with("Notes") && !f.contains("..")).map(|f| f.trim_end_matches('/').to_string()).unwrap_or_else(|| format!("Notes/Sources/{}", safe_name(&s.name)));
-    let text = read_text(&root, &it.hash);
     let is_file = it.loc.starts_with('/') && Path::new(&it.loc).is_file();
+    // 纯文本原件就在磁盘上：从原件读全文。扫描时缓存的正文会截断（MAX_TEXT），也可能是扫描后又改过的旧版本——
+    // 以前「移进库」用的是缓存，长文会被截短、然后原件被删
+    let plain = it.kind == "md" || it.kind == "txt";
+    let disk = if is_file && plain { std::fs::read_to_string(&it.loc).ok() } else { None };
+    let text = disk.clone().unwrap_or_else(|| read_text(&root, &it.hash));
     let mut body_md = text.clone();
     // 正文已经带着 # 标题：补上来源行
     let origin = if is_file { format!("> 导入自 `{}`（{}）", it.loc, it.date) } else if it.loc.starts_with("http") { format!("> 导入自 [{}]({})（{}）", s.name, it.loc, it.date) } else { format!("> 导入自 {}（{}）", s.name, it.date) };
@@ -1332,7 +1357,10 @@ pub fn import_one(st: &AppState, root: &Path, key: &str, mode: &str, folder: Opt
     if mode == "move" && is_file {
         // 纯文本（md / txt）：正文本身就是原件，生成的这篇即全部内容，不另存附件。
         // 其他（PDF、Word、截图、网页……）：原件放进库的 Assets/imported/，正文里链过去。
-        if it.kind == "md" || it.kind == "txt" {
+        if plain {
+            if disk.is_none() {
+                return Err((StatusCode::CONFLICT, "原件读不出来，没有移动（可以先复制进库）".into()));
+            }
             moved_to = Some(String::new());
         } else {
             let fname = Path::new(&it.loc).file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_else(|| "file".into());
@@ -1455,7 +1483,7 @@ pub async fn ext_import_batch(State(st): State<Arc<AppState>>, h: HeaderMap, bod
     let mut keys: Vec<String> = req.get("keys").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).filter(|k| k.starts_with("ext:")).map(String::from).collect()).unwrap_or_default();
     if let Some(src) = req.get("source").and_then(|v| v.as_str()) {
         // 一整个来源：场上能看到的那些（筛掉的、已入库的不算）
-        keys.extend(corpus(&root).into_iter().filter(|(it, _, _)| it.src == src).map(|(it, _, _)| it.key));
+        keys.extend(corpus_meta(&root).into_iter().filter(|(it, _)| it.src == src).map(|(it, _)| it.key));
     }
     keys.sort();
     keys.dedup();

@@ -2502,6 +2502,28 @@ for line in sys.stdin:
         let (_, tr) = call(&app, &t, "GET", "/trash", "").await;
         assert!(tr["entries"].as_array().unwrap().is_empty());
 
+        // 「Notes/」不是一篇文档：筛选不能把整个库挪进回收站
+        let (_, r) = call(&app, &t, "POST", "/field/curate/apply", r#"{"drop":["Notes/","Notes"]}"#).await;
+        assert!(root.join("Notes/发布/部署.md").exists(), "{r}");
+        assert!(!kernel_core::is_safe_doc_path("Notes/") && !kernel_core::is_safe_doc_path("Notes/a/") && !kernel_core::is_safe_doc_path("Notes/./a.md"));
+
+        // 评论随删除停进回收站：删了 A、把 B 改名成 A，新的 A 不带旧评论；找回旧 A 时评论一起回来
+        let a = "Notes/发布/站点.md";
+        call(&app, &t, "POST", "/comments", &format!(r#"{{"path":"{a}","op":"add","quote":"发布","text":"旧的评论"}}"#)).await;
+        call(&app, &t, "DELETE", &format!("/doc?path={}", urlenc(a)), "").await;
+        let (st, _) = call(&app, &t, "POST", "/doc/move", &format!(r#"{{"from":"Notes/发布/部署.md","to":"{a}"}}"#)).await;
+        assert_eq!(st, 200);
+        let (_, r) = call(&app, &t, "GET", &format!("/comments?path={}", urlenc(a)), "").await;
+        assert!(r["comments"].as_array().unwrap().is_empty(), "新的 A 不该带旧 A 的评论：{r}");
+        call(&app, &t, "POST", "/doc/move", &format!(r#"{{"from":"{a}","to":"Notes/发布/部署.md"}}"#)).await;
+        call(&app, &t, "POST", "/trash/restore", &format!(r#"{{"path":"{a}"}}"#)).await;
+        let (_, r) = call(&app, &t, "GET", &format!("/comments?path={}", urlenc(a)), "").await;
+        assert_eq!(r["comments"][0]["text"], "旧的评论");
+
+        // 对话流只收 Notes/Agent/ 下的
+        let (st, _) = call(&app, &t, "POST", "/conflow/digest", r#"{"path":"Notes/发布/部署.md"}"#).await;
+        assert_eq!(st, 400);
+
         // 分支名：不能被 git 当成选项
         for bad in ["-b", "--orphan=x", "a..b", "a b", ""] {
             let (st, _) = call(&app, &t, "POST", "/git/checkout", &serde_json::json!({"name": bad, "create": true}).to_string()).await;

@@ -194,12 +194,27 @@ fn scan_github(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
             }
         }
     }
-    let mut out = Vec::new();
-    for full in repos.iter().take(80) {
-        let meta = gh_get(&client, &format!("{api}/repos/{full}"), token.as_deref())?;
-        let branch = cs(&c, "branch").map(String::from).or_else(|| meta["default_branch"].as_str().map(String::from)).unwrap_or_else(|| "main".into());
+    let mut out: Vec<Item> = Vec::new();
+    // 一个仓库出错（空仓库的 tree 是 409、私有仓库没权限）就跳过它，别让整次扫描白干；
+    // 连着出错太多（多半是限流）就停下，没扫到的沿用上次的结果，不让它们从场上消失
+    let (mut fails, mut first_err): (usize, Option<String>) = (0, None);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    'repos: for full in repos.iter().take(80) {
+        let got = gh_get(&client, &format!("{api}/repos/{full}"), token.as_deref()).and_then(|meta| {
+            let branch = cs(&c, "branch").map(String::from).or_else(|| meta["default_branch"].as_str().map(String::from)).unwrap_or_else(|| "main".into());
+            let tree = gh_get(&client, &format!("{api}/repos/{full}/git/trees/{branch}?recursive=1"), token.as_deref())?;
+            Ok((meta, branch, tree))
+        });
+        let (meta, branch, tree) = match got {
+            Ok(x) => { fails = 0; x }
+            Err(e) => {
+                fails += 1;
+                first_err.get_or_insert(format!("{full}：{e}"));
+                if fails >= 5 { break 'repos; }
+                continue;
+            }
+        };
         let pushed = meta["pushed_at"].as_str().map(parse_time).unwrap_or(now_secs() as i64);
-        let tree = gh_get(&client, &format!("{api}/repos/{full}/git/trees/{branch}?recursive=1"), token.as_deref())?;
         let files: Vec<(String, String)> = tree["tree"].as_array().into_iter().flatten().filter(|e| e["type"] == "blob" && e["size"].as_u64().unwrap_or(0) < 400_000).filter_map(|e| Some((e["path"].as_str()?.to_string(), e["sha"].as_str()?.to_string()))).filter(|(p, _)| gh_wanted(p, &only)).take(300).collect();
         for (path, sha) in files {
             if out.len() >= MAX_ITEMS {
@@ -207,11 +222,21 @@ fn scan_github(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
             }
             let id = format!("{full}/{path}");
             let key = format!("ext:{}/{id}", s.id);
+            seen.insert(key.clone());
             if let Some(old) = prev.get(&key).filter(|o| o.etag.as_deref() == Some(sha.as_str())) {
                 out.push(old.clone());
                 continue;
             }
-            let blob = gh_get(&client, &format!("{api}/repos/{full}/git/blobs/{sha}"), token.as_deref())?;
+            let blob = match gh_get(&client, &format!("{api}/repos/{full}/git/blobs/{sha}"), token.as_deref()) {
+                Ok(b) => { fails = 0; b }
+                Err(e) => {
+                    fails += 1;
+                    first_err.get_or_insert(format!("{full}/{path}：{e}"));
+                    if let Some(old) = prev.get(&key) { out.push(old.clone()); }
+                    if fails >= 5 { break 'repos; }
+                    continue;
+                }
+            };
             let raw = blob["content"].as_str().unwrap_or("").replace(['\n', '\r'], "");
             let bytes = base64::engine::general_purpose::STANDARD.decode(raw).unwrap_or_default();
             let text = String::from_utf8_lossy(&bytes).to_string();
@@ -220,6 +245,17 @@ fn scan_github(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
             let title = title_of_md(&text, &format!("{short} · {}", fname.trim_end_matches(".md")));
             let loc = format!("https://github.com/{full}/blob/{branch}/{path}");
             out.push(item(root, s, &id, &title, &text, "md", &loc, pushed, Some(sha)));
+        }
+    }
+    if let Some(e) = first_err {
+        if out.is_empty() && prev.is_empty() {
+            return Err(e);
+        }
+        // 半路停下：上次扫到、这次没轮到的照旧留着
+        if fails >= 5 {
+            for (k, it) in prev {
+                if !seen.contains(k) && out.len() < MAX_ITEMS { out.push(it.clone()); }
+            }
         }
     }
     Ok(out)
@@ -1057,7 +1093,8 @@ fn outbound_path(root: &Path) -> std::path::PathBuf {
     root.join(".litmus/local").join("outbound.json")
 }
 fn load_outbound(root: &Path) -> Value {
-    std::fs::read_to_string(outbound_path(root)).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({}))
+    // 文件坏了或不是对象（比如被改成了 []）：当成空的，别在发完以后记账时 panic
+    std::fs::read_to_string(outbound_path(root)).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()).filter(|v| v.is_object()).unwrap_or(json!({}))
 }
 
 /// POST /connectors/publish {id, path, confirm:true, opts?}：把库里的一篇发到对方。

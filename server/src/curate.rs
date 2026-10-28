@@ -325,6 +325,9 @@ pub struct Batch {
     pub vault: Vec<String>,
     #[serde(default)]
     pub ext: Vec<String>,
+    /// 库内每篇进回收站时的名字：撤销按它找回这一批的那一份（同一路径删过几次时不会拿错）
+    #[serde(default)]
+    pub trash: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -499,6 +502,15 @@ pub async fn start(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
             return (StatusCode::PRECONDITION_REQUIRED, Json(v)).into_response();
         }
     }
+    if jobs().lock().unwrap().get(&root).map(|j| j.running).unwrap_or(false) {
+        return err(StatusCode::CONFLICT, "已经在筛了").into_response();
+    }
+    // 先把要判的读出来，再标「在筛」：读的时候客户端断开，handler 被丢掉，
+    // 以前「在筛」就永远不会清掉，之后每次都是 409
+    let c = match current(&st, false).await {
+        Ok(c) => c,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
     {
         let mut js = jobs().lock().unwrap();
         if js.get(&root).map(|j| j.running).unwrap_or(false) {
@@ -506,16 +518,6 @@ pub async fn start(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
         }
         js.insert(root.clone(), Job { running: true, phase: "按规则分".into(), started: now_secs(), ..Default::default() });
     }
-    let c = match current(&st, false).await {
-        Ok(c) => c,
-        Err(e) => {
-            set_job(&root, |j| {
-                j.running = false;
-                j.error = Some(e.clone());
-            });
-            return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-        }
-    };
     // 要判的：库里的 Notes/*.md 与库外条目（按范围）
     let ext_ix: HashMap<String, (super::sources::Item, String)> = {
         let bases: HashMap<String, Option<String>> = super::sources::load_sources(&root).into_iter().map(|s| (s.id, s.path)).collect();
@@ -586,7 +588,18 @@ pub async fn start(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
             }
             let _ = tx.send(rows);
         });
-        let mut rows = rx.await.unwrap_or_default();
+        let mut rows = match rx.await {
+            Ok(r) => r,
+            Err(_) => {
+                // 分类线程出错：别拿一张空清单把上一张冲掉
+                set_job(&root2, |j| {
+                    j.running = false;
+                    j.error = Some("按规则分的时候出错了，上一份清单还在".into());
+                    j.finished = now_secs();
+                });
+                return;
+            }
+        };
         set_job(&root2, |j| j.done = rows.len());
         // 第二步：拿不准的交给模型
         if let Some(acfg) = ai {
@@ -647,7 +660,15 @@ pub async fn start(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
         {
             let _g = lock().lock().unwrap();
             let mut s = load_store(&root2);
-            s.rows = rows.into_iter().map(|x| x.0).collect();
+            let fresh: Vec<Row> = rows.into_iter().map(|x| x.0).collect();
+            if stopped && !s.rows.is_empty() {
+                // 半路停下：判过的换成新的，没轮到的保留上一份，不把整张清单缩成一半
+                let keys: std::collections::HashSet<String> = fresh.iter().map(|r| r.key.clone()).collect();
+                s.rows.retain(|r| !keys.contains(&r.key));
+                s.rows.extend(fresh);
+            } else {
+                s.rows = fresh;
+            }
             s.created = now_secs();
             s.scope = scope2;
             save_store(&root2, &s);
@@ -768,15 +789,26 @@ pub async fn apply(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -
     let root = st.kernel.lock().unwrap().vault.root.clone();
     let mut batch = Batch { id: format!("{:x}", now_secs()), at: now_secs(), ..Default::default() };
     let mut failed = Vec::new();
+    // 只收 Notes/ 下的 Markdown 文档；整批挪完再统一同步一次
     for key in drop.iter().filter(|k| !k.starts_with("ext:")) {
+        if !key.ends_with(".md") {
+            failed.push(format!("{key}：只能剔除 Notes/ 下的 Markdown 文档"));
+            continue;
+        }
         let r = {
             let mut k = st.kernel.lock().unwrap();
-            super::trash_move(&mut k, key)
+            super::trash_move(&mut k, key, false)
         };
         match r {
-            Ok(()) => batch.vault.push(key.clone()),
+            Ok(t) => {
+                batch.vault.push(key.clone());
+                batch.trash.insert(key.clone(), t);
+            }
             Err(e) => failed.push(format!("{key}：{e}")),
         }
+    }
+    if !batch.vault.is_empty() {
+        let _ = st.kernel.lock().unwrap().sync_all();
     }
     let ext_drop: Vec<&String> = drop.iter().filter(|k| k.starts_with("ext:")).collect();
     {
@@ -833,25 +865,47 @@ pub async fn undo(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
     }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let root = st.kernel.lock().unwrap().vault.root.clone();
+    // 整个撤销都拿着清单的锁：以前读的时候没锁、写的时候才锁，会把同时扣下、剔除的改动冲掉
+    let _g = lock().lock().unwrap_or_else(|e| e.into_inner());
     let mut s = load_store(&root);
+    let mut batch: Option<Batch> = None;
     let (vault, ext): (Vec<String>, Vec<String>) = if let Some(id) = req.get("batch").and_then(|v| v.as_str()) {
         let Some(i) = s.batches.iter().position(|b| b.id == id) else { return err(StatusCode::NOT_FOUND, "这一批找不到了").into_response() };
         let b = s.batches.remove(i);
-        (b.vault, b.ext)
+        let r = (b.vault.clone(), b.ext.clone());
+        batch = Some(b);
+        r
     } else {
         let keys: Vec<String> = req.get("keys").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
         keys.into_iter().partition(|k| !k.starts_with("ext:"))
     };
     let mut back = 0;
     let mut failed = Vec::new();
+    let mut not_back: Vec<String> = Vec::new();
     for p in &vault {
+        let t = batch.as_ref().and_then(|b| b.trash.get(p)).cloned();
         let r = {
             let mut k = st.kernel.lock().unwrap();
-            super::trash_restore_path(&mut k, p)
+            super::trash_restore_path(&mut k, p, t.as_deref(), false)
         };
         match r {
             Ok(()) => back += 1,
-            Err(e) => failed.push(format!("{p}：{e}")),
+            Err(e) => {
+                failed.push(format!("{p}：{e}"));
+                not_back.push(p.clone());
+            }
+        }
+    }
+    if back > 0 {
+        let _ = st.kernel.lock().unwrap().sync_all();
+    }
+    // 有没找回来的：这一批留着（只剩没回来的），可以再试
+    if let Some(mut b) = batch {
+        if !not_back.is_empty() {
+            b.vault = not_back.clone();
+            b.ext.clear();
+            b.trash.retain(|k, _| not_back.contains(k));
+            s.batches.push(b);
         }
     }
     let mut items = Vec::new();
@@ -872,10 +926,7 @@ pub async fn undo(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) ->
             r.by = "you".into();
         }
     }
-    {
-        let _g = lock().lock().unwrap();
-        save_store(&root, &s);
-    }
+    save_store(&root, &s);
     super::sources::REV.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     Json(json!({ "restored": back, "failed": failed })).into_response()
 }

@@ -508,7 +508,8 @@ pub mod gitops {
 
     pub fn branches(dir: &std::path::Path) -> Result<Vec<String>, DeployError> {
         ensure_repo(dir)?;
-        let out = git_stdout(dir, &["branch", "--format=%(refname:short)"]);
+        // 只列真的分支（refs/heads/），游离 HEAD 那一行「(HEAD detached at …)」不算
+        let out = git_stdout(dir, &["for-each-ref", "--format=%(refname:short)", "refs/heads/"]);
         Ok(out.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
     }
 
@@ -566,6 +567,10 @@ pub mod gitops {
             return Err(DeployError::Git(format!("分支名不合法：{name}")));
         }
         ensure_repo(dir)?;
+        // 分支不存在就别先「兜底存档」：打错名字会凭空多一个存档
+        if git_stdout(dir, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")]).trim().is_empty() {
+            return Err(DeployError::Git(format!("没有叫 {name} 的分支")));
+        }
         // 那个分支里要是存着本机数据目录（旧版本误提交的），切过去会把正在用的索引换掉
         let tracked = git_stdout(dir, &["ls-tree", "-r", "--name-only", name, "--", ".litmus/local", ".thirdc"]);
         if !tracked.trim().is_empty() {
@@ -595,12 +600,19 @@ pub mod gitops {
         // 先把本地改动存档，再拉：带着未提交的改动 rebase 必然失败
         let n = commit_all(dir, "sync: 自动存档")?;
         let branch = current_branch(dir);
-        let has_remote_branch = !git_stdout(dir, &["ls-remote", "--heads", "origin", &branch]).trim().is_empty();
+        // 精确匹配 refs/heads/<分支>：只写分支名时 ls-remote 按后缀匹配，x/main 也会算成 main
+        let exact = format!("refs/heads/{branch}");
+        let has_remote_branch = git_stdout(dir, &["ls-remote", "--heads", "origin", &exact]).lines().any(|l| l.split_whitespace().nth(1) == Some(exact.as_str()));
         if has_remote_branch {
             if let Err(e) = _git(dir, &["pull", "--rebase", "-q", "origin", &branch]) {
-                // 冲突时别把仓库留在 rebase 一半的状态
-                let _ = _git(dir, &["rebase", "--abort"]);
-                return Err(DeployError::Git(format!("远端和本地改了同一处，没有合并（本地改动已存档，没丢）：{e}")));
+                let gd = dir.join(".git");
+                let mid_rebase = gd.join("rebase-merge").exists() || gd.join("rebase-apply").exists();
+                if mid_rebase {
+                    // 冲突时别把仓库留在 rebase 一半的状态
+                    let _ = _git(dir, &["rebase", "--abort"]);
+                    return Err(DeployError::Git(format!("远端和本地改了同一处，没有合并（本地改动已存档，没丢）：{e}")));
+                }
+                return Err(DeployError::Git(format!("没能从远端拉取（本地改动已存档，没丢）：{e}")));
             }
         }
         _git(dir, &["push", "-q", "-u", "origin", "HEAD"])?;

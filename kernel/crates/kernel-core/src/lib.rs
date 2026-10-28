@@ -1033,6 +1033,10 @@ pub fn is_safe_doc_path(p: &str) -> bool {
         && !p.contains("..")
         && !p.starts_with('/')
         && !p.contains('\\')
+        // 「Notes/」本身、「Notes/a/」、「Notes//a」、「Notes/./a」都不是一篇文档：
+        // 以前「Notes/」能过，回收站会把整个 Notes 挪走
+        && !p.ends_with('/')
+        && p.split('/').all(|s| !s.is_empty() && s != ".")
 }
 
 /// 生成安全、可读的文件名：保留 Unicode 字母数字（含中文），其余转连字符。

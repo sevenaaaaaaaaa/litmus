@@ -2414,7 +2414,7 @@ async fn delete_doc(
         Ok(()) => {
             entries.push(TrashEntry {
                 path: path.clone(),
-                trash: trash_rel,
+                trash: trash_rel.clone(),
                 deleted_at: trash_now(),
             });
             if let Err(e) = trash_save(&k.vault.root, &entries) {
@@ -2422,6 +2422,7 @@ async fn delete_doc(
                 let _ = std::fs::rename(&dest, &abs);
                 return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
             }
+            comments_park(&k.vault.root, &path, &trash_rel);
             let _ = k.sync_all();
             Json(json!({ "deleted": path, "trash": true, "retention_days": days })).into_response()
         }
@@ -2494,6 +2495,7 @@ fn trash_purge_expired(root: &std::path::Path, days: u32) -> usize {
     let limit = days as u64 * 86_400;
     entries.retain(|e| {
         if now.saturating_sub(e.deleted_at) >= limit {
+            comments_drop_parked(root, &e.trash);
             let p = trash_dir(root).join(&e.trash);
             let _ = if p.is_dir() {
                 std::fs::remove_dir_all(&p)
@@ -2513,7 +2515,9 @@ fn trash_purge_expired(root: &std::path::Path, days: u32) -> usize {
 }
 
 /// 把一篇（或一个文件夹）移进回收站：筛选、整理等批量动作共用。
-pub(crate) fn trash_move(k: &mut Kernel, path: &str) -> Result<(), String> {
+/// `sync`：批量调用时传 false，最后统一 sync_all 一次（3k 篇各 sync 一遍会把守护进程卡住）。
+/// 返回回收站里的名字，撤销时按它找回那一份。
+pub(crate) fn trash_move(k: &mut Kernel, path: &str, sync: bool) -> Result<String, String> {
     if !is_safe_doc_path(path) {
         return Err("只能删 Notes/ 下的".into());
     }
@@ -2528,19 +2532,22 @@ pub(crate) fn trash_move(k: &mut Kernel, path: &str) -> Result<(), String> {
         std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
     }
     std::fs::rename(&abs, &dest).map_err(|e| e.to_string())?;
-    entries.push(TrashEntry { path: path.to_string(), trash: trash_rel, deleted_at: trash_now() });
+    entries.push(TrashEntry { path: path.to_string(), trash: trash_rel.clone(), deleted_at: trash_now() });
     if let Err(e) = trash_save(&k.vault.root, &entries) {
         let _ = std::fs::rename(&dest, &abs);
         return Err(e.to_string());
     }
-    let _ = k.sync_all();
-    Ok(())
+    comments_park(&k.vault.root, path, &trash_rel);
+    if sync {
+        let _ = k.sync_all();
+    }
+    Ok(trash_rel)
 }
 
 /// 从回收站放回原处（原处已有同名就不动）。
-pub(crate) fn trash_restore_path(k: &mut Kernel, path: &str) -> Result<(), String> {
+pub(crate) fn trash_restore_path(k: &mut Kernel, path: &str, trash: Option<&str>, sync: bool) -> Result<(), String> {
     let mut entries = trash_load(&k.vault.root);
-    let Some(idx) = entries.iter().rposition(|e| e.path == path) else { return Err("回收站里没有".into()) };
+    let Some(idx) = entries.iter().rposition(|e| e.path == path && trash.map_or(true, |t| e.trash == t)) else { return Err("回收站里没有".into()) };
     let src = trash_dir(&k.vault.root).join(&entries[idx].trash);
     let dst = k.vault.root.join(path);
     if dst.exists() {
@@ -2550,9 +2557,12 @@ pub(crate) fn trash_restore_path(k: &mut Kernel, path: &str) -> Result<(), Strin
         std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
     }
     std::fs::rename(&src, &dst).map_err(|e| e.to_string())?;
-    entries.remove(idx);
+    let gone = entries.remove(idx);
     trash_save(&k.vault.root, &entries).map_err(|e| e.to_string())?;
-    let _ = k.sync_all();
+    comments_unpark(&k.vault.root, path, &gone.trash);
+    if sync {
+        let _ = k.sync_all();
+    }
     Ok(())
 }
 
@@ -2612,10 +2622,11 @@ async fn trash_restore(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byte
     if let Err(e) = std::fs::rename(&src, &dst) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
-    entries.remove(idx);
+    let gone = entries.remove(idx);
     if let Err(e) = trash_save(&k.vault.root, &entries) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
+    comments_unpark(&k.vault.root, &path, &gone.trash);
     let _ = k.sync_all();
     Json(json!({ "restored": path })).into_response()
 }
@@ -2637,7 +2648,7 @@ async fn trash_purge(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
     let mut gone: Vec<String> = Vec::new();
     if all {
         for e in &entries {
-            gone.push(e.path.clone());
+            gone.push(e.trash.clone());
             let p = trash_dir(&k.vault.root).join(&e.trash);
             let _ = if p.is_dir() {
                 std::fs::remove_dir_all(&p)
@@ -2657,20 +2668,16 @@ async fn trash_purge(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
             } else {
                 std::fs::remove_file(&p)
             };
-            gone.push(entries.remove(idx).path);
+            gone.push(entries.remove(idx).trash);
             purged += 1;
         }
     }
     if let Err(e) = trash_save(&k.vault.root, &entries) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
-    // 彻底删掉的文档，评论也一起清掉（库里同路径又有了一篇、或回收站里还有另一份时留着）
-    for p in gone {
-        if !k.vault.root.join(&p).exists() && !entries.iter().any(|e| e.path == p) {
-            if let Some(c) = comments_path(&k.vault.root, &p) {
-                let _ = std::fs::remove_file(c);
-            }
-        }
+    // 彻底删掉的，停在回收站旁边的评论也一起清掉
+    for t in gone {
+        comments_drop_parked(&k.vault.root, &t);
     }
     Json(json!({ "purged": purged })).into_response()
 }
@@ -2718,6 +2725,10 @@ fn is_safe_doc_path(p: &str) -> bool {
         && !p.contains("..")
         && !p.starts_with('/')
         && !p.contains('\\')
+        // 「Notes/」本身、「Notes/a/」、「Notes//a」、「Notes/./a」都不是一篇文档：
+        // 以前「Notes/」能过，回收站会把整个 Notes 挪走
+        && !p.ends_with('/')
+        && p.split('/').all(|s| !s.is_empty() && s != ".")
 }
 
 /// 启动后台 watcher：外部改动实时进入内核（共享同一 Kernel 锁）。
@@ -4899,6 +4910,10 @@ async fn conflow_digest(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let path = req.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    // 带路径的只收 Notes/Agent/ 下的对话：以前任意路径都会被读出来写进知识卡
+    if path.contains('/') && !(is_safe_doc_path(&path) && path.starts_with("Notes/Agent/")) {
+        return err(StatusCode::BAD_REQUEST, "只能提炼 Notes/Agent/ 下的对话").into_response();
+    }
     match litmus_mcp::conflow::digest(&st.mcp, &path) {
         Ok(r) => {
             audit_log(&st.kernel.lock().unwrap().vault.sidecar(), "conflow-digest", &r);
@@ -7047,6 +7062,38 @@ fn comments_path(root: &std::path::Path, doc: &str) -> Option<std::path::PathBuf
         return None;
     }
     Some(root.join(".litmus/local").join("comments").join(format!("{doc}.json")))
+}
+
+/// 删进回收站：评论跟着停到 comments/.trash/<回收站里的名字> 下；找回时再放回去。
+/// 这样「删了 A、又把 B 改名成 A」不会让新的 A 带上旧 A 的评论。
+fn comments_park(root: &std::path::Path, path: &str, trash_rel: &str) {
+    let base = root.join(".litmus/local").join("comments");
+    let park = base.join(".trash");
+    for (a, b) in [(base.join(format!("{path}.json")), park.join(format!("{trash_rel}.json"))), (base.join(path), park.join(trash_rel))] {
+        if a.exists() {
+            if let Some(parent) = b.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&a, &b);
+        }
+    }
+}
+fn comments_unpark(root: &std::path::Path, path: &str, trash_rel: &str) {
+    let base = root.join(".litmus/local").join("comments");
+    let park = base.join(".trash");
+    for (a, b) in [(park.join(format!("{trash_rel}.json")), base.join(format!("{path}.json"))), (park.join(trash_rel), base.join(path))] {
+        if a.exists() && !b.exists() {
+            if let Some(parent) = b.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::rename(&a, &b);
+        }
+    }
+}
+fn comments_drop_parked(root: &std::path::Path, trash_rel: &str) {
+    let park = root.join(".litmus/local").join("comments").join(".trash");
+    let _ = std::fs::remove_file(park.join(format!("{trash_rel}.json")));
+    let _ = std::fs::remove_dir_all(park.join(trash_rel));
 }
 
 /// 文档（或整个文件夹）挪了位置：评论文件跟着挪。目标已有评论时不覆盖。

@@ -851,6 +851,8 @@ async function loadField(opts){
   if (!nodes.length){ $('veil-p').innerHTML = '<b>这片纸还是空的</b>在下面写一句话，以 + 开头，回车后它就成为第一篇。'; $('veil').hidden = false; }
   field.classList.toggle('big', nodes.length > 1500);
   if (reading && byPath.get(reading.p) === reading && !editing) renderLinks(reading);
+  /* 选中的里有已经不在场上的（入库、筛掉、删了）：拿掉，别让批量操作带着失效的条目 */
+  if (picks.length){ const live = picks.filter(n => byPath.get(n.p) === n); if (live.length !== picks.length){ picks.splice(0, picks.length, ...live); renderPickbar(); } }
   kick();
   return fresh;
 }
@@ -1452,7 +1454,9 @@ async function flushSave(){
 }
 async function openDoc(n){
   if (!n) return;
-  if (editing) await flushSave();
+  if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>这篇还没存上</b>，原文保留在编辑框里，恢复连接后会自动重试；先别换篇', true); return; } }
+  if (viewMode){ viewMode = ''; document.body.classList.remove('zen', 'god'); $('s-zen').classList.remove('on'); $('s-god').classList.remove('on'); }
+  if (split) setSplit(false);
   if (reading) reading.el.classList.remove('cur');
   reading = n; n.el.classList.add('cur'); editing = false; setSave('saved');
   pushRecent(n.p);
@@ -1466,7 +1470,7 @@ async function openDoc(n){
   try {
     const d = n.k === 'ext' ? await openExt(n) : await api('/doc?path=' + encodeURIComponent(n.p));
     if (reading !== n) return;
-    docData = n.k === 'ext' ? docData : d;
+    docData = n.k === 'ext' ? Object.assign({}, d, {path:n.p}) : d;
     $('s-edit').hidden = d.format === 'html' || n.k === 'ext';
     renderRead(d);
     if (n.k === 'ext'){ $('doc').querySelector('.dmeta').insertAdjacentHTML('afterend', extBanner(d)); wireExtBanner(n, d); }
@@ -1527,7 +1531,7 @@ function resolveWiki(raw){
   return null;
 }
 function toggleEdit(){
-  if (!reading || !docData || docData.format === 'html') return;
+  if (!reading || !docData || docData.format === 'html' || reading.k === 'ext') return;
   if (!editing){
     editing = true; $('s-edit').textContent = '阅读';
     const body = $('doc').querySelector('.body');
@@ -1540,6 +1544,7 @@ function toggleEdit(){
   } else {
     flushSave().then(async () => {
       if (save.state === 'failed') return; editing = false; $('s-edit').textContent = '编辑'; setSave('saved');
+      if (viewMode === 'god'){ viewMode = ''; document.body.classList.remove('god'); $('s-god').classList.remove('on'); }
       if (split){ split = false; document.body.classList.remove('split'); }
       const n0 = reading, n1 = await autoname(n0);
       if (n1 !== n0 && n1){ openDoc(n1); return; }
@@ -1579,13 +1584,15 @@ $('s-god').onclick = () => setMode('god');
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')){ if (reading){ e.preventDefault(); setMode('zen'); } }
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')){ if (reading){ e.preventDefault(); setMode('god'); } }
-  if (e.key === 'Escape' && viewMode){ e.preventDefault(); e.stopImmediatePropagation(); setMode(viewMode); }
+  /* 面板、弹出菜单、评论框里按 Esc 先关它们，不退出 Zen / God */
+  if (e.key === 'Escape' && viewMode && $('panel').hidden && !popEl && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('.cmf'))){ e.preventDefault(); e.stopImmediatePropagation(); setMode(viewMode); }
 }, true);
 
 async function closeDoc(){
   if (viewMode){ viewMode = ''; document.body.classList.remove('zen', 'god'); $('s-zen').classList.remove('on'); $('s-god').classList.remove('on'); }
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还没存上</b>，原文保留在编辑框里，恢复连接后会自动重试', true); return; } }
   const sw = sheetW();
+  if (split) setSplit(false);
   editing = false; document.body.classList.remove('reading'); hideRing();
   if (sw){ cam.tox += sw / 2; kick(); }
   if (reading){ reading.el.classList.remove('cur'); reading = null; }
@@ -1653,21 +1660,35 @@ function anchorOf(src, txt){
   }
   return {start:0, end:0};
 }
-/* 在正文里把每条没解决的评论标出来：按引用的前一截在文本节点里找 */
+/* 在正文里把每条没解决的评论标出来。引用可能跨过加粗、链接、段落：把正文的字（去掉空白）连成一串来找，
+   找到后按每个文本节点各包一段；同一句出现几次时，挑位置最接近原文锚点的那次 */
+function textIndex(body){
+  const w = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {acceptNode:x => x.parentElement.closest('mark.cm,pre,code,.note,#links,#near') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+  const ns = [], map = []; let str = '';
+  for (let t = w.nextNode(); t; t = w.nextNode()){ const k = ns.push(t) - 1; for (let o = 0; o < t.data.length; o++){ if (!/\s/.test(t.data[o])){ str += t.data[o]; map.push([k, o]); } } }
+  return {ns, map, str};
+}
 function markComments(){
   const body = $('doc').querySelector('.body'); if (!body || editing || !reading || cmts.path !== reading.p) return;
   body.querySelectorAll('mark.cm').forEach(m => m.replaceWith(...m.childNodes));
   body.normalize();
+  const srcLen = Math.max(1, ((docData && docData.source) || '').length);
   cmts.list.filter(c => !c.resolved && c.quote).forEach(c => {
-    const key = String(c.quote).replace(/\s+/g, ' ').trim().slice(0, 24); if (key.length < 2) return;
-    const w = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {acceptNode:x => x.parentElement.closest('mark,pre,code,.note,#links,#near') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
-    for (let t = w.nextNode(); t; t = w.nextNode()){
-      const i = t.data.indexOf(key); if (i < 0) continue;
-      const r = document.createRange(); r.setStart(t, i); r.setEnd(t, Math.min(t.data.length, i + String(c.quote).length));
+    const q = String(c.quote).replace(/\s+/g, ''); if (q.length < 2) return;
+    const ix = textIndex(body); if (!ix.str) return;
+    let key = q, hits = [];
+    for (const k of [q, q.slice(0, 40), q.slice(0, 16)]){ if (k.length < 2) continue; let at = ix.str.indexOf(k); while (at >= 0){ hits.push(at); at = ix.str.indexOf(k, at + 1); } if (hits.length){ key = k; break; } }
+    if (!hits.length) return;
+    const want = (c.start || 0) / srcLen * ix.str.length;
+    const at = hits.reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a);
+    const len = Math.min(q.length, ix.str.length - at);
+    const segs = new Map();
+    for (let x = at; x < at + len; x++){ const [k, o] = ix.map[x]; const g = segs.get(k); if (g) g[1] = o + 1; else segs.set(k, [o, o + 1]); }
+    [...segs.entries()].reverse().forEach(([k, [a, b]]) => {
+      const t = ix.ns[k], mid = t.splitText(a); mid.splitText(b - a);
       const m = document.createElement('mark'); m.className = 'cm'; m.dataset.cid = c.id; m.title = (c.author || '') + '：' + (c.text || '').slice(0, 60);
-      try { r.surroundContents(m); } catch(e){}
-      break;
-    }
+      mid.replaceWith(m); m.appendChild(mid);
+    });
   });
   body.querySelectorAll('mark.cm').forEach(m => m.onclick = () => openComments(m.dataset.cid));
 }
@@ -1706,7 +1727,7 @@ async function openComments(focusId){
   box.querySelectorAll('.cth').forEach(el => {
     const id = el.dataset.id, c = cmts.list.find(x => x.id === id), inp = el.querySelector('input');
     const op = async (json, keep) => {
-      try { const r = await api('/comments', {method:'POST', json:Object.assign({path:n.p, id}, json)}); cmts = {path:n.p, list:r.comments || []}; renderCmtBadge(); markComments(); if (keep) openComments(id); }
+      try { const r = await api('/comments', {method:'POST', json:Object.assign({path:n.p, id}, json)}); if (reading !== n) { closePanel(); return; } cmts = {path:n.p, list:r.comments || []}; renderCmtBadge(); markComments(); if (keep) openComments(id); }
       catch(e){ toast('<b>没成</b>：' + esc(e.message || e), true); }
     };
     el.querySelector('[data-a="reply"]').onclick = () => { const t = inp.value.trim(); if (t) op({op:'reply', text:t, author:myName()}, true); else inp.focus(); };
@@ -2245,12 +2266,14 @@ async function openFolders(focus){
     if (b('lit')) b('lit').onclick = () => { const set = nodes.filter(n => n.p.startsWith(d + '/')); closePanel(); query = ''; lastRel = set.map(n => ({n, norm:1})); paint(lastRel, {soft:set.length > 40}); readoutText('文件夹「' + d + '」· ' + set.length + ' 篇'); };
     if (b('rm')) b('rm').onclick = async () => { try { await api('/dir?path=' + encP(d), {method:'DELETE'}); toast('已删除空文件夹'); openFolders(); } catch(e){ toast('<b>没删掉</b>：' + esc(e.message || e), true); } };
     b('mv').onclick = () => form('移到', async to => {
-      if (editing) await flushSave();
+      if (editing){ await flushSave(); if (save.state === 'failed') throw new Error('正在编辑的那篇还没存上'); }
       const wasOpen = reading && reading.p.startsWith(d + '/') ? reading.p : '';
       const r2 = await api('/dir/move', {method:'POST', json:{from:d, to}});
       if (wasOpen) await closeDoc();
       await refreshNow(); toast('文件夹 → <b>' + esc(to) + '</b>' + (r2.relinked ? '，更新了 ' + r2.relinked + ' 篇里的链接' : ''));
       if (wasOpen){ const m = byPath.get(to + wasOpen.slice(d.length)); if (m) openDoc(m); }
+      /* 正在读的另一篇里可能有指向这个文件夹的链接，磁盘上已经改了：重新打开，免得编辑框里的旧文字存回去 */
+      else if (reading && r2.relinked){ editing = false; const m = byPath.get(reading.p); if (m) openDoc(m); }
       openFolders(to);
     });
     b('cp').onclick = () => form('复制到', async to => { const r2 = await api('/dir/copy', {method:'POST', json:{from:d, to}}); await refreshNow(); toast('复制了 <b>' + (r2.copied || 0) + '</b> 个文件到 ' + esc(to)); openFolders(to); });
@@ -2362,7 +2385,7 @@ async function openTrash(){
   const sure = b => { if (b.dataset.sure === '1') return true; b.dataset.sure = '1'; b.textContent = '再点一次，删了找不回'; b.classList.add('danger'); setTimeout(() => { if (b.isConnected && b.dataset.sure === '1'){ b.dataset.sure = ''; b.textContent = b.id === 'tr-empty' ? '清空回收站' : '彻底删除'; b.classList.remove('danger'); } }, 4000); return false; };
   box.querySelectorAll('[data-purge]').forEach(b => b.onclick = async () => {
     if (!sure(b)) return; b.disabled = true;
-    try { await api('/trash/purge', {method:'POST', json:Object.assign({path:b.dataset.purge}, b.dataset.t ? {trash:b.dataset.t} : {})}); b.closest('.row').remove(); toast('已彻底删除'); }
+    try { const r = await api('/trash/purge', {method:'POST', json:Object.assign({path:b.dataset.purge}, b.dataset.t ? {trash:b.dataset.t} : {})}); if (!r.purged){ toast('回收站里已经没有这一篇了'); openTrash(); return; } b.closest('.row').remove(); toast('已彻底删除'); }
     catch(e){ b.disabled = false; toast('<b>没删掉</b>：' + esc(e.message || e), true); }
   });
   if ($('tr-empty')) $('tr-empty').onclick = async e => {
@@ -2408,7 +2431,7 @@ function pickFiles(){
   inp.onchange = () => importFiles([...inp.files]); inp.click();
 }
 async function importFiles(files){
-  const ok = [], bad = [];
+  const ok = [], bad = [], used = new Set();
   for (const f of files){
     try {
       if (TEXT_EXT.test(f.name)){
@@ -2416,7 +2439,9 @@ async function importFiles(files){
         const base = safeFile(f.name.replace(/\.[^.]+$/, '')), ext = isHtml ? '.html' : '.md';
         if (/\.txt$/i.test(f.name) && !/^#\s/m.test(text)) text = '# ' + base + '\n\n' + text;
         let path = 'Notes/导入/' + base + ext;
-        for (let i = 2; byPath.has(path) && i < 99; i++) path = 'Notes/导入/' + base + ' ' + i + ext;
+        /* 同一批里同名的也要避开：场要等这批导完才刷新，byPath 里还没有它们 */
+        for (let i = 2; (byPath.has(path) || used.has(path)) && i < 99; i++) path = 'Notes/导入/' + base + ' ' + i + ext;
+        used.add(path);
         await api('/doc?path=' + encP(path), {method:'PUT', body:text, headers:{'content-type':isHtml ? 'text/html' : 'text/markdown'}});
         ok.push(path);
       } else if (CONV_EXT.test(f.name)){
@@ -2734,15 +2759,6 @@ async function openPlugins(){
     '<div id="pl-index"><p class="hint">正在读社区插件索引…</p></div><label for="pl-url">从 GitHub 安装</label><input type="text" id="pl-url" placeholder="https://github.com/作者/仓库"><p class="hint">仓库根或一层子目录里有 manifest.json 就行，一个仓库可以带多个插件。启用后，插件的命令和视图会出现在 / 指令里。</p><div class="acts"><button class="btn pri" id="pl-go">安装</button><span id="pl-msg"></span></div>');
   box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
   box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
-  box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.all); s.limit = null; b.disabled = true; try { await api('/sources', {method:'POST', json:{source:s}}); await api('/sources/' + s.id + '/scan', {method:'POST'}); pollJobs(true); } catch(e){ toast(esc(e.message), true); } openSources(); });
-  box.querySelectorAll('[data-impall]').forEach(b => b.onclick = async () => {
-    const id = b.dataset.impall;
-    if (b.dataset.sure !== '1'){ try { const e = await api('/field/ext/import-batch', {method:'POST', json:{source:id, dry:true}}); if (!e.count){ toast('这个来源的都已经在库里了'); return; } b.dataset.sure = '1'; b.textContent = '确认：复制 ' + e.count + ' 篇进库'; b.classList.add('danger'); } catch(x){ toast(esc(x.message), true); } return; }
-    b.disabled = true;
-    try { const r = await api('/field/ext/import-batch', {method:'POST', json:{source:id, mode:'copy'}}); pollJobs(true); toast('在后台把 ' + r.total + ' 篇复制进库，左上角看进度'); openSources(); } catch(x){ b.disabled = false; toast(esc(x.message), true); }
-  });
-  box.querySelectorAll('[data-ct]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '测试中…'; try { const t = await api('/connectors/test', {method:'POST', json:{id:b.dataset.ct}}); toast((t.ok ? '' : '<b>没连通</b>：') + esc(t.message), !t.ok); } catch(e){ toast(esc(e.message), true); } b.disabled = false; b.textContent = '测试'; });
-  box.querySelectorAll('[data-dg]').forEach(b => b.onclick = () => startDigest({source:b.dataset.dg, limit:10}));
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次删除'; b.classList.add('danger'); return; }
     await api('/plugins/remove', {method:'POST', json:{name:b.dataset.del}}).catch(e => toast(esc(e.message), true)); openPlugins();
@@ -2870,7 +2886,7 @@ async function openGit(){
     '<label for="git-msg">这次存档说明</label><input type="text" id="git-msg" placeholder="比如：整理十月笔记"><div class="acts"><button class="btn pri" id="git-go">存档</button></div>' +
     '<label>分支</label>' + (bs.length ? bs.map(b => '<div class="row"><div class="grow"><span>' + esc(b) + '</span></div><button class="btn" data-br="' + esc(b) + '">切过去</button></div>').join('') : '<p class="hint" style="margin-top:0">只有 ' + esc(st.branch || 'main') + ' 一个分支。</p>') +
     '<div class="acts"><input type="text" id="git-newbr" placeholder="新分支名，比如 draft/十月" style="flex:1;width:auto"><button class="btn" id="git-mkbr">新建并切过去</button></div>' +
-    '<p class="hint">切分支前，没存档的改动会先自动存一次档；切过去以后场上就是那个分支的内容。</p>' +
+    '<p class="hint">切分支前，没存档的改动会先自动存一次档；切过去以后场上就是那个分支的内容。这个库要是在和另一台设备或服务器同步，那边也会跟着变成这个分支的内容。</p>' +
     '<label for="git-remote">同步到远端</label><input type="text" id="git-remote" value="' + esc(st.remote || '') + '" placeholder="你自己服务器上的仓库地址（不能是 GitHub）"><div class="acts"><button class="btn" id="git-sync">拉取并推送</button><span id="git-msgline"></span></div>' +
     '<label>最近的存档</label>' + ((lg.log || []).slice(0, 12).map(x => '<div class="row"><div class="grow"><span>' + esc(x.subject) + '</span><small>' + esc(x.hash) + '</small></div></div>').join('') || '<p class="empty">还没有存档</p>');
   $('git-go').onclick = () => gitCommit($('git-msg').value.trim() || '存档');
@@ -3716,9 +3732,18 @@ async function openSources(first){
     try { const r = await api('/sources/google/start?id=' + encodeURIComponent(b.dataset.gauth) + '&origin=' + encodeURIComponent(location.origin + BASE)); if (DESK) await window.__TAURI_INTERNALS__.invoke('desktop_open_path', {p:r.url}); else window.open(r.url, '_blank'); toast('在浏览器里完成授权，回来点「扫描」'); }
     catch(e){ toast('<b>没法开始授权</b>：' + esc(e.message || e), true); if (e.status === 409) setTimeout(openSecrets, 1200); }
   });
+  box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.all); s.limit = null; b.disabled = true; try { await api('/sources', {method:'POST', json:{source:s}}); await api('/sources/' + s.id + '/scan', {method:'POST'}); pollJobs(true); } catch(e){ toast(esc(e.message), true); } openSources(); });
+  box.querySelectorAll('[data-impall]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.impall;
+    if (b.dataset.sure !== '1'){ try { const e = await api('/field/ext/import-batch', {method:'POST', json:{source:id, dry:true}}); if (!e.count){ toast('这个来源的都已经在库里了'); return; } b.dataset.sure = '1'; b.textContent = '确认：复制 ' + e.count + ' 篇进库'; b.classList.add('danger'); } catch(x){ toast(esc(x.message), true); } return; }
+    b.disabled = true;
+    try { const r = await api('/field/ext/import-batch', {method:'POST', json:{source:id, mode:'copy'}}); pollJobs(true); toast('在后台把 ' + r.total + ' 篇复制进库，左上角看进度'); openSources(); } catch(x){ b.disabled = false; toast(esc(x.message), true); }
+  });
+  box.querySelectorAll('[data-ct]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '测试中…'; try { const t = await api('/connectors/test', {method:'POST', json:{id:b.dataset.ct}}); toast((t.ok ? '' : '<b>没连通</b>：') + esc(t.message), !t.ok); } catch(e){ toast(esc(e.message), true); } b.disabled = false; b.textContent = '测试'; });
+  box.querySelectorAll('[data-dg]').forEach(b => b.onclick = () => startDigest({source:b.dataset.dg, limit:10}));
   /* 有在扫描的：每 2 秒看一眼，扫完刷新场 */
   clearTimeout(srcPoll);
-  if (have.some(s => s.scan && s.scan.running)) srcPoll = setTimeout(async () => { if ($('panel').hidden) { refreshNow(); return; } const r = await api('/sources').catch(() => null); if (r && !r.sources.some(s => s.scan && s.scan.running)){ await refreshNow(); } openSources(); }, 2000);
+  if (have.some(s => s.scan && s.scan.running)) srcPoll = setTimeout(async () => { if ($('panel').hidden || !$('sa-k')) { refreshNow(); return; } const r = await api('/sources').catch(() => null); if (r && !r.sources.some(s => s.scan && s.scan.running)){ await refreshNow(); } openSources(); }, 2000);
   else if (have.length) refreshSoon();
 }
 /* ═══════════ H 上手与后台：边用边引导、这一版的新东西、隐私告知、后台进度、AI 学习 ═══════════ */
@@ -3807,6 +3832,9 @@ async function ensureConsent(what, title){
     const box = openPanel(title || '隐私告知', privacyHtml(info, what) + '<div class="acts"><button class="btn pri" id="cs-ok">同意，开始</button><button class="btn" id="cs-no">先不了</button></div>');
     $('cs-ok').onclick = async () => { try { aiInfo = await api('/field/consent', {method:'POST', json:{agree:true}}); closePanel(); res(true); } catch(e){ toast(esc(e.message || e), true); res(false); } };
     $('cs-no').onclick = () => { closePanel(); res(false); };
+    /* Esc、× 或点背景关掉也算「先不了」，别让调用的一直等着 */
+    const mo = new MutationObserver(() => { if ($('panel').hidden || !$('cs-ok')){ mo.disconnect(); res(false); } });
+    mo.observe($('panel'), {attributes:true, attributeFilter:['hidden']});
   });
 }
 
@@ -3983,17 +4011,28 @@ async function sendOut(n){
 const CUR_RE = /(剔除|清理|清掉|删掉|去掉|筛掉|筛选|过滤).{0,16}(过程|会话|session|对话记录|没用)|(过程|会话|session|对话记录).{0,16}(剔除|清理|清掉|删掉|去掉|筛掉|过滤)|(保留|留下).{0,30}(剔除|删掉|去掉)/i;
 let cur = null, curTab = 'drop', curCat = '', curShow = 200, curSel = null, curPoll = 0;
 const BY_NAME = {rule:'规则', ai:'AI', you:'你改判', words:'你的词'};
-async function openCurate(tab){
+async function openCurate(tab, poll){
   if (tab) curTab = tab;
-  const box = openPanel('筛选：留下知识，剔除过程文档', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  const prev = poll ? cur : null, prevSel = poll ? curSel : null;
+  const pb = $('panel').querySelector('.pbox'), keepTop = poll && pb ? pb.scrollTop : 0;
+  const box = poll ? $('p-body') : openPanel('筛选：留下知识，剔除过程文档', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   $('panel').querySelector('.pbox').style.width = 'min(920px,100%)';
-  try { cur = await api('/field/curate'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  let fresh; try { fresh = await api('/field/curate'); } catch(e){ if (!poll) box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  if (poll && ($('panel').hidden || !$('cu-root'))) return;
+  cur = fresh;
   if (!aiInfo) await loadAiInfo();
   curSel = new Set((cur.rows || []).filter(r => !r.keep).map(r => r.key).concat((cur.held || []).map(r => r.key)));
+  /* 后台还在筛时每隔一会儿刷新：你刚改判的、勾掉的别被冲掉 */
+  if (prev && prevSel){
+    const old = new Map((prev.rows || []).concat(prev.held || []).map(r => [r.key, r]));
+    (cur.rows || []).forEach(r => { const o = old.get(r.key); if (o && o.by === 'you'){ r.keep = o.keep; r.by = 'you'; } });
+    (cur.rows || []).concat(cur.held || []).forEach(r => { if (old.has(r.key)){ if (prevSel.has(r.key)) curSel.add(r.key); else curSel.delete(r.key); } });
+  }
   if (curTab === 'held' && !(cur.held || []).length) curTab = 'drop';
   renderCurate();
+  if (poll && pb) pb.scrollTop = keepTop;
   clearTimeout(curPoll);
-  if (cur.job && cur.job.running) curPoll = setTimeout(() => { if (!$('panel').hidden && $('cu-root')) openCurate(); }, 1500);
+  if (cur.job && cur.job.running) curPoll = setTimeout(() => { if (!$('panel').hidden && $('cu-root')) openCurate('', true); }, 1500);
 }
 function curRows(){
   if (curTab === 'held') return cur.held || [];
@@ -4102,9 +4141,7 @@ async function saveCurateCfg(){
 
 /* 库外文档：只读打开，导入或学习 */
 async function openExt(n){
-  const d = await api('/field/ext?p=' + encodeURIComponent(n.p));
-  docData = Object.assign({}, d, {path:n.p});
-  return d;
+  return api('/field/ext?p=' + encodeURIComponent(n.p));
 }
 function extBanner(d){
   const fileLike = d.loc && d.loc.startsWith('/');
