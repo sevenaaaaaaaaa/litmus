@@ -535,6 +535,8 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 .cth .acts input[type=text]{flex:1;min-width:140px;width:auto!important;padding:6px 10px!important}
 .fd{padding-left:calc(var(--d, 0) * 14px)}
 .swl{display:flex;gap:4px;flex:none}
+#p-body a{color:var(--litmus)}
+#p-body kbd{font:500 var(--fs-1) var(--f-mono);opacity:.6;margin-left:4px}
 .swl i{width:22px;height:14px;border-radius:var(--r-xs);box-shadow:inset 0 0 0 1px oklch(var(--ink-c) / .12)}
 </style>
 </head>
@@ -670,10 +672,10 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>看板 / 视图</td><td>/视图 加一句描述</td></tr>
         <tr><td>多画布</td><td>/视角：存下一组文档 + 镜头 + 排布，随时切回；文档不复制、不挪动（场的位置按意思算，不再有手摆的多张画布）</td></tr>
         <tr><td>设计规范的作用域</td><td>/设计：全库、发布、单独一篇各配一套</td></tr>
-        <tr><td>批量整理</td><td>/整理：全库（可按区域、时间缩小）找过时的知识、成组的碎片、放错的位置、重复；合成、更新、归档都可撤销；AI 巡检分批看完整个范围</td></tr>
+        <tr><td>批量整理</td><td>/整理：全库（可按区域、时间缩小）找过时的知识、互相矛盾的写法（冲突）、成组的碎片、放错的位置、重复；合成、更新、归档都可撤销；AI 巡检分批看完整个范围</td></tr>
         <tr><td>加密分享</td><td>「更多」→ 加密分享（可设密码与有效期）；/分享 查看与撤回</td></tr>
         <tr><td>区域名</td><td>双击场上的区域名，或 /区域</td></tr>
-        <tr><td>学习</td><td>「更多」→ 学这一篇，或 /学习：合上原文一节一节复述，按讲得清不清楚排复习；/复习</td></tr>
+        <tr><td>学习</td><td>「更多」→ 学这一篇，或 /学习：合上原文一节一节复述，按讲得清不清楚排复习；「更多」→ 出题，或 /出题：一篇拆成几道题，每道题自己排复习；/复习 一题一题过（空格看答案，1–4 打分）</td></tr>
         <tr><td>内容日历</td><td>/日历：每天写了什么、哪天该复习</td></tr>
         <tr><td>凭证库、工作区切换、退出登录</td><td>/凭证、/库、/退出登录</td></tr>
         <tr><td>Agent 记忆</td><td>/记忆；/记住 加一句话</td></tr>
@@ -1964,7 +1966,8 @@ const CMDS = [
   ['/分享', '发出过的加密分享，可撤回', openShares],
   ['/数据源', '把下载、文稿、截图、各处的 md、agent 会话、LinkTo、Google 接进来（原处索引，导入才进库）', () => openSources()],
   ['/学习', '学正在读的这篇：合上原文，一节一节用自己的话讲', () => startLearn(reading)],
-  ['/复习', '今天该复习的文档，以及接下来的', openReview],
+  ['/复习', '今天该复习的题和文档：一题一题过，记得牢的隔得久', openReview],
+  ['/出题', '给正在读的这篇出几道复习题（配了模型由模型出，没配按规则出）', () => reading ? openQuestions(reading) : toast('先打开一篇')],
   ['/日历', '哪天写了什么、哪天该复习', () => openCalendar()],
   ['/记忆', 'Agent 记住的事：偏好、事实、决定', openMemory],
   ['/对话', '和 Agent 的对话记录（Conflow 对话流），一键提炼成知识卡', openConflow],
@@ -2099,7 +2102,7 @@ function openPanel(title, html){
   const f = $('p-body').querySelector('input'); if (f) setTimeout(() => f.focus(), 30);
   return $('p-body');
 }
-function closePanel(){ $('panel').hidden = true; $('p-body').innerHTML = ''; }
+function closePanel(){ $('panel').hidden = true; $('p-body').innerHTML = ''; quiz = null; }
 $('p-x').onclick = closePanel;
 $('panel').addEventListener('mousedown', e => { if (e.target === $('panel')) closePanel(); });
 /* 弹出菜单 */
@@ -2191,6 +2194,7 @@ $('s-more').onclick = () => {
     {label:'加密分享…', run:() => shareDoc(n)},
     '-',
     {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
+    ...(isMd ? [{label:'出题，逐题复习…', run:() => openQuestions(n)}] : []),
     '-',
     ...(isMd ? [{label:'导出为 Markdown', run:() => exportDoc(n, 'md')}, {label:'导出为 Word（.docx）', run:() => exportDoc(n, 'docx')}] : []),
     {label:'导出为 HTML', run:() => exportDoc(n, 'html')},
@@ -3110,7 +3114,7 @@ let lastOrganize = null;
 
 /* ═══════════ G2 全库整理：归位、改名、碎片、过时、重复、AI 巡检 ═══════════ */
 let orgState = {scope:{}, tab:'stale', plan:null};
-const ORG_TABS = [['stale', '过时'], ['fragments', '碎片'], ['moves', '归位'], ['renames', '改名'], ['dups', '重复'], ['ai', 'AI 建议']];
+const ORG_TABS = [['stale', '过时'], ['conflicts', '冲突'], ['fragments', '碎片'], ['moves', '归位'], ['renames', '改名'], ['dups', '重复'], ['ai', 'AI 建议']];
 function scopeQuery(){ const s = orgState.scope, o = {}; ['region', 'from', 'to'].forEach(k => { if (s[k]) o[k] = s[k]; }); return o; }
 async function openOrganize(){
   const box = openPanel('整理', '<span class="thinking"><i></i><i></i><i></i> 正在看' + (Object.keys(scopeQuery()).length ? '这个范围' : '整个库') + '</span>');
@@ -3118,7 +3122,7 @@ async function openOrganize(){
   let r; try { r = await api('/field/organize', {method:'POST', json:{scope:scopeQuery()}}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   orgState.plan = r;
   let patrol = {}; try { patrol = await api('/field/patrol'); } catch(e){}
-  const counts = {stale:r.stale_total || 0, fragments:r.fragments_total || 0, moves:(r.moves || []).length, renames:(r.renames || []).length, dups:(r.dups || []).length, ai:(patrol.tags || []).length + (patrol.titles || []).length};
+  const counts = {stale:r.stale_total || 0, conflicts:r.conflicts_total || 0, fragments:r.fragments_total || 0, moves:(r.moves || []).length, renames:(r.renames || []).length, dups:(r.dups || []).length, ai:(patrol.tags || []).length + (patrol.titles || []).length};
   if (!counts[orgState.tab]) orgState.tab = ORG_TABS.map(t => t[0]).find(k => counts[k]) || 'stale';
   const o = r.options || {regions:[]}, s = orgState.scope;
   const year = new Date().getFullYear(), td = todayStr();
@@ -3158,6 +3162,13 @@ function renderOrgTab(patrol){
       {label:'移到归档', run:() => archiveDoc(it.path)},
       {label:'没过时，以后别提醒', run:() => markStale(it, 'ok')}
     ]); });
+  } else if (tab === 'conflicts'){
+    const cf = r.conflicts || [];
+    b.innerHTML = cf.length ? '<p class="hint">几篇文档对同一件事写了不一样的值（「端口：7700」和「端口：7800」这种）。最新改过的排在最上面；可以把旧的改成新的，也可以标为不算冲突。' + (r.conflicts_total > cf.length ? '共 ' + r.conflicts_total + ' 组。' : '') + '</p>' + cf.map((c, i) => '<div class="frag"><div class="fh"><b>' + esc(c.key) + '</b><small>' + c.entries.length + ' 篇写法不一样</small><span class="oacts"><button class="btn" data-cf="' + i + '" data-do="ok">不算冲突</button></span></div>' +
+      c.entries.map((e, k) => '<div class="row orow"><div class="grow"><span>' + esc(e.value) + (k === 0 ? ' <em class="kind k-ok">最新</em>' : '') + '</span><small>《' + esc(e.title) + '》· ' + esc(e.updated) + ' · ' + esc(short(e.path)) + '</small></div><div class="oacts">' + see(e.path) + (k > 0 && e.value !== c.entries[0].value ? '<button class="btn" data-cf="' + i + '" data-k="' + k + '" data-do="fix">改成「' + esc(c.entries[0].value.slice(0, 16)) + '」</button>' : '') + '</div></div>').join('') + '</div>').join('')
+      : '<p class="empty">这个范围里没找到互相矛盾的写法。</p>';
+    b.querySelectorAll('[data-do="ok"]').forEach(x => x.onclick = async () => { const c = cf[+x.dataset.cf]; try { await api('/field/organize/conflict-ignore', {method:'POST', json:{sig:c.sig}}); x.closest('.frag').remove(); toast('记下了：这组以后不再提'); } catch(e){ toast(esc(e.message || e), true); } });
+    b.querySelectorAll('[data-do="fix"]').forEach(x => x.onclick = () => fixConflict(cf[+x.dataset.cf], +x.dataset.k, x));
   } else if (tab === 'fragments'){
     b.innerHTML = (r.fragments || []).length ? '<p class="hint">短于 ' + 280 + ' 字的笔记（随手记、零散段落，不分新旧）按意思连成组；跨的时间越长排得越前——放得越久越容易被忘掉。' + (r.fragments_total > r.fragments.length ? '共 ' + r.fragments_total + ' 组。' : '') + '</p>' + r.fragments.map((g, i) => {
       const months = Math.round(g.span_days / 30);
@@ -3184,6 +3195,22 @@ function renderOrgTab(patrol){
     if ($('og-go')) $('og-go').onclick = () => runOrganizeOps({tg:[...b.querySelectorAll('input[data-tg]:checked')].map(c => tg[+c.dataset.tg]), ti:[...b.querySelectorAll('input[data-ti]:checked')].map(c => ti[+c.dataset.ti])});
   }
   b.querySelectorAll('[data-see]').forEach(x => x.onclick = e => { e.preventDefault(); const n = byPath.get(x.dataset.see); if (n){ closePanel(); openDoc(n); } });
+}
+/* 冲突：把旧文档里那一行的值改成最新的写法（只改那一处，能撤销） */
+async function fixConflict(c, k, btn){
+  const e = c.entries[k], to = c.entries[0].value;
+  let d; try { d = await api('/doc?path=' + encP(e.path)); } catch(x){ toast(esc(x.message || x), true); return; }
+  const src = d.source || '', lines = src.split('\n');
+  const i = lines.findIndex(l => l.includes(e.k) && l.includes(e.value));
+  if (i < 0){ toast('那一行找不到了（文档改过）：打开它自己改', true); return; }
+  lines[i] = lines[i].replace(e.value, to);
+  const md = lines.join('\n');
+  if (reading && reading.p === e.path && editing) await flushSave();
+  try { await api('/doc?path=' + encP(e.path), {method:'PUT', body:md, headers:{'content-type':'text/markdown'}}); }
+  catch(x){ toast('<b>没改成</b>：' + esc(x.message || x), true); return; }
+  btn.closest('.row').querySelector('.grow span').textContent = to; btn.remove();
+  toastAct('《' + esc(e.title) + '》里的「' + esc(e.k) + '」改成了 <b>' + esc(to) + '</b>', '撤销', async () => { try { await api('/doc?path=' + encP(e.path), {method:'PUT', body:src, headers:{'content-type':'text/markdown'}}); toast('改回去了'); } catch(x){ toast(esc(x.message || x), true); } });
+  if (reading && reading.p === e.path){ const n = reading; editing = false; openDoc(n); }
 }
 /* 批量执行：沿用 F3/F4 的撤销清单 */
 async function runOrganizeOps({mv = [], rn = [], tg = [], ti = []}){
@@ -3635,24 +3662,93 @@ async function finishLearn(){
   document.body.classList.remove('peek');
 }
 function endLearn(quiet){ if (!learnRun) return; learnRun.el.remove(); learnRun = null; document.body.classList.remove('learning', 'peek'); }
+/* ───────── 逐题复习：每篇几道题，每道题自己排下次 ───────── */
+async function openQuestions(n, regen){
+  if (!n || !/\.md$/i.test(n.p) || n.k === 'ext'){ toast('只能给库里的 Markdown 文档出题'); return; }
+  const box = openPanel('出题 · ' + (n.full || n.title), '<span class="thinking"><i></i><i></i><i></i> ' + (regen ? '正在出题' : '正在读') + '</span>');
+  let r;
+  try {
+    r = await api('/field/learn/questions?path=' + encP(n.p));
+    if (regen || !(r.qs || []).length){ box.innerHTML = '<span class="thinking"><i></i><i></i><i></i> 正在出题' + (aiInfo && aiInfo.configured ? '（让模型出）' : '（按规则：加粗的词、「X：Y」、每个小节）') + '</span>'; r = await api('/field/learn/questions', {method:'POST', json:{path:n.p}}); }
+  } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  if ($('panel').hidden) return;
+  const qs = r.qs || [];
+  const when = q => !q.reps ? '新题' : (q.due * 1000 <= Date.now() ? '该复习了' : Math.max(1, Math.round((q.due * 1000 - Date.now()) / DAY)) + ' 天后') + ' · 复习过 ' + q.reps + ' 次';
+  box.innerHTML = (qs.length ? '<p class="hint" style="margin-top:0">' + (r.by === 'ai' ? '模型出的' : r.by === 'rule' ? '按规则出的' : '') + '题，都能改。每道题自己排复习：记得越牢，隔得越久。</p>' + qs.map(q => '<div class="cth" data-q="' + esc(q.id) + '"><div class="ct"><b>' + esc(q.q) + '</b></div><div class="rp">' + esc(q.a) + '</div><small>' + when(q) + (q.by === 'you' ? ' · 你改过' : '') + '</small>' +
+      '<div class="acts"><button class="btn" data-a="edit">改</button><button class="btn" data-a="del">删</button></div></div>').join('') : '<p class="empty">这篇出不了题。可以自己加一道。</p>') +
+    '<label for="qq-q">自己加一道</label><input type="text" id="qq-q" placeholder="问题"><input type="text" id="qq-a" placeholder="答案" style="margin-top:8px">' +
+    '<div class="acts"><button class="btn" id="qq-add">加上</button><button class="btn" id="qq-regen">重新出题（复习过的留着）</button>' + (qs.length ? '<button class="btn pri" id="qq-go">现在复习这 ' + qs.length + ' 题</button>' : '') + '</div>';
+  const save = async json => { try { await api('/field/learn/question', {method:'POST', json}); openQuestions(n); } catch(e){ toast(esc(e.message || e), true); } };
+  box.querySelectorAll('[data-q]').forEach(el => {
+    const id = el.dataset.q, q = qs.find(x => x.id === id);
+    el.querySelector('[data-a="del"]').onclick = e => { const b = e.currentTarget; if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次'; b.classList.add('danger'); return; } save({id, delete:true}); };
+    el.querySelector('[data-a="edit"]').onclick = () => {
+      el.innerHTML = '<input type="text" value="' + esc(q.q) + '"><input type="text" value="' + esc(q.a) + '" style="margin-top:6px"><div class="acts"><button class="btn pri">存</button><button class="btn">算了</button></div>';
+      const [iq, ia] = el.querySelectorAll('input'), [ok, no] = el.querySelectorAll('button');
+      iq.focus(); ok.onclick = () => save({id, q:iq.value, a:ia.value}); no.onclick = () => openQuestions(n);
+    };
+  });
+  $('qq-add').onclick = () => { const q = $('qq-q').value.trim(), a = $('qq-a').value.trim(); if (!q || !a){ toast('问题和答案都要填'); return; } save({path:n.p, q, a}); };
+  $('qq-regen').onclick = () => openQuestions(n, true);
+  if ($('qq-go')) $('qq-go').onclick = () => startQuiz(qs);
+}
+/* 一题一题过：先自己想，再看答案，按记得多牢打分（键盘：空格看答案，1–4 打分） */
+let quiz = null;
+function startQuiz(list){
+  if (!list || !list.length){ toast('没有要复习的题'); return; }
+  quiz = {list:list.slice(), i:0, shown:false, tally:{again:0, hard:0, good:0, easy:0}};
+  renderQuiz();
+}
+function renderQuiz(){
+  if (!quiz) return;
+  if (quiz.i >= quiz.list.length){
+    const t = quiz.tally, n = quiz.list.length; quiz = null;
+    openPanel('复习完了', '<p style="margin-top:0">过了 <b>' + n + '</b> 道题：很熟 ' + t.easy + '、记得 ' + t.good + '、模糊 ' + t.hard + '、忘了 ' + t.again + '。</p><p class="hint">忘了的明天再来；记得牢的，下次隔得更久。</p><div class="acts"><button class="btn pri" id="qz-done">好</button><button class="btn" id="qz-more">再看看还有没有</button></div>');
+    $('qz-done').onclick = closePanel; $('qz-more').onclick = openReview; return;
+  }
+  const q = quiz.list[quiz.i], doc = byPath.get(q.doc);
+  const box = openPanel('复习 · ' + (quiz.i + 1) + ' / ' + quiz.list.length, '<p class="hint" style="margin-top:0">出自 ' + (doc ? '<a href="#" id="qz-doc">《' + esc(doc.full || doc.title) + '》</a>' : esc(q.doc)) + '</p>' +
+    '<p style="font:600 var(--fs-5)/1.6 var(--f-display);margin:8px 0 14px">' + esc(q.q) + '</p>' +
+    (quiz.shown ? '<div class="note" style="padding:12px 14px;border-radius:var(--r-md);background:var(--litmus-wash);white-space:pre-wrap">' + esc(q.a) + '</div><div class="acts"><button class="btn" data-g="again">忘了 <kbd>1</kbd></button><button class="btn" data-g="hard">模糊 <kbd>2</kbd></button><button class="btn pri" data-g="good">记得 <kbd>3</kbd></button><button class="btn" data-g="easy">很熟 <kbd>4</kbd></button></div>'
+      : '<div class="acts"><button class="btn pri" id="qz-show">想好了，看答案 <kbd>空格</kbd></button><button class="btn" id="qz-skip">跳过</button></div>'));
+  if ($('qz-doc')) $('qz-doc').onclick = e => { e.preventDefault(); quiz = null; closePanel(); openDoc(doc); };
+  if ($('qz-show')) $('qz-show').onclick = () => { quiz.shown = true; renderQuiz(); };
+  if ($('qz-skip')) $('qz-skip').onclick = () => { quiz.i++; quiz.shown = false; renderQuiz(); };
+  box.querySelectorAll('[data-g]').forEach(b => b.onclick = () => gradeQuiz(b.dataset.g));
+}
+async function gradeQuiz(g){
+  if (!quiz || !quiz.shown) return;
+  const q = quiz.list[quiz.i]; quiz.tally[g]++; quiz.i++; quiz.shown = false;
+  api('/field/learn/review', {method:'POST', json:{id:q.id, grade:g}}).catch(e => toast('<b>这题的分没记上</b>：' + esc(e.message || e), true));
+  renderQuiz();
+}
+document.addEventListener('keydown', e => {
+  if (!quiz || $('panel').hidden || e.metaKey || e.ctrlKey || e.altKey || (document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName))) return;
+  if (e.key === ' ' && !quiz.shown){ e.preventDefault(); quiz.shown = true; renderQuiz(); }
+  else if (quiz.shown && '1234'.includes(e.key)){ e.preventDefault(); gradeQuiz(['again', 'hard', 'good', 'easy'][+e.key - 1]); }
+});
 async function openReview(){
   await loadLearn();
   const now = Date.now() / 1000, cards = Object.entries(learnState.cards || {}).map(([p, c]) => ({p, c, n:byPath.get(p)})).filter(x => x.n);
   const due = cards.filter(x => x.c.due <= now).sort((a, b) => a.c.due - b.c.due), soon = cards.filter(x => x.c.due > now).sort((a, b) => a.c.due - b.c.due).slice(0, 20);
   const when = t => { const d = Math.round((t * 1000 - Date.now()) / DAY); return d <= 0 ? '今天' : d === 1 ? '明天' : d + ' 天后'; };
   const row = x => '<div class="row"><div class="grow"><span>' + esc(x.n.full) + '</span><small>' + (x.c.reps || 0) + ' 次 · 上次「' + ({good:'讲清楚了', hard:'有点模糊', again:'没讲出来', easy:'很轻松'}[x.c.grade] || '') + '」 · ' + when(x.c.due) + '</small></div><button class="btn" data-ln="' + esc(x.p) + '">开始</button></div>';
-  const box = openPanel('复习', '<p class="hint" style="margin-top:0">学过的文档按你讲得清不清楚排下次复习：讲得越清楚，隔得越久。复习进度存在库根的 .litmus/ 里，会跟着库同步。</p>' +
-    '<label>今天该复习 · ' + due.length + '</label>' + (due.length ? due.map(row).join('') : '<p class="empty">今天没有要复习的。</p>') +
+  let qd = {due:[], due_total:0, soon:0, total:0}; try { qd = await api('/field/learn/due'); } catch(e){}
+  const box = openPanel('复习', '<p class="hint" style="margin-top:0">题一道一道排：记得越牢，下次隔得越久；整篇用自己的话讲一遍的，按讲得清不清楚排。进度存在库根的 .litmus/ 里，跟着库同步。</p>' +
+    '<label>今天该复习的题 · ' + qd.due_total + '</label>' + (qd.due_total ? '<div class="acts" style="margin-top:0"><button class="btn pri" id="rv-go">开始（' + Math.min(qd.due_total, 30) + ' 题）</button><span class="hint" style="margin:0">' + (qd.soon ? '接下来一周还有 ' + qd.soon + ' 题' : '') + '</span></div>' : '<p class="empty">' + (qd.total ? '今天的题都复习过了' + (qd.soon ? '，接下来一周还有 ' + qd.soon + ' 题' : '') + '。' : '还没有题。打开一篇，「⋯」→ 出题，或输入 /出题。') + '</p>') +
+    '<label>今天该复习的文档 · ' + due.length + '</label>' + (due.length ? due.map(row).join('') : '<p class="empty">今天没有要复习的。</p>') +
     '<label>接下来</label>' + (soon.length ? soon.map(row).join('') : '<p class="empty">还没有学过的文档。打开一篇，「⋯」→ 学这一篇，或输入 /学习。</p>'));
   box.querySelectorAll('[data-ln]').forEach(b => b.onclick = () => { closePanel(); startLearn(byPath.get(b.dataset.ln)); });
+  if ($('rv-go')) $('rv-go').onclick = () => startQuiz(qd.due.slice(0, 30));
   const all = [...due, ...soon].map(x => x.n); if (all.length){ lastRel = all.map(n => ({n, norm:due.some(x => x.n === n) ? 1 : .45})); paint(lastRel, {soft:true}); }
 }
 /* 打开知识场时：有该复习的就提醒一次（每天一次） */
 setTimeout(async () => {
   await loadLearn(); const now = Date.now() / 1000;
-  const due = Object.entries(learnState.cards || {}).filter(([p, c]) => c.due <= now && byPath.has(p)).length;
+  let due = Object.entries(learnState.cards || {}).filter(([p, c]) => c.due <= now && byPath.has(p)).length;
+  due += Object.values(learnState.qs || {}).filter(x => x.due <= now && byPath.has(x.doc)).length;
   let seen = ''; try { seen = localStorage.getItem('litmus_review_nudge') || ''; } catch(e){}
-  if (due && seen !== todayStr()){ try { localStorage.setItem('litmus_review_nudge', todayStr()); } catch(e){} toastAct('今天有 <b>' + due + '</b> 篇该复习了', '开始', openReview); }
+  if (due && seen !== todayStr()){ try { localStorage.setItem('litmus_review_nudge', todayStr()); } catch(e){} toastAct('今天有 <b>' + due + '</b> 项该复习了', '开始', openReview); }
 }, 4000);
 
 /* ═══════════ F4 日历：哪天写了什么、哪天该复习 ═══════════ */

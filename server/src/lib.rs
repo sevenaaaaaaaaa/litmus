@@ -30,6 +30,7 @@ mod field;
 mod connectors;
 mod curate;
 mod wizard;
+mod quiz;
 mod field_tools;
 mod jobs;
 mod organize;
@@ -211,6 +212,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/learn", post(field_tools::learn))
         .route("/field/learn/state", get(field_tools::learn_state_get))
         .route("/field/learn/grade", post(field_tools::learn_grade))
+        .route("/field/learn/questions", get(quiz::list).post(quiz::generate))
+        .route("/field/learn/question", post(quiz::edit))
+        .route("/field/learn/review", post(quiz::review))
+        .route("/field/learn/due", get(quiz::due))
+        .route("/field/organize/conflict-ignore", post(organize::conflict_ignore))
         .route("/field/localize", post(field_tools::localize))
         .route("/field/merge", post(organize::merge))
         .route("/field/refresh", post(organize::refresh))

@@ -110,7 +110,7 @@ v0.2 到 v0.10 的界面改版，改的都是配色、阴影、字体和入口�
 | 接回（0.20） | 经典界面里还没接回的几样，按知识场的方式接回：评论（划选正文 →「评论」，锚在原文那一段；`/comments` 存 `.litmus/local/comments/`，文档改名、移动、文件夹移动时跟着走，删进回收站时停在 `comments/.trash/` 等找回）；`/文件夹`（`/tree` + 场上的文档合并出完整的文件夹，改名或移动走 `/dir/move`：按路径写的链接、场上位置、评论一起跟过去）；阅读页「更多」复制一份、下载原文件；回收站彻底删除、清空（按回收站里的名字精确到某一份）；`/存档` 分支查看、切换、新建（分支名校验，切换后重建索引，远端不能是 GitHub）；`/主题` 11 套配色预设（只换纸、墨、线、石蕊蓝，强调色太灰时保留石蕊蓝；存本机 `litmus_preset`，首帧前生效）；`/设计` 全库 / 发布 / 单篇三种作用域；`/对话` Conflow 对话提炼知识卡。多画布不恢复：场的位置按意思算，`/视角` 取代手摆的多张画布。 |
 | 搬家（0.21） | `server/src/wizard.rs`：来源是文件夹或 zip（Notion 的 zip 套 zip 一并解开，去掉统一的顶层文件夹，跳过隐藏与 `__MACOSX`、库自己）。`/field/wizard/plan` 只读：认来源（有 `.obsidian` → Obsidian；名字带 32 位 id → Notion；docx 为主 → 飞书；否则 Markdown），算每篇的新路径（去 Notion id、去非法字符、批内与库内去重）、附件路径（`Assets/imported/<来源>/`，slug 化）、链接改写的命中与落空。`/field/wizard/run` 在后台低优先级线程里先放附件再写文档（`put_doc`），内容和库里相同（含规范化后的形态）就跳过；记 `.litmus/local/wizard/runs.json`，`/field/wizard/undo` 整批进回收站、附件拿掉。每篇 frontmatter 记 `imported_from`，`imported_origins` 认它，库外同一处的条目不再上场。顺带：路由的请求体上限从默认 2MB 放到 2GB。 |
 
-其他未做：学习按节自评，不做逐题间隔重复；凭证库 0.22 起 AES-256-GCM 加密（`kernel_store::secrets`：钥匙在 macOS 钥匙串或 `~/.config/litmus/keys/<kid>.key`，或 `LITMUS_SECRETS_KEY`；换设备用恢复码解开）；过时检测靠规则 + 可选 AI 核实，不做跨文档事实冲突比对。
+补记（原来没做、后来补上的）：学习按节自评之外，0.23 起有逐题间隔重复（`server/src/quiz.rs`，题存 `.litmus/learn.json` 的 `qs`）；凭证库 0.22 起 AES-256-GCM 加密（`kernel_store::secrets`：钥匙在 macOS 钥匙串或 `~/.config/litmus/keys/<kid>.key`，或 `LITMUS_SECRETS_KEY`；换设备用恢复码解开）；过时检测靠规则 + 可选 AI 核实，0.23 起有跨文档事实冲突（`organize::facts_of` 抽「键：值」与两列表格，`conflicts` 按键比值，要求意思相近或带数字）。
 
 ## 6. 风险
 

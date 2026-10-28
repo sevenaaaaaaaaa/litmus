@@ -626,13 +626,8 @@ pub async fn digest_accept(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
     let mut store = load_store(&root);
     let mut written = Vec::new();
     let now = now_secs();
-    let mut learn: Value = read_synced(&root, "learn.json", "field-learn.json").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "cards": {} }));
-    if !learn.is_object() {
-        learn = json!({ "cards": {} });
-    }
-    if !learn["cards"].is_object() {
-        learn["cards"] = json!({});
-    }
+    let _lg = super::field_tools::learn_lock();
+    let mut learn: Value = super::field_tools::learn_load(&root);
     for d in store.drafts.iter_mut().filter(|d| d.status == "pending" && ids.contains(&d.id)) {
         let name = safe_name(&d.title);
         let name = if name.is_empty() { "学习笔记".to_string() } else { name };

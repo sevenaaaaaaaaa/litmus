@@ -40,6 +40,8 @@ pub struct DocMeta {
     pub plans: Vec<String>,
     /// 库外来源名（库里的文档为 None）
     pub src: Option<String>,
+    /// 写下的事实「键：值」：跨文档冲突比对用（库外的不抽）
+    pub facts: Vec<super::organize::Fact>,
 }
 
 pub struct Cached {
@@ -353,11 +355,11 @@ pub async fn current(st: &Arc<AppState>, rebuild: bool) -> Result<Arc<Cached>, S
                 let (title, text) = &texts[p];
                 if let Some((src, date, mtime, _)) = ext_meta.get(p) {
                     let (chars, todo, plans) = super::organize::signals(text);
-                    return DocMeta { path: p.clone(), title: title.clone(), kind: "ext", date: date.clone(), excerpt: excerpt_of(text), mtime: *mtime, tags: Vec::new(), chars, todo, plans, src: Some(src.clone()) };
+                    return DocMeta { path: p.clone(), title: title.clone(), kind: "ext", date: date.clone(), excerpt: excerpt_of(text), mtime: *mtime, tags: Vec::new(), chars, todo, plans, src: Some(src.clone()), facts: Vec::new() };
                 }
                 let mtime = stats.get(p).map(|s| s.0).unwrap_or(0);
                 let (chars, todo, plans) = super::organize::signals(text);
-                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()), chars, todo, plans, src: None }
+                DocMeta { path: p.clone(), title: title.clone(), kind: kind_of(p), date: date_of(text, mtime), excerpt: excerpt_of(text), mtime, tags: extract_memo_tags(&text.chars().take(4000).collect::<String>()), chars, todo, plans, src: None, facts: super::organize::facts_of(text) }
             })
             .collect();
         // 派生层落盘：只存坐标（可删可重建）
@@ -625,7 +627,7 @@ pub async fn organize_plan(State(st): State<Arc<AppState>>, h: HeaderMap, body: 
         (Vec::new(), Vec::new(), None)
     };
     let mut out = json!({ "moves": moves, "renames": renames, "dups": dups, "tags": tags, "titles": titles, "ai": want_ai, "ai_note": ai_note, "considered": n });
-    if let (Some(o), Value::Object(x)) = (out.as_object_mut(), super::organize::plan_extras(&c, &scope)) {
+    if let (Some(o), Value::Object(x)) = (out.as_object_mut(), super::organize::plan_extras(&c, &scope, &root)) {
         o.extend(x);
     }
     out["options"] = super::organize::scope_options(&c, &root);
@@ -2671,6 +2673,52 @@ for line in sys.stdin:
         let (st, c) = call(&app, &t, "GET", "/secrets/recovery", "").await;
         assert_eq!(st, 200);
         assert_eq!(c["code"].as_str().unwrap().chars().filter(|c| c.is_ascii_hexdigit()).count(), 64);
+    }
+
+    /// 逐题复习：按规则出题、打分排期、到期队列、改题删题；跨文档事实冲突能找出来、能标为不算
+    #[tokio::test]
+    async fn questions_are_scheduled_one_by_one_and_conflicting_facts_surface() {
+        let (app, t, _dir) = app();
+        seed(&app, &t).await;
+        let doc = "Notes/同步/端口.md";
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc(doc)), "# 同步服务\n\n同步 冲突 合并 CRDT 设备 离线。\n\n- 端口：7700\n- 部署目录：/www/wwwroot/litmus\n\n## 冲突策略\n\n同名不同内容另存冲突副本，绝不静默覆盖任何一侧。\n\n离线后用 **CRDT** 合并改动。").await;
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc("Notes/同步/端口旧.md")), "# 同步服务（旧）\n\n同步 冲突 合并 CRDT 设备 离线。\n\n- 端口：7800\n- 部署目录：/www/wwwroot/litmus\n").await;
+        let (st, r) = call(&app, &t, "POST", "/field/learn/questions", &format!(r#"{{"path":"{doc}"}}"#)).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["by"], "rule");
+        let qs = r["qs"].as_array().unwrap();
+        assert!(qs.len() >= 3, "{r}");
+        assert!(qs.iter().any(|q| q["q"].as_str().unwrap().contains("端口") && q["a"] == "7700"), "{r}");
+        let (_, d) = call(&app, &t, "GET", "/field/learn/due", "").await;
+        assert_eq!(d["due_total"].as_u64(), Some(qs.len() as u64), "新出的题马上能复习");
+        let id = qs[0]["id"].as_str().unwrap().to_string();
+        let (st, r) = call(&app, &t, "POST", "/field/learn/review", &format!(r#"{{"id":"{id}","grade":"good"}}"#)).await;
+        assert_eq!(st, 200);
+        assert_eq!(r["q"]["interval"].as_f64(), Some(3.0));
+        let (_, d) = call(&app, &t, "GET", "/field/learn/due", "").await;
+        assert_eq!(d["due_total"].as_u64(), Some(qs.len() as u64 - 1));
+        // 重新出题：复习过的那道留着（进度不丢）
+        let (_, r) = call(&app, &t, "POST", "/field/learn/questions", &format!(r#"{{"path":"{doc}"}}"#)).await;
+        assert!(r["qs"].as_array().unwrap().iter().any(|q| q["id"] == id.as_str() && q["reps"] == 1), "{r}");
+        // 自己改一道、删一道、加一道
+        let (_, r) = call(&app, &t, "POST", "/field/learn/question", &format!(r#"{{"id":"{id}","a":"改过的答案"}}"#)).await;
+        assert!(r["qs"].as_array().unwrap().iter().any(|q| q["a"] == "改过的答案" && q["by"] == "you"));
+        let n0 = r["qs"].as_array().unwrap().len();
+        let (_, r) = call(&app, &t, "POST", "/field/learn/question", &format!(r#"{{"id":"{id}","delete":true}}"#)).await;
+        assert_eq!(r["qs"].as_array().unwrap().len(), n0 - 1);
+        let (_, r) = call(&app, &t, "POST", "/field/learn/question", &format!(r#"{{"path":"{doc}","q":"默认端口？","a":"7700"}}"#)).await;
+        assert_eq!(r["qs"].as_array().unwrap().len(), n0);
+        // 冲突：两篇讲同一件事，端口写得不一样；部署目录一样的不算
+        let (_, o) = call(&app, &t, "POST", "/field/organize", "{}").await;
+        let cf = o["conflicts"].as_array().unwrap();
+        let port = cf.iter().find(|c| c["key"] == "端口").unwrap_or_else(|| panic!("{o}"));
+        let vals: Vec<&str> = port["entries"].as_array().unwrap().iter().map(|e| e["value"].as_str().unwrap()).collect();
+        assert!(vals.contains(&"7700") && vals.contains(&"7800"), "{port}");
+        assert!(!cf.iter().any(|c| c["key"] == "部署目录"), "{o}");
+        let sig = port["sig"].as_str().unwrap();
+        call(&app, &t, "POST", "/field/organize/conflict-ignore", &serde_json::json!({ "sig": sig }).to_string()).await;
+        let (_, o) = call(&app, &t, "POST", "/field/organize", "{}").await;
+        assert!(!o["conflicts"].as_array().unwrap().iter().any(|c| c["key"] == "端口"), "标为不算以后不再出现");
     }
 
     #[tokio::test]

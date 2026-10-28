@@ -60,6 +60,166 @@ pub fn signals(text: &str) -> (usize, bool, Vec<String>) {
     (chars, todo, plans)
 }
 
+// ───────── 跨文档事实冲突 ─────────
+
+/// 一条写下的事实：「端口：7700」「- **发布日期**：2026-03-01」「| 服务器 | 172.96.253.73 |」
+#[derive(Clone, Debug)]
+pub struct Fact {
+    /// 规范化的键（去记号、小写、去空白）
+    pub key: String,
+    /// 原样的键与值（显示、改写用）
+    pub k: String,
+    pub v: String,
+    /// 规范化的值（比较用）
+    pub norm: String,
+}
+
+/// 每篇自己的、不同才正常的键：不拿来比
+const DOC_OWN: [&str; 40] = ["日期", "时间", "作者", "来源", "备注", "说明", "状态", "标签", "tags", "链接", "原文", "原件", "问题", "原因", "结论", "决定", "待办", "例如", "比如", "注意", "提示", "标题", "名称", "类型", "结果", "步骤", "目标", "背景", "摘要", "关键词", "分类", "进度", "评分", "地点", "参与", "参会", "主持", "记录", "下一步", "todo"];
+
+fn strip_marks(s: &str) -> String {
+    s.chars().filter(|c| !matches!(c, '*' | '`' | '_' | '~' | '=')).collect::<String>().trim().to_string()
+}
+
+pub fn facts_of(text: &str) -> Vec<Fact> {
+    let mut out = Vec::new();
+    let mut fence = false;
+    let mut in_fm = false;
+    let lines: Vec<&str> = text.lines().collect();
+    let is_sep = |l: &str| { let t = l.trim(); t.starts_with('|') && t.contains("--") && t.chars().all(|x| matches!(x, '-' | ':' | ' ' | '|')) };
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim();
+        if i == 0 && t == "---" {
+            in_fm = true;
+            continue;
+        }
+        if in_fm {
+            if t == "---" { in_fm = false; }
+            continue;
+        }
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fence = !fence;
+            continue;
+        }
+        if fence || t.starts_with('#') || t.is_empty() {
+            continue;
+        }
+        let (k, v) = if t.starts_with('|') {
+            // 两列的表格行；表头（下一行是 |---|）和分隔行不算
+            let cells: Vec<&str> = t.trim_matches('|').split('|').map(|c| c.trim()).collect();
+            if cells.len() != 2 || is_sep(t) || lines.get(i + 1).map(|n| is_sep(n)).unwrap_or(false) {
+                continue;
+            }
+            (cells[0].to_string(), cells[1].to_string())
+        } else {
+            let item = t.trim_start_matches(['-', '*', '+', '>', ' ']).trim();
+            let Some((k, v)) = item.split_once('：').or_else(|| item.split_once(": ")) else { continue };
+            (k.to_string(), v.to_string())
+        };
+        let k = strip_marks(&k);
+        let v = strip_marks(v.trim().trim_end_matches(['。', '；', ';', '，', ',']));
+        let kn: String = k.to_lowercase().chars().filter(|c| !c.is_whitespace() && !matches!(c, '「' | '」' | '"' | '\'' | '（' | '）' | '(' | ')')).collect();
+        let kc = kn.chars().count();
+        let ascii = kn.chars().all(|c| c.is_ascii());
+        if kc < 2 || kc > 16 || (ascii && kc < 3) || kn.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(true) || DOC_OWN.contains(&kn.as_str()) || k.split_whitespace().count() > 3 || k.contains("http") {
+            continue;
+        }
+        let vc = v.chars().count();
+        // 像个事实：带数字，或者很短
+        if vc == 0 || vc > 60 || !(v.chars().any(|c| c.is_ascii_digit()) || vc <= 16) {
+            continue;
+        }
+        let norm: String = v.to_lowercase().chars().filter(|c| !c.is_whitespace()).collect();
+        out.push(Fact { key: kn, k, v, norm });
+        if out.len() >= 40 {
+            break;
+        }
+    }
+    out
+}
+
+/// 同一个键，不同的文档写了不同的值。只比「像事实」的键，且两篇要么意思相近、要么值里有数字。
+pub fn conflicts(c: &Cached, keep: &[bool], ignored: &std::collections::HashSet<String>, limit: usize) -> (Vec<Value>, usize) {
+    let knn = c.knn();
+    let mut by_key: HashMap<&str, Vec<(usize, &Fact)>> = HashMap::new();
+    for (i, m) in c.meta.iter().enumerate() {
+        if !keep[i] || m.src.is_some() || m.kind == "source" {
+            continue;
+        }
+        let mut seen = std::collections::HashSet::new();
+        for f in &m.facts {
+            // 同一篇里同一个键只取第一次
+            if seen.insert(f.key.as_str()) {
+                by_key.entry(f.key.as_str()).or_default().push((i, f));
+            }
+        }
+    }
+    let near = |a: usize, b: usize| knn.get(a).map(|v| v.iter().any(|&(j, s)| j == b && s >= 0.25)).unwrap_or(false) || knn.get(b).map(|v| v.iter().any(|&(j, s)| j == a && s >= 0.25)).unwrap_or(false);
+    let mut out: Vec<(i64, Value)> = Vec::new();
+    for (key, list) in by_key {
+        let docs: std::collections::HashSet<usize> = list.iter().map(|x| x.0).collect();
+        if docs.len() < 2 || docs.len() > 8 {
+            continue;
+        }
+        let vals: std::collections::HashSet<&str> = list.iter().map(|x| x.1.norm.as_str()).collect();
+        if vals.len() < 2 {
+            continue;
+        }
+        let digits = list.iter().all(|x| x.1.v.chars().any(|c| c.is_ascii_digit()));
+        let related = list.iter().any(|&(a, fa)| list.iter().any(|&(b, fb)| a != b && fa.norm != fb.norm && (near(a, b) || digits && key.chars().count() >= 3)));
+        if !related {
+            continue;
+        }
+        let mut entries: Vec<&(usize, &Fact)> = list.iter().collect();
+        entries.sort_by_key(|x| std::cmp::Reverse(c.meta[x.0].mtime));
+        let mut sig_parts: Vec<String> = entries.iter().map(|(i, f)| format!("{}={}", c.meta[*i].path, f.norm)).collect();
+        sig_parts.sort();
+        let sig = format!("{key}|{}", sig_parts.join("|"));
+        if ignored.contains(&sig) {
+            continue;
+        }
+        let newest = c.meta[entries[0].0].mtime;
+        let score = (if digits { 100 } else { 50 }) + entries.len() as i64 * 5 + newest / 86_400 / 365;
+        out.push((
+            score,
+            json!({
+                "key": entries[0].1.k, "sig": sig,
+                "entries": entries.iter().map(|(i, f)| {
+                    let m = &c.meta[*i];
+                    json!({ "path": m.path, "title": m.title, "k": f.k, "value": f.v, "updated": super::field::ymd(m.mtime) })
+                }).collect::<Vec<_>>(),
+            }),
+        ));
+    }
+    let total = out.len();
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    (out.into_iter().take(limit).map(|x| x.1).collect(), total)
+}
+
+fn conflict_ignore_path(root: &std::path::Path) -> std::path::PathBuf {
+    root.join(".litmus/local/conflicts-ignore.json")
+}
+pub fn conflict_ignored(root: &std::path::Path) -> std::collections::HashSet<String> {
+    std::fs::read_to_string(conflict_ignore_path(root)).ok().and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()).unwrap_or_default().into_iter().collect()
+}
+
+/// POST /field/organize/conflict-ignore {sig}：这组不算冲突，以后别提
+pub async fn conflict_ignore(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let Some(sig) = req.get("sig").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else { return err(StatusCode::BAD_REQUEST, "要 sig").into_response() };
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let mut set: Vec<String> = conflict_ignored(&root).into_iter().collect();
+    if !set.iter().any(|x| x == sig) {
+        set.push(sig.to_string());
+    }
+    let _ = std::fs::create_dir_all(root.join(".litmus/local"));
+    let _ = std::fs::write(conflict_ignore_path(&root), serde_json::to_vec(&set).unwrap_or_default());
+    Json(json!({ "ok": true })).into_response()
+}
+
 /// 行里的日期：2026-03-15、2026-03、2026/3/15、2026年3月(15日)。统一成 YYYY-MM 或 YYYY-MM-DD。
 pub fn dates_in(s: &str) -> Vec<String> {
     let b: Vec<char> = s.chars().collect();
@@ -710,14 +870,15 @@ pub fn inbound_counts(c: &Cached) -> Vec<usize> {
 }
 
 /// 给 /field/organize 用：在范围内算碎片与过时，带总数。
-pub fn plan_extras(c: &Cached, scope: &Scope) -> Value {
+pub fn plan_extras(c: &Cached, scope: &Scope, root: &std::path::Path) -> Value {
     let keep = scope.keep(c);
     let inbound = inbound_counts(c);
     let (frag, nf) = fragments(c, &keep, 60);
     let (st, ns) = stale(c, &keep, &inbound, 200);
+    let (cf, nc) = conflicts(c, &keep, &conflict_ignored(root), 100);
     let in_scope = keep.iter().filter(|&&k| k).count();
     let names_note = if scope.is_all() { "全库".to_string() } else { scope_label(scope) };
-    json!({ "fragments": frag, "fragments_total": nf, "stale": st, "stale_total": ns, "in_scope": in_scope, "scope_label": names_note })
+    json!({ "fragments": frag, "fragments_total": nf, "stale": st, "stale_total": ns, "conflicts": cf, "conflicts_total": nc, "in_scope": in_scope, "scope_label": names_note })
 }
 
 /// 范围选择器要用的：区域（自动名 → 显示名，篇数）与最早最晚日期。
@@ -738,6 +899,22 @@ pub fn scope_options(c: &Cached, root: &std::path::Path) -> Value {
         }
     }
     json!({ "regions": regions, "from": lo, "to": hi })
+}
+
+#[cfg(test)]
+mod fact_tests {
+    use super::*;
+
+    #[test]
+    fn facts_come_from_key_value_lines_and_two_column_tables() {
+        let md = "---\nstatus: draft\n---\n# 部署\n\n- **端口**：7700\n- 服务器：172.96.253.73\n- 日期：2026-01-01\n这一句里有：冒号但很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长\n\n| 项 | 值 |\n|---|---|\n| 版本 | 0.19 |\n\n```\n密码：不算\n```\n";
+        let f = facts_of(md);
+        let kv: Vec<(String, String)> = f.iter().map(|x| (x.key.clone(), x.v.clone())).collect();
+        assert!(kv.contains(&("端口".into(), "7700".into())), "{kv:?}");
+        assert!(kv.contains(&("服务器".into(), "172.96.253.73".into())), "{kv:?}");
+        assert!(kv.contains(&("版本".into(), "0.19".into())), "{kv:?}");
+        assert!(!kv.iter().any(|(k, _)| k == "日期" || k == "status" || k == "密码" || k == "项"), "{kv:?}");
+    }
 }
 
 #[cfg(test)]

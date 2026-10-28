@@ -82,8 +82,7 @@ pub async fn learn_state_get(State(st): State<Arc<AppState>>, h: HeaderMap) -> i
         return e.into_response();
     }
     let root = st.kernel.lock().unwrap().vault.root.clone();
-    let v: Value = read_synced(&root, "learn.json", "field-learn.json").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "cards": {} }));
-    Json(v).into_response()
+    Json(learn_load(&root)).into_response()
 }
 
 /// POST /field/learn/grade {path, grade:"again"|"hard"|"good"|"easy"}：按简化的 SM-2 排下次复习时间。
@@ -102,14 +101,44 @@ pub async fn learn_grade(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
     });
     let root = st.kernel.lock().unwrap().vault.root.clone();
-    let mut state: Value = read_synced(&root, "learn.json", "field-learn.json").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(json!({ "cards": {} }));
-    if !state["cards"].is_object() {
-        state["cards"] = json!({});
-    }
+    let _g = learn_lock();
+    let mut state = learn_load(&root);
     let prev = state["cards"].get(&path).cloned().unwrap_or(json!({}));
+    let card = schedule(&prev, grade, now);
+    state["cards"][&path] = card.clone();
+    if let Err(e) = learn_save(&root, &state) {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    Json(json!({ "path": path, "card": card })).into_response()
+}
+
+/// learn.json 的读改写排队（复习打分、出题、AI 学习收下都会写它）
+pub fn learn_lock() -> std::sync::MutexGuard<'static, ()> {
+    static L: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    L.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 读 learn.json：{cards:{路径:…}, qs:{题号:…}}；坏了、不是对象都当空的
+pub fn learn_load(root: &std::path::Path) -> Value {
+    let mut v: Value = read_synced(root, "learn.json", "field-learn.json").and_then(|s| serde_json::from_str(&s).ok()).filter(|v: &Value| v.is_object()).unwrap_or(json!({}));
+    for k in ["cards", "qs"] {
+        if !v[k].is_object() {
+            v[k] = json!({});
+        }
+    }
+    v
+}
+
+pub fn learn_save(root: &std::path::Path, v: &Value) -> Result<(), String> {
+    write_synced(root, "learn.json", &serde_json::to_vec_pretty(v).unwrap_or_default()).map_err(|e| e.to_string())
+}
+
+/// 简化的 SM-2：间隔（天）again → 1；hard → ×1.2；good → ×ease；easy → ×ease×1.3。首次 good = 3 天、easy = 5 天。
+pub fn schedule(prev: &Value, grade: &str, now: u64) -> Value {
     let reps = prev.get("reps").and_then(|v| v.as_u64()).unwrap_or(0);
     let mut ease = prev.get("ease").and_then(|v| v.as_f64()).unwrap_or(2.5);
     let interval = prev.get("interval").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let lapses = prev.get("lapses").and_then(|v| v.as_u64()).unwrap_or(0) + u64::from(grade == "again" && reps > 0);
     let (next, ease2) = match grade {
         "again" => (1.0, (ease - 0.2).max(1.3)),
         "hard" => ((interval * 1.2).max(1.0), (ease - 0.15).max(1.3)),
@@ -118,19 +147,15 @@ pub async fn learn_grade(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
     };
     ease = ease2;
     let next = next.min(365.0);
-    let card = json!({
+    json!({
         "due": now + (next * 86_400.0) as u64,
         "interval": (next * 10.0).round() / 10.0,
         "ease": (ease * 100.0).round() / 100.0,
         "reps": reps + 1,
+        "lapses": lapses,
         "last": now,
         "grade": grade,
-    });
-    state["cards"][&path] = card.clone();
-    if let Err(e) = write_synced(&root, "learn.json", &serde_json::to_vec_pretty(&state).unwrap_or_default()) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-    }
-    Json(json!({ "path": path, "card": card })).into_response()
+    })
 }
 
 // ───────── AI 整理：补标签、起更好的标题（只给建议，执行在壳里，可撤销） ─────────
