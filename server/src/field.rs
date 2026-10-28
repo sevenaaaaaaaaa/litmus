@@ -241,6 +241,16 @@ pub fn carry_prefix(root: &std::path::Path, from: &str, to: &str) {
 fn imported_origins(docs: &[(String, String, String)]) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     for (_, _, text) in docs {
+        // 搬家向导记在 frontmatter 里：imported_from: "/原来的/路径.md"
+        if text.starts_with("---") {
+            for l in text.lines().skip(1).take(30) {
+                if l.starts_with("---") { break; }
+                if let Some(v) = l.strip_prefix("imported_from:") {
+                    let v = v.trim().trim_matches('"');
+                    if v.starts_with('/') { out.insert(v.replace("\\\\", "\\").replace("\\\"", "\"")); }
+                }
+            }
+        }
         for l in text.lines().take(8) {
             let Some(rest) = l.strip_prefix("> 导入自 ") else { continue };
             // 只认本地路径：网址可能是一整个接口共用的，按它去重会误伤同源的其他条目
@@ -2533,6 +2543,64 @@ for line in sys.stdin:
         let (st, r) = call(&app, &t, "POST", "/git/sync", r#"{"remote":"git@github.com:someone/notes.git"}"#).await;
         assert_eq!(st, 400);
         assert!(r.to_string().contains("GitHub"));
+    }
+
+    /// 搬家：Obsidian 库先出清单、再后台搬，链接和图接好，原处不动；能撤销；大文件不再 413
+    #[tokio::test]
+    async fn wizard_moves_an_obsidian_vault_in() {
+        let (app, t, dir) = app();
+        let ob = tempfile::tempdir().unwrap();
+        let v = ob.path().join("我的库");
+        std::fs::create_dir_all(v.join(".obsidian")).unwrap();
+        std::fs::create_dir_all(v.join("卡片")).unwrap();
+        std::fs::create_dir_all(v.join("附件")).unwrap();
+        std::fs::write(v.join("首页.md"), "见 [[卡片/概念|概念卡]] 和 ![[图 1.png]]\n").unwrap();
+        std::fs::write(v.join("卡片/概念.md"), "# 概念\n\n回到 [[首页]]").unwrap();
+        std::fs::write(v.join("附件/图 1.png"), b"\x89PNG fake").unwrap();
+        let body = serde_json::json!({ "path": v.to_string_lossy() }).to_string();
+        let (st, plan) = call(&app, &t, "POST", "/field/wizard/plan", &body).await;
+        assert_eq!(st, 200, "{plan}");
+        assert_eq!(plan["kind"], "obsidian");
+        assert_eq!((plan["docs"].as_u64(), plan["assets"].as_u64(), plan["broken"].as_u64()), (Some(2), Some(1), Some(0)), "{plan}");
+        assert!(!dir.path().join("Notes/导入/我的库").exists(), "清单阶段不写");
+        let (st, _) = call(&app, &t, "POST", "/field/wizard/run", &body).await;
+        assert_eq!(st, 200);
+        let mut runs = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            runs = call(&app, &t, "GET", "/field/wizard", "").await.1;
+            if runs["job"]["running"] == false { break; }
+        }
+        assert_eq!(runs["runs"][0]["docs"], 2, "{runs}");
+        let home = std::fs::read_to_string(dir.path().join("Notes/导入/我的库/首页.md")).unwrap();
+        assert!(home.contains("[[Notes/导入/我的库/卡片/概念|概念卡]]") && home.contains("![](Assets/imported/"), "{home}");
+        assert!(home.starts_with("---\nimported_from: "), "{home}");
+        let img = home.split("](").nth(1).unwrap().split(')').next().unwrap();
+        assert!(dir.path().join(img).exists(), "图要存进库：{img}");
+        assert!(v.join("首页.md").exists(), "原处不动");
+        let (_, j) = call(&app, &t, "GET", "/jobs", "").await;
+        assert!(j["jobs"].as_array().unwrap().iter().any(|x| x["kind"] == "wizard"), "{j}");
+        // 再搬一次：内容一样的跳过，不会多出「首页 2」
+        call(&app, &t, "POST", "/field/wizard/run", &body).await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            if call(&app, &t, "GET", "/field/wizard", "").await.1["job"]["running"] == false { break; }
+        }
+        assert!(!dir.path().join("Notes/导入/我的库/首页 2.md").exists());
+        // 撤销第一次：文档进回收站，附件拿掉
+        let id = runs["runs"][0]["id"].as_str().unwrap().to_string();
+        let (st, r) = call(&app, &t, "POST", "/field/wizard/undo", &format!(r#"{{"id":"{id}"}}"#)).await;
+        assert_eq!((st, r["trashed"].as_u64()), (200, Some(2)), "{r}");
+        assert!(!dir.path().join("Notes/导入/我的库/首页.md").exists());
+        assert!(!dir.path().join(img).exists());
+        // 库里的文件夹不能当来源搬
+        let inside = serde_json::json!({ "path": dir.path().join("Notes").to_string_lossy() }).to_string();
+        let (st, _) = call(&app, &t, "POST", "/field/wizard/plan", &inside).await;
+        assert_eq!(st, 400);
+        // 3MB 的附件能传（以前 2MB 就 413）
+        let big = "x".repeat(3 << 20);
+        let (st, _) = call(&app, &t, "POST", "/asset?name=big.bin", &big).await;
+        assert_eq!(st, 200, "大请求体不该被拒");
     }
 
     #[tokio::test]

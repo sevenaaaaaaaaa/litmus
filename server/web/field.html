@@ -660,6 +660,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>新建、重命名、移动、删除</td><td>/新建；阅读页右上角「更多」里的重命名或移动、删除（可撤销）</td></tr>
         <tr><td>回收站、最近、同步</td><td>/回收站（可找回，也可彻底删除、清空）、/最近、/同步</td></tr>
         <tr><td>采集网页、导入文件</td><td>粘贴网址回车；把文件拖进窗口；/采集 加主题</td></tr>
+        <tr><td>从 Obsidian、Notion、飞书搬家</td><td>/搬家（或 /导入）：选库的文件夹或导出的 zip（也可以直接把 zip 拖进窗口）；先出清单，确认后后台搬，链接、图片、Notion 数据库都接好，能整批撤销</td></tr>
         <tr><td>导出</td><td>阅读页「更多」：Markdown、Word、HTML、打印成 PDF</td></tr>
         <tr><td>双链、目录</td><td>阅读页底部「链出 / 链入」；页头「目录」</td></tr>
         <tr><td>AI 模型</td><td>/设置：接口地址、模型、密钥，可测试连通</td></tr>
@@ -1953,7 +1954,8 @@ const CMDS = [
   ['/回收站', '找回删掉的文档和筛掉的库外条目（右上角也有入口）', openTrash],
   ['/同步', '把外部编辑器里的改动合进来', syncNow],
   ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
-  ['/导入', '选择文件导入（也可以直接拖进窗口）', pickFiles],
+  ['/导入', '导入文件，或从 Obsidian、Notion、飞书搬家（也可以直接把文件、zip 拖进窗口）', () => openImport()],
+  ['/搬家', '从 Obsidian 库、Notion 导出、飞书导出、Markdown 文件夹整个搬进来（先出清单）', () => openImport()],
   ['/做', '让 Agent 去做一件事（/做 把本周随手记整理成周报）', () => { q.value = '帮我'; q.focus(); onInput(); }],
   ['/标签', '所有标签；点一个让带它的文档亮起', openTags],
   ['/视角', '存下此刻的一组文档与镜头，或切到已存的视角（替代多画布）', openViews],
@@ -2430,7 +2432,77 @@ function pickFiles(){
   inp.accept = '.md,.markdown,.txt,.html,.htm,.docx,.odt,.pptx,.xlsx,.epub,.rtf,.pdf';
   inp.onchange = () => importFiles([...inp.files]); inp.click();
 }
+/* ═══════════ 导入与搬家：Obsidian 库、Notion 导出、飞书导出、Markdown 文件夹（先出清单，确认后在后台搬） ═══════════ */
+const WIZ_KINDS = {obsidian:['Obsidian 库', '选库的文件夹（有 .obsidian 的那个），或压缩成 zip'], notion:['Notion 导出', '设置 → 导出全部内容，选 Markdown & CSV，得到的 zip'], feishu:['飞书导出', '文档或知识库导出成 Word / Markdown 后的 zip 或文件夹'], markdown:['Markdown 文件夹', '任何一堆 .md、.txt、Word 文档和图片']};
+let wizWatch = false, wizSrc = null;
+function openImport(){
+  const box = openPanel('导入与搬家', '<div class="acts" style="margin-top:0"><button class="btn pri" id="im-files">选文件导入</button><span class="hint" style="margin:0">Markdown、Word、PDF、PPT、Excel、EPUB；也可以直接拖进窗口</span></div>' +
+    '<label>从别的笔记软件搬家</label>' + Object.entries(WIZ_KINDS).map(([k, v]) => '<div class="row"><div class="grow"><span>' + v[0] + '</span><small>' + v[1] + '</small></div>' + (DESK ? '<button class="btn" data-wdir="' + k + '">选文件夹</button>' : '') + '<button class="btn" data-wzip="' + k + '">选 zip</button></div>').join('') +
+    '<details class="more"><summary>填路径（库所在的这台机器上的文件夹或 zip）</summary><div class="acts"><input type="text" id="im-path" placeholder="~/Documents/我的 Obsidian 库" style="flex:1;width:auto"><button class="btn" id="im-go">看看</button></div></details>' +
+    '<p class="hint">先出一份清单：多少篇、多少附件、链接接不接得上、放到哪。确认以后才在后台搬，原处的文件一个不动，搬完能整批撤销。</p>' +
+    '<div id="im-runs"></div>');
+  $('im-files').onclick = () => { closePanel(); pickFiles(); };
+  $('im-go').onclick = () => { const v = $('im-path').value.trim(); if (v) wizardPlan({path:v}); };
+  $('im-path').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) $('im-go').click(); });
+  box.querySelectorAll('[data-wzip]').forEach(b => b.onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.zip'; inp.onchange = () => inp.files[0] && wizardUpload(inp.files[0], b.dataset.wzip); inp.click(); });
+  box.querySelectorAll('[data-wdir]').forEach(b => b.onclick = async () => {
+    const p = await window.__TAURI_INTERNALS__.invoke('desktop_pick_folder', {title:'选要搬进来的文件夹'}).catch(() => null);
+    if (p) wizardPlan({path:p, kind:b.dataset.wdir});
+  });
+  api('/field/wizard').then(r => {
+    const el = $('im-runs'); if (!el || !(r.runs || []).length) return;
+    el.innerHTML = '<label>搬过的</label>' + r.runs.slice(0, 6).map(x => '<div class="row"><div class="grow"><span>' + esc(x.name) + ' · ' + x.docs + ' 篇' + (x.undone ? ' · 已撤销' : '') + '</span><small>' + esc(x.target) + ' · ' + new Date(x.at * 1000).toLocaleString() + '</small></div>' + (x.undone ? '' : '<button class="btn" data-wlit="' + esc(x.id) + '">亮起</button><button class="btn" data-wundo="' + esc(x.id) + '">撤销</button>') + '</div>').join('');
+    el.querySelectorAll('[data-wlit]').forEach(b => b.onclick = () => { const x = r.runs.find(y => y.id === b.dataset.wlit); closePanel(); litPaths(x.paths, '搬家「' + x.name + '」'); });
+    el.querySelectorAll('[data-wundo]').forEach(b => b.onclick = () => wizardUndo(b.dataset.wundo, b));
+  }).catch(() => {});
+}
+function litPaths(paths, label){ const set = (paths || []).map(p => byPath.get(p)).filter(Boolean); query = ''; lastRel = set.map(n => ({n, norm:1})); paint(lastRel, {soft:set.length > 40}); if (set.length) fit(set); readoutText(label + ' · ' + set.length + ' 篇'); }
+async function wizardUpload(file, kind){
+  const box = openPanel('搬家', '<span class="thinking"><i></i><i></i><i></i> 正在上传 ' + esc(file.name) + '（' + (file.size / 1048576).toFixed(1) + ' MB）</span>');
+  try { const r = await api('/field/wizard/upload?name=' + encodeURIComponent(file.name), {method:'POST', body:file, headers:{'content-type':'application/zip'}}); wizardPlan({upload:r.upload, kind}); }
+  catch(e){ box.innerHTML = '<p class="bad">没传上去：' + esc(e.message || e) + '</p>'; }
+}
+async function wizardPlan(srcIn){
+  wizSrc = Object.assign({}, srcIn);
+  const box = openPanel('搬家：先看清单', '<span class="thinking"><i></i><i></i><i></i> 正在读、正在算每篇放到哪</span>');
+  let p; try { p = await api('/field/wizard/plan', {method:'POST', json:wizSrc}); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p><div class="acts"><button class="btn" id="wz-back">返回</button></div>'; $('wz-back').onclick = openImport; return; }
+  if ($('panel').hidden || $('p-title').textContent !== '搬家：先看清单') return;
+  wizSrc.kind = p.kind;
+  const n = (v, w) => v ? '<b>' + v + '</b> ' + w : '';
+  box.innerHTML = '<p style="margin-top:0">' + esc(p.origin) + '</p>' +
+    '<label for="wz-kind">这是</label><select id="wz-kind" class="sel">' + Object.entries(WIZ_KINDS).map(([k, v]) => '<option value="' + k + '"' + (k === p.kind ? ' selected' : '') + '>' + v[0] + '</option>').join('') + '</select>' +
+    '<label for="wz-to">放到</label><input type="text" id="wz-to" value="' + esc(p.target) + '">' +
+    '<div class="changes" style="margin-top:12px">' + [n(p.docs, '篇文档') + (p.converted ? '（其中 ' + p.converted + ' 篇从 Word 等格式转成 Markdown）' : ''), n(p.tables, '个数据库转成表格'), n(p.assets, '个附件（图片、PDF 等）放进 Assets/imported/'), n(p.links, '处链接改到新位置'), p.renamed ? n(p.renamed, '个名字去掉了 Notion 的编号或不能用的字符') : '', p.broken ? '<span class="bad">' + p.broken + ' 处链接指向来源里没有的东西，原样留着</span>' : '', p.exists ? p.exists + ' 篇库里已经有同名的：内容一样的跳过，不一样的另存一份' : '', p.skipped ? p.skipped + ' 个文件跳过（重复的数据库、认不出的文件）' : ''].filter(Boolean).map(x => '<p>' + x + '</p>').join('') + '</div>' +
+    '<details class="more"><summary>看看前 ' + p.sample.length + ' 篇会放到哪</summary><div class="diff">' + p.sample.map(x => esc(x.from) + '\n  → ' + esc(x.to)).join('\n') + '</div></details>' +
+    '<p class="hint">原处的文件一个不动。搬的时候左上角看进度、能停下；搬完能整批撤销。</p><div class="acts"><button class="btn pri" id="wz-go">开始搬（' + p.docs + ' 篇）</button><button class="btn" id="wz-back">返回</button></div>';
+  $('wz-kind').onchange = () => wizardPlan(Object.assign({}, wizSrc, {kind:$('wz-kind').value, target:''}));
+  $('wz-back').onclick = openImport;
+  $('wz-go').onclick = async () => {
+    const t = $('wz-to').value.trim().replace(/\/+$/, '');
+    if (!/^Notes\/./.test(t)){ toast('要放在 Notes/ 下面', true); return; }
+    $('wz-go').disabled = true;
+    try { await api('/field/wizard/run', {method:'POST', json:Object.assign({}, wizSrc, {target:t})}); }
+    catch(e){ $('wz-go').disabled = false; toast('<b>没开始</b>：' + esc(e.message || e), true); return; }
+    closePanel(); wizWatch = true; pollJobs(true); flashJobs(); toast('在后台搬，左上角看进度；搬完会告诉你');
+  };
+}
+async function wizardDone(){
+  let r; try { r = await api('/field/wizard'); } catch(e){ return; }
+  await refreshNow();
+  const x = (r.runs || [])[0], j = r.job || {};
+  if (!x) return;
+  litPaths(x.paths, '搬家「' + x.name + '」');
+  toastAct((j.phase && j.phase.startsWith('停下') ? '停下了，' : '') + '搬进来 <b>' + x.docs + '</b> 篇' + (x.assets ? '、' + x.assets + ' 个附件' : '') + (j.failed && j.failed.length ? '，' + j.failed.length + ' 个没搬成' : ''), '撤销', () => wizardUndo(x.id), j.failed && j.failed.length);
+}
+async function wizardUndo(id, btn){
+  if (btn && btn.dataset.sure !== '1'){ btn.dataset.sure = '1'; btn.textContent = '再点一次撤销'; btn.classList.add('danger'); return; }
+  try { const r = await api('/field/wizard/undo', {method:'POST', json:{id}}); await refreshNow(); toast('撤销了：' + r.trashed + ' 篇进了回收站，能找回'); if (btn) openImport(); }
+  catch(e){ toast('<b>没撤销成</b>：' + esc(e.message || e), true); }
+}
 async function importFiles(files){
+  /* 拖进来的是 zip（Notion、飞书的导出，或压缩好的 Obsidian 库）：走搬家向导 */
+  const zips = files.filter(f => /\.zip$/i.test(f.name));
+  if (zips.length){ wizardUpload(zips[0]); files = files.filter(f => !/\.zip$/i.test(f.name)); if (!files.length) return; }
   const ok = [], bad = [], used = new Set();
   for (const f of files){
     try {
@@ -3905,6 +3977,7 @@ async function pollJobs(now){
   if (jobsRev !== null && j.rev !== jobsRev) scheduleFieldRefresh(j.busy ? 10000 : 1200);
   if (wasBusy && !j.busy) scheduleFieldRefresh(800);
   jobsRev = j.rev;
+  if (wizWatch){ const w = j.jobs.find(x => x.kind === 'wizard'); if (w && w.state !== 'running'){ wizWatch = false; wizardDone(); } }
   jobsT = setTimeout(pollJobs, j.busy ? 2000 : j.jobs.length || j.pending ? 15000 : 30000);
 }
 function scheduleFieldRefresh(gap){
@@ -3918,7 +3991,7 @@ function scheduleFieldRefresh(gap){
 }
 function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
 function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
-const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库'};
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库', wizard:'搬家'};
 function renderJobs(j){
   const b = $('jobs'); if (!b) return;
   const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
@@ -4280,7 +4353,7 @@ loadField().then(() => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence();
-window.__field = {openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
 })();
 </script>
 </body>

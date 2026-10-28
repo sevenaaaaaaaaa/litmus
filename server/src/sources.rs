@@ -240,6 +240,10 @@ fn now_secs() -> u64 {
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from).filter(|p| p.is_dir())
 }
+pub fn expand_pub(p: &str) -> PathBuf {
+    expand(p)
+}
+
 fn expand(p: &str) -> PathBuf {
     match (p.strip_prefix("~/"), home()) {
         (Some(rest), Some(h)) => h.join(rest),

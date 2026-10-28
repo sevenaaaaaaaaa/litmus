@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex};
 mod field;
 mod connectors;
 mod curate;
+mod wizard;
 mod field_tools;
 mod jobs;
 mod organize;
@@ -238,6 +239,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/ext", get(sources::ext_get))
         .route("/field/ext/import", post(sources::ext_import))
         .route("/field/ext/import-batch", post(sources::ext_import_batch))
+        .route("/field/wizard", get(wizard::runs_api))
+        .route("/field/wizard/upload", post(wizard::upload))
+        .route("/field/wizard/plan", post(wizard::plan_api))
+        .route("/field/wizard/run", post(wizard::run_api))
+        .route("/field/wizard/undo", post(wizard::undo_api))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {
@@ -350,6 +356,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/ws", get(ws_handler))
         .route("/conflow/conversations", get(conflow_conversations))
         .route("/conflow/digest", post(conflow_digest))
+        // 默认只收 2MB 的请求体：大一点的附件、导入的文件、搬家的 zip 都会 413。放宽到 2GB
+        .layer(axum::extract::DefaultBodyLimit::max(2 << 30))
         .with_state(state)
 }
 

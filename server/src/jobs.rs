@@ -741,6 +741,14 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "can": if j.running { json!(["stop"]) } else { json!([]) },
         }));
     }
+    if let Some(j) = super::wizard::snapshot(&root).filter(|j| recent(j.running, j.finished)) {
+        out.push(json!({
+            "id": "wizard", "kind": "wizard", "title": format!("搬家：{}", j.name),
+            "state": if j.running { "running" } else if j.ok == 0 && !j.failed.is_empty() { "error" } else { "done" },
+            "done": j.done, "total": j.total, "phase": j.phase, "items": j.ok, "error": j.failed.first().map(|f| format!("{} 个没搬成，比如 {f}", j.failed.len())), "finished": j.finished,
+            "can": if j.running { json!(["stop"]) } else { json!([]) },
+        }));
+    }
     let held = super::curate::load_store(&root).held.len();
     let pending = {
         let r = root.clone();
@@ -762,6 +770,8 @@ pub async fn job_control(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath
         digest_control(&root, &action)
     } else if id == "import" && action == "stop" {
         super::sources::import_stop(&root)
+    } else if id == "wizard" && action == "stop" {
+        super::wizard::stop(&root)
     } else if id == "curate" && action == "stop" {
         super::curate::job_stop(&root)
     } else if id == "patrol" && action == "stop" {
