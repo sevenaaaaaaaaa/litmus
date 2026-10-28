@@ -2759,6 +2759,38 @@ for line in sys.stdin:
         assert!(!std::fs::read_to_string(root.join("litmus.toml")).unwrap().contains("s3_ak"));
     }
 
+    /// 协作：GET 带 hash；带着旧的 base 去存会被拦下并拿到现在的内容；存了会广播 saved（发起方带 from 跳过）
+    #[tokio::test]
+    async fn saving_on_a_stale_base_is_refused_and_saves_are_broadcast() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = kernel_core::Vault::init(dir.path(), "collab").unwrap();
+        let state = crate::build_state(vault).unwrap();
+        let t = state.token.clone();
+        let (_, mut rx) = state.hub.subscribe();
+        let _hello = rx.recv().await.unwrap();
+        let app = crate::router(state);
+        let p = "Notes/共写.md";
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc(p)), "# 共写\n\n第一版").await;
+        let saved = rx.recv().await.unwrap();
+        assert_eq!((saved["type"].as_str(), saved["data"]["path"].as_str()), (Some("saved"), Some(p)), "{saved}");
+        let (_, d) = call(&app, &t, "GET", &format!("/doc?path={}", urlenc(p)), "").await;
+        let h1 = d["hash"].as_str().unwrap().to_string();
+        // 别处先存了一版
+        call(&app, &t, "PUT", &format!("/doc?path={}", urlenc(p)), "# 共写\n\n第一版\n\n别处加的").await;
+        // 我还拿着 h1 去存：被拦下，拿到现在的内容
+        let req = Request::builder().method("PUT").uri(format!("/doc?path={}", urlenc(p))).header("authorization", format!("Bearer {t}")).header("content-type", "text/markdown").header("x-base-hash", &h1).header("x-litmus-peer", "7").body(Body::from("# 共写\n\n第一版改了")).unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 409);
+        let v: Value = serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap()).unwrap();
+        assert!(v["source"].as_str().unwrap().contains("别处加的") && v["hash"].is_string(), "{v}");
+        // 用新的 base 存：通过；广播里带着发起方的 from
+        let req = Request::builder().method("PUT").uri(format!("/doc?path={}", urlenc(p))).header("authorization", format!("Bearer {t}")).header("content-type", "text/markdown").header("x-base-hash", v["hash"].as_str().unwrap()).header("x-litmus-peer", "7").body(Body::from("# 共写\n\n第一版改了\n\n别处加的")).unwrap();
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status().as_u16(), 200);
+        let mut last = serde_json::Value::Null;
+        while let Ok(m) = rx.try_recv() { last = m; }
+        assert_eq!(last["from"], 7, "{last}");
+    }
+
     #[tokio::test]
     async fn field_api_requires_token() {
         let (app, _t, _d) = app();

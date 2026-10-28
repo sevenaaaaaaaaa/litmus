@@ -537,6 +537,14 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 .swl{display:flex;gap:4px;flex:none}
 #p-body a{color:var(--litmus)}
 #p-body kbd{font:500 var(--fs-1) var(--f-mono);opacity:.6;margin-left:4px}
+.n[data-peer] .sp{box-shadow:0 0 0 3px var(--pc)}
+#s-peers{display:flex;gap:6px}
+#s-peers .peer{display:inline-flex;align-items:center;gap:5px;font:500 var(--fs-1)/1 var(--f-ui);color:var(--ink-2);white-space:nowrap}
+#s-peers .peer i{width:8px;height:8px;border-radius:50%;background:var(--pc)}
+.editw{position:relative}
+#carets{position:absolute;pointer-events:none;width:0;height:0}
+#carets .caret{position:absolute;width:2px;background:var(--pc)}
+#carets .caret b{position:absolute;bottom:100%;left:-1px;font:500 var(--fs-1)/1.3 var(--f-ui);color:var(--paper);background:var(--pc);padding:1px 5px;border-radius:var(--r-xs);white-space:nowrap}
 .swl i{width:22px;height:14px;border-radius:var(--r-xs);box-shadow:inset 0 0 0 1px oklch(var(--ink-c) / .12)}
 </style>
 </head>
@@ -587,7 +595,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 
 <aside id="sheet" aria-label="阅读">
   <header>
-    <span class="tag" id="s-rg"></span><span class="path" id="s-path"></span><span id="s-save"></span>
+    <span class="tag" id="s-rg"></span><span class="path" id="s-path"></span><span id="s-peers"></span><span id="s-save"></span>
     <button class="btn" id="s-cmt" title="这篇的评论（划选正文就能评论）" hidden>评论<b id="s-cmt-n"></b></button>
     <button class="btn" id="s-toc" title="目录">目录</button>
     <button class="btn" id="s-zen" title="Zen：应用内全屏，只留这一篇（⌘⇧F，Esc 退出）">Zen</button>
@@ -737,7 +745,7 @@ const DESK = !!window.__TAURI_INTERNALS__;
 
 async function api(path, opts){
   opts = opts || {};
-  const headers = Object.assign({authorization:'Bearer ' + token}, opts.headers || {});
+  const headers = Object.assign({authorization:'Bearer ' + token}, myPeer != null ? {'x-litmus-peer':String(myPeer)} : {}, opts.headers || {});
   let body = opts.body;
   if (opts.json !== undefined){ headers['content-type'] = 'application/json'; body = JSON.stringify(opts.json); }
   const method = (opts.method || 'GET').toUpperCase();
@@ -1448,8 +1456,25 @@ async function flushSave(){
   setSave('saving');
   save.inflight = (async () => {
     try {
-      const r = await api('/doc?path=' + encodeURIComponent(path), {method:'PUT', body:text, headers:{'content-type':'text/markdown'}});
-      if (docData && docData.path === path){ docData.source = text; if (r.html) docData.html = r.html; }
+      const put = (body, base) => api('/doc?path=' + encodeURIComponent(path), {method:'PUT', body, headers:Object.assign({'content-type':'text/markdown'}, base ? {'x-base-hash':base} : {})});
+      let r, sent = text;
+      try { r = await put(text, docData && docData.path === path ? docData.hash : ''); }
+      catch(e){
+        if (e.status !== 409 || !e.data || !e.data.conflict) throw e;
+        /* 别处（另一个窗口、另一台设备、外部编辑器）先存了一版：三方合并后再存 */
+        const who = [...peers.values()].find(p => p.doc === path && p.mode === 'edit');
+        const m = merge3(docData.source || '', text, e.data.source || '', who ? peerName(who) : '');
+        sent = m.text;
+        r = await put(m.text, e.data.hash);
+        const ed = $('editor');
+        if (ed && reading && reading.p === path){
+          const s0 = ed.selectionStart, cur = ed.value;
+          ed.value = cur === text ? m.text : merge3(text, cur, m.text).text;
+          ed.setSelectionRange(Math.min(s0, ed.value.length), Math.min(s0, ed.value.length)); ed.dispatchEvent(new Event('grow'));
+        }
+        toast(m.conflicts ? '<b>有 ' + m.conflicts + ' 处和别处同时改了</b>：两边都留着，用〔〕标出来了，挑一段留下' : '别处刚改过这篇，已经合在一起', !!m.conflicts);
+      }
+      if (docData && docData.path === path){ docData.source = sent; if (r.hash) docData.hash = r.hash; if (r.html) docData.html = r.html; delete docData.remote; }
       setSave('saved');
       if (split && docData && docData.path === path){ if (!r.html){ try { docData.html = (await api('/doc?path=' + encodeURIComponent(path))).html; } catch(_){} } updatePreview(docData.html); }
     } catch(e){ setSave('failed', e.message); clearTimeout(save.t); save.t = setTimeout(flushSave, 4000); }
@@ -1484,7 +1509,7 @@ async function openDoc(n){
     if (reading !== n) return;
     $('doc').querySelector('.body').innerHTML = '<p>打不开这篇：' + esc(e.message || e) + '</p>';
   }
-  renderLinks(n);
+  renderLinks(n); announce(); renderPeers();
   const nb = await nearP;
   if (reading !== n || !nb.length) return;
   const box = document.createElement('div'); box.id = 'near';
@@ -1542,13 +1567,14 @@ function toggleEdit(){
     const body = $('doc').querySelector('.body');
     body.innerHTML = '<div class="editw"><textarea id="editor" spellcheck="false" placeholder="写点什么。图片可以直接粘贴或拖进来。"></textarea><div id="preview" class="pv"' + (split ? '' : ' hidden') + '></div></div>';
     const ed = $('editor'); ed.value = docData.source || ''; ed.focus(); wireEditor(ed);
+    ['keyup', 'click', 'select'].forEach(ev => ed.addEventListener(ev, sendCaret)); ed.addEventListener('scroll', renderCarets, {passive:true});
     if (split) updatePreview(docData.html);
     const grow = () => { ed.style.height = 'auto'; ed.style.height = Math.max(ed.scrollHeight, innerHeight * .6) + 'px'; };
-    ed.addEventListener('input', () => { grow(); scheduleSave(); }); grow();
-    setSave('saved');
+    ed.addEventListener('input', () => { grow(); scheduleSave(); sendCaret(); renderCarets(); }); ed.addEventListener('grow', () => { grow(); renderCarets(); }); grow();
+    setSave('saved'); announce(); renderCarets();
   } else {
     flushSave().then(async () => {
-      if (save.state === 'failed') return; editing = false; $('s-edit').textContent = '编辑'; setSave('saved');
+      if (save.state === 'failed') return; editing = false; $('s-edit').textContent = '编辑'; setSave('saved'); announce(); renderCarets();
       if (viewMode === 'god'){ viewMode = ''; document.body.classList.remove('god'); $('s-god').classList.remove('on'); }
       if (split){ split = false; document.body.classList.remove('split'); }
       const n0 = reading, n1 = await autoname(n0);
@@ -1601,6 +1627,7 @@ async function closeDoc(){
   editing = false; document.body.classList.remove('reading'); hideRing();
   if (sw){ cam.tox += sw / 2; kick(); }
   if (reading){ reading.el.classList.remove('cur'); reading = null; }
+  announce(); renderPeers();
   if (ctxDoc) clearReaction();
 }
 $('s-x').onclick = closeDoc;
@@ -1975,6 +2002,7 @@ const CMDS = [
   ['/对话', '和 Agent 的对话记录（Conflow 对话流），一键提炼成知识卡', openConflow],
   ['/记住', '让 Agent 记住一件事（/记住 周报不超过 300 字）', () => openMemory()],
   ['/凭证', 'API 密钥等凭证（只在本机）', openSecrets],
+  ['/昵称', '别处同时开着这篇时，他们看到的你的名字', openNick],
   ['/库', '切换、新建或连接知识库', openVaults],
   ['/退出登录', '网页版退出登录', logout],
   ['/更新', '检查桌面 App 的新版本', openUpdate],
@@ -2417,6 +2445,13 @@ async function syncNow(){
 
 /* 收：网页、主题、文件 */
 async function collectUrl(url){ return localizeUrl(url); }
+function openNick(){
+  const box = openPanel('我的昵称', '<label for="nk-t">名字</label><input type="text" id="nk-t" maxlength="16" placeholder="比如：小明"><p class="hint">另一台设备或另一个窗口同时开着同一篇时，会看到这个名字和你的光标；评论也署这个名字。只存在这台设备的浏览器里。</p><div class="acts"><button class="btn pri" id="nk-go">保存</button></div>');
+  const inp = box.querySelector('#nk-t'); const cur = myName(); inp.value = cur === '我' ? '' : cur;
+  const go = () => { const t = inp.value.trim().slice(0, 16); try { t ? localStorage.setItem('litmus_nick', t) : localStorage.removeItem('litmus_nick'); } catch(e){} closePanel(); announce(); toast(t ? '以后显示为「<b>' + esc(t) + '</b>」' : '已清除昵称'); };
+  $('nk-go').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+  setTimeout(() => inp.focus(), 30);
+}
 function collectTopic(topic){
   if (!topic){
     const box = openPanel('按主题采集', '<label for="ct-t">主题</label><input type="text" id="ct-t" placeholder="比如：向量数据库"><p class="hint">从维基、HN、arXiv 等公开来源找几篇相关资料，转成 Markdown 存进库里，并落到场上。</p><div class="acts"><button class="btn pri" id="ct-go">开始采集</button></div>');
@@ -3108,16 +3143,123 @@ async function makeView(prompt){
   } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; }
 }
 /* 在线：同一个库在几台设备上开着 */
+/* ───────── 在线与协作：谁也开着这篇、在看还是在写、光标在哪；别处存了一版就合进来 ───────── */
+let myPeer = null, peerWS = null, peerBeat = 0;
+const peers = new Map();
+const peerHue = id => (Number(id) * 137) % 360;
+const peerName = x => !x.nick || x.nick === '我' ? '另一处' : x.nick;
+function peerSend(o){ try { if (peerWS && peerWS.readyState === 1) peerWS.send(JSON.stringify(o)); } catch(e){} }
+function announce(){ peerSend({type:'state', doc:reading && reading.k !== 'ext' ? reading.p : '', mode:editing ? 'edit' : reading ? 'read' : '', nick:myName()}); }
 function presence(){
   try {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(proto + '://' + location.host + BASE + '/ws?token=' + encodeURIComponent(token));
-    const show = () => showVault();
-    ws.onmessage = ev => { let d; try { d = JSON.parse(ev.data); } catch(e){ return; } const x = d.data || d;
-      if (x.type === 'join' || d.type === 'join' || x.type === 'leave' || d.type === 'leave'){ peersN = x.peers || peersN; show(); }
-      if (x.type === 'hello' && x.peers) { peersN = x.peers; show(); } };
-    ws.onclose = () => setTimeout(presence, 15000);
+    peerWS = ws;
+    ws.onopen = () => { clearInterval(peerBeat); peerBeat = setInterval(() => { announce(); prunePeers(); }, 20000); };
+    ws.onmessage = ev => { let d; try { d = JSON.parse(ev.data); } catch(e){ return; } const x = d.data || d, ty = d.type || x.type;
+      if (ty === 'hello'){ myPeer = d.id != null ? d.id : x.id; peersN = x.peers || peersN; showVault(); announce(); return; }
+      if (ty === 'join'){ peersN = d.peers || x.peers || peersN; showVault(); announce(); return; }
+      if (ty === 'leave'){ peersN = d.peers || x.peers || peersN; peers.delete(d.from); showVault(); renderPeers(); return; }
+      if (d.from === myPeer && d.from != null) return;
+      if (ty === 'state'){ peers.set(d.from, Object.assign(peers.get(d.from) || {}, {nick:x.nick, doc:x.doc, mode:x.mode, at:Date.now()})); if (!x.doc) { const p = peers.get(d.from); p.start = p.end = null; } renderPeers(); return; }
+      if (ty === 'caret'){ const p = Object.assign(peers.get(d.from) || {}, {doc:x.doc, start:x.start, end:x.end, at:Date.now(), mode:'edit'}); peers.set(d.from, p); renderCarets(); return; }
+      if (ty === 'saved' && reading && x.path === reading.p) onRemoteSaved(x, d.from);
+    };
+    ws.onclose = () => { peerWS = null; clearInterval(peerBeat); peers.clear(); renderPeers(); setTimeout(presence, 15000); };
   } catch(e){}
+}
+function prunePeers(){ const t = Date.now() - 70000; let ch = false; peers.forEach((p, id) => { if ((p.at || 0) < t){ peers.delete(id); ch = true; } }); if (ch) renderPeers(); }
+function renderPeers(){
+  /* 场上：别人开着的那篇套一个有颜色的圈 */
+  nodes.forEach(n => { if (n.el.dataset.peer){ delete n.el.dataset.peer; n.el.style.removeProperty('--pc'); n.el.removeAttribute('title'); } });
+  peers.forEach((p, id) => { const n = p.doc && byPath.get(p.doc); if (n){ n.el.dataset.peer = '1'; n.el.style.setProperty('--pc', 'oklch(.62 .16 ' + peerHue(id) + ')'); n.el.title = peerName(p) + (p.mode === 'edit' ? ' 在写' : ' 在看'); } });
+  /* 阅读页顶上：这篇还有谁 */
+  const el = $('s-peers'); if (!el) return;
+  const here = reading ? [...peers.entries()].filter(([, p]) => p.doc === reading.p) : [];
+  el.innerHTML = here.map(([id, p]) => '<span class="peer" style="--pc:oklch(.62 .16 ' + peerHue(id) + ')" title="' + esc(peerName(p)) + (p.mode === 'edit' ? ' 也在写这篇：你们存的时候会自动合并' : ' 也在看这篇') + '"><i></i>' + esc(peerName(p)) + (p.mode === 'edit' ? ' 在写' : ' 在看') + '</span>').join('');
+  renderCarets();
+}
+/* 编辑框里别人的光标：用一个镜像 div 量出字符位置 */
+function caretXY(ed, idx){
+  const m = caretXY.m || (caretXY.m = document.createElement('div'));
+  const cs = getComputedStyle(ed);
+  ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderLeftWidth', 'borderRightWidth', 'boxSizing', 'tabSize'].forEach(k => m.style[k] = cs[k]);
+  Object.assign(m.style, {position:'absolute', visibility:'hidden', whiteSpace:'pre-wrap', overflowWrap:'break-word', width:ed.clientWidth + 'px', top:'0', left:'-9999px'});
+  m.textContent = ed.value.slice(0, idx); const sp = document.createElement('span'); sp.textContent = '​'; m.appendChild(sp);
+  document.body.appendChild(m); const r = {x:sp.offsetLeft, y:sp.offsetTop, h:sp.offsetHeight}; m.remove();
+  return r;
+}
+function renderCarets(){
+  const ed = $('editor'), wrap = ed && ed.parentElement; let ov = $('carets');
+  if (!ed || !reading || !editing){ if (ov) ov.remove(); return; }
+  if (!ov){ ov = document.createElement('div'); ov.id = 'carets'; wrap.appendChild(ov); }
+  ov.style.left = ed.offsetLeft + 'px'; ov.style.top = ed.offsetTop + 'px';
+  ov.innerHTML = '';
+  peers.forEach((p, id) => {
+    if (p.doc !== reading.p || p.mode !== 'edit' || p.start == null) return;
+    const a = caretXY(ed, Math.min(p.start, ed.value.length));
+    const c = document.createElement('div'); c.className = 'caret'; c.style.setProperty('--pc', 'oklch(.62 .16 ' + peerHue(id) + ')');
+    c.style.left = a.x + 'px'; c.style.top = (a.y - ed.scrollTop) + 'px'; c.style.height = (a.h || 20) + 'px';
+    c.innerHTML = '<b>' + esc(peerName(p)) + '</b>'; ov.appendChild(c);
+  });
+}
+let caretT = 0;
+function sendCaret(){ clearTimeout(caretT); caretT = setTimeout(() => { const ed = $('editor'); if (ed && reading && editing) peerSend({type:'caret', doc:reading.p, start:ed.selectionStart, end:ed.selectionEnd}); }, 150); }
+/* 别处存了一版：在看就直接换成新的；在写但还没改就换掉；改了的话存的时候合并 */
+let remoteNoteT = 0;
+async function onRemoteSaved(x, from){
+  const n = reading, who = peerName(peers.get(from) || {});
+  if (!n || !docData || x.hash === docData.hash) return;
+  let d; try { d = await api('/doc?path=' + encP(n.p)); } catch(e){ return; }
+  if (reading !== n) return;
+  if (!editing){ docData = d; renderRead(d); }
+  else {
+    const ed = $('editor'); if (!ed) return;
+    if (ed.value === docData.source && save.state !== 'dirty' && save.state !== 'saving'){
+      const s0 = ed.selectionStart, s1 = ed.selectionEnd; ed.value = d.source || ''; ed.setSelectionRange(Math.min(s0, ed.value.length), Math.min(s1, ed.value.length));
+      docData.source = d.source; docData.hash = d.hash; docData.html = d.html; ed.dispatchEvent(new Event('grow'));
+    } else docData.remote = d;
+  }
+  clearTimeout(remoteNoteT); remoteNoteT = setTimeout(() => toast('<b>' + esc(who) + '</b> 刚存了这篇的新版本' + (editing ? '，已经合到你这里' : '')), 400);
+}
+/* 三方合并（按行）：base 是你开始改时的那一版，mine 是你的，theirs 是别处刚存的。
+   不重叠的改动都留下；撞在同一处的两边都留着，标出来让人挑 */
+function lineHunks(a, b){
+  const n = a.length, m = b.length;
+  if (n * m > 1500000) return null;
+  const L = Array.from({length:n + 1}, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const hs = []; let i = 0, j = 0, cur = null;
+  const push = () => { if (cur){ hs.push(cur); cur = null; } };
+  while (i < n || j < m){
+    if (i < n && j < m && a[i] === b[j]){ push(); i++; j++; }
+    else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])){ if (!cur) cur = {a0:i, a1:i, lines:[]}; cur.lines.push(b[j++]); }
+    else { if (!cur) cur = {a0:i, a1:i, lines:[]}; cur.a1 = ++i; }
+  }
+  push(); return hs;
+}
+function merge3(base, mine, theirs, who){
+  if (mine === theirs || theirs === base) return {text:mine, conflicts:0};
+  if (mine === base) return {text:theirs, conflicts:0};
+  const B = base.split('\n'), M = mine.split('\n'), T = theirs.split('\n');
+  const hm = lineHunks(B, M), ht = lineHunks(B, T);
+  const mark = (a, b) => ['> 〔两处同时改了这里：下面先是你的，再是' + (who || '另一处') + '的，留一段、删一段〕', ...a, '> 〔' + (who || '另一处') + '的〕', ...b, '> 〔到这里〕'];
+  if (!hm || !ht) return {text:mark(M, T).join('\n'), conflicts:1};
+  const all = hm.map(h => Object.assign({side:'m'}, h)).concat(ht.map(h => Object.assign({side:'t'}, h))).sort((x, y) => x.a0 - y.a0 || x.a1 - y.a1);
+  const out = []; let i = 0, k = 0, conflicts = 0;
+  while (k < all.length){
+    const g = [all[k]]; let end = all[k].a1; k++;
+    while (k < all.length && (all[k].a0 < end || all[k].a0 === g[0].a0 || all[k].a0 === end && all[k].a1 === all[k].a0 && g.some(h => h.a1 === h.a0))){ g.push(all[k]); end = Math.max(end, all[k].a1); k++; }
+    const a0 = g[0].a0;
+    while (i < a0) out.push(B[i++]);
+    const sides = new Set(g.map(h => h.side));
+    const build = side => { const r = []; let p = a0; g.filter(h => h.side === side).forEach(h => { while (p < h.a0) r.push(B[p++]); r.push(...h.lines); p = h.a1; }); while (p < end) r.push(B[p++]); return r; };
+    if (sides.size === 1) out.push(...build(g[0].side));
+    else { const rm = build('m'), rt = build('t'); if (rm.join('\n') === rt.join('\n')) out.push(...rm); else { out.push(...mark(rm, rt)); conflicts++; } }
+    i = end;
+  }
+  while (i < B.length) out.push(B[i++]);
+  return {text:out.join('\n'), conflicts};
 }
 let peersN = 1;
 function showVault(){ $('vault').textContent = (vaultName ? vaultName + ' · ' : '') + nodes.length + ' 篇' + (peersN > 1 ? ' · ' + peersN + ' 处在线' : ''); }

@@ -2296,6 +2296,7 @@ async fn get_doc(
             "title": model.title,
             "format": format,
             "tags": doc_tags,
+            "hash": kernel_core::Cas::hash_hex(source.as_bytes()),
             "source": source,
             "blocks": model.blocks,
             "markdown": kernel_core::to_markdown(&model),
@@ -2415,10 +2416,27 @@ async fn put_doc(
         Err(_) => return err(StatusCode::BAD_REQUEST, "body must be utf-8 markdown").into_response(),
     };
     let mut k = st.kernel.lock().unwrap();
+    // 协作：带了 x-base-hash（「我是在这一版上改的」）而文件已经被别人（另一个窗口、另一台设备、外部编辑器）改过，
+    // 就不覆盖，把现在的内容交回去，让编辑的一方先合并（以前是后存的直接冲掉先存的）
+    let abs = k.vault.root.join(&path);
+    if let Some(base) = h.get("x-base-hash").and_then(|v| v.to_str().ok()).filter(|v| !v.is_empty()) {
+        if let Ok(cur) = std::fs::read_to_string(&abs) {
+            let ch = kernel_core::Cas::hash_hex(cur.as_bytes());
+            if ch != base && cur != md {
+                return (StatusCode::CONFLICT, Json(json!({ "error": "这篇刚被别处改过", "conflict": true, "source": cur, "hash": ch }))).into_response();
+            }
+        }
+    }
     match k.put_doc(&path, md) {
         Ok(()) => {
             let html = k.render_doc_html_with_views(&path).ok();
-            Json(json!({ "written": path, "html": html })).into_response()
+            let saved = std::fs::read_to_string(&abs).unwrap_or_default();
+            let hash = kernel_core::Cas::hash_hex(saved.as_bytes());
+            drop(k);
+            // 告诉同时开着这篇的其他人：刚存了一版（发起的那一端按 from 跳过）
+            let from = h.get("x-litmus-peer").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
+            st.hub.broadcast(&json!({ "type": "saved", "from": from, "data": { "type": "saved", "path": path, "hash": hash } }));
+            Json(json!({ "written": path, "html": html, "hash": hash, "source": saved })).into_response()
         }
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
@@ -5206,7 +5224,7 @@ async fn ws_loop(st: Arc<AppState>, socket: axum::extract::ws::WebSocket) {
                 let Ok(v) = serde_json::from_str::<Value>(&t) else { continue };
                 let ty = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
                 // 只广播白名单类型，防止乱灌
-                if matches!(ty, "cursor" | "select" | "note" | "state" | "caret") {
+                if matches!(ty, "cursor" | "select" | "note" | "state" | "caret" | "focus") {
                     hub.broadcast(&json!({ "type": ty, "from": id, "data": v }));
                 }
             }

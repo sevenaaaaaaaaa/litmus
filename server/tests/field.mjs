@@ -73,3 +73,16 @@ test('shortLabel：场上的标签只留主干', () => {
   assert.equal(v('发布流程（新版）'), '发布流程');
   assert.ok(v('一'.repeat(40)).endsWith('…'));
 });
+
+test('merge3：不重叠的改动都留下，撞在一处的两边都留并标出', () => {
+  const c = ctx(['lineHunks', 'merge3']);
+  const m = (b, x, y, w) => JSON.parse(vm.runInContext(`JSON.stringify(merge3(${JSON.stringify(b)}, ${JSON.stringify(x)}, ${JSON.stringify(y)}, ${JSON.stringify(w || '')}))`, c));
+  const base = 'a\nb\nc\nd\ne';
+  assert.deepEqual(m(base, 'a\nB\nc\nd\ne', 'a\nb\nc\nD\ne'), { text: 'a\nB\nc\nD\ne', conflicts: 0 });
+  assert.deepEqual(m(base, 'a\nb\nc\nd\ne\nmine', 'top\na\nb\nc\nd\ne'), { text: 'top\na\nb\nc\nd\ne\nmine', conflicts: 0 });
+  assert.deepEqual(m(base, 'a\nc\nd\ne', 'a\nb\nc\nd'), { text: 'a\nc\nd', conflicts: 0 });
+  const x = m(base, 'a\nX\nc\nd\ne', 'a\nY\nc\nd\ne', '小明');
+  assert.equal(x.conflicts, 1);
+  assert.ok(x.text.includes('X') && x.text.includes('Y') && x.text.includes('小明的'), x.text);
+  assert.deepEqual(m(base, base + '\nsame', base + '\nsame'), { text: base + '\nsame', conflicts: 0 });
+});
