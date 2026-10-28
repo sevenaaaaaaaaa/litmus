@@ -1316,16 +1316,13 @@ fn safe_name(t: &str) -> String {
 /// POST /field/ext/import {p, mode:"move"|"copy", folder?}
 /// 本地文件：move = 原文件移进库的 Assets/imported/ 并生成一篇 Markdown（链着原件）；copy = 只生成 Markdown。
 /// 非文件来源（会话、邮件、接口……）只有 copy。
-pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
-    if let Err(e) = check_token(&st, &h) {
-        return e.into_response();
-    }
-    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let key = req.get("p").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let mode = req.get("mode").and_then(|v| v.as_str()).unwrap_or("copy");
-    let root = st.kernel.lock().unwrap().vault.root.clone();
-    let Some((it, s)) = find_item(&root, &key) else { return err(StatusCode::NOT_FOUND, "库外的这篇找不到了").into_response() };
-    let folder = req.get("folder").and_then(|v| v.as_str()).filter(|f| f.starts_with("Notes") && !f.contains("..")).map(|f| f.trim_end_matches('/').to_string()).unwrap_or_else(|| format!("Notes/Sources/{}", safe_name(&s.name)));
+/// 把一条库外条目导入库：copy = 只生成 Markdown（原件留着）；move = 原件也搬进库（纯文本直接成为这篇，其他进 Assets/imported/）。
+/// 入了库就以库里那篇为准：这一条不再上场、重扫也不回来，场上的位置交给新的那篇。
+pub fn import_one(st: &AppState, root: &Path, key: &str, mode: &str, folder: Option<&str>) -> Result<Value, (StatusCode, String)> {
+    let key = key.to_string();
+    let Some((it, s)) = find_item(root, &key) else { return Err((StatusCode::NOT_FOUND, "库外的这篇找不到了".into())) };
+    let root = root.to_path_buf();
+    let folder = folder.filter(|f| f.starts_with("Notes") && !f.contains("..")).map(|f| f.trim_end_matches('/').to_string()).unwrap_or_else(|| format!("Notes/Sources/{}", safe_name(&s.name)));
     let text = read_text(&root, &it.hash);
     let is_file = it.loc.starts_with('/') && Path::new(&it.loc).is_file();
     let mut body_md = text.clone();
@@ -1352,7 +1349,7 @@ pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
             let dst = root.join(&rel);
             let _ = std::fs::create_dir_all(dst.parent().unwrap());
             if let Err(e) = std::fs::copy(&it.loc, &dst) {
-                return err(StatusCode::INTERNAL_SERVER_ERROR, format!("原件没复制进库：{e}")).into_response();
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("原件没复制进库：{e}")));
             }
             let link = rel.replace(' ', "%20");
             body_md = format!("{}\n\n原件：[{fname}]({link})\n", body_md.trim_end());
@@ -1373,7 +1370,7 @@ pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
     }
     let mut k = st.kernel.lock().unwrap();
     if let Err(e) = k.put_doc(&target, &md) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
     drop(k);
     // 移动：资产已存进库，再删原件
@@ -1392,7 +1389,122 @@ pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
         REV.fetch_add(1, Ordering::SeqCst);
     }
     audit_log(&root.join(".litmus/local"), "ext-import", &json!({ "key": key, "to": target, "mode": mode, "moved": removed_original }));
-    Json(json!({ "path": target, "asset": moved_to.filter(|a| !a.is_empty()), "moved": removed_original, "original": it.loc, "from": key })).into_response()
+    Ok(json!({ "path": target, "asset": moved_to.filter(|a| !a.is_empty()), "moved": removed_original, "original": it.loc, "from": key }))
+}
+
+/// POST /field/ext/import {p, mode:"copy"|"move", folder?}（默认复制：原件留在原处）
+pub async fn ext_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let key = req.get("p").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let mode = req.get("mode").and_then(|v| v.as_str()).unwrap_or("copy").to_string();
+    let folder = req.get("folder").and_then(|v| v.as_str()).map(String::from);
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    match import_one(&st, &root, &key, &mode, folder.as_deref()) {
+        Ok(v) => Json(v).into_response(),
+        Err((code, e)) => err(code, e).into_response(),
+    }
+}
+
+// ───────── 批量入库（后台，可停下） ─────────
+
+#[derive(Serialize, Clone, Default)]
+pub struct ImportJob {
+    pub running: bool,
+    pub done: usize,
+    pub total: usize,
+    pub ok: usize,
+    pub failed: Vec<String>,
+    pub paths: Vec<String>,
+    pub current: String,
+    pub finished: u64,
+    #[serde(skip)]
+    pub stop: bool,
+}
+
+fn imports() -> &'static Mutex<HashMap<PathBuf, ImportJob>> {
+    static I: std::sync::OnceLock<Mutex<HashMap<PathBuf, ImportJob>>> = std::sync::OnceLock::new();
+    I.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn import_snapshot(root: &Path) -> Option<ImportJob> {
+    imports().lock().unwrap().get(root).cloned()
+}
+
+pub fn import_stop(root: &Path) -> bool {
+    match imports().lock().unwrap().get_mut(root) {
+        Some(j) if j.running => {
+            j.stop = true;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// POST /field/ext/import-batch {keys?:[…], source?:id, mode?:"copy"|"move", dry?}
+/// 一次导入很多篇：后台低优先级一篇篇来，进度在 /jobs；默认复制（原件留在原处）。
+pub async fn ext_import_batch(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let mode = req.get("mode").and_then(|v| v.as_str()).unwrap_or("copy").to_string();
+    let root = st.kernel.lock().unwrap().vault.root.clone();
+    let mut keys: Vec<String> = req.get("keys").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).filter(|k| k.starts_with("ext:")).map(String::from).collect()).unwrap_or_default();
+    if let Some(src) = req.get("source").and_then(|v| v.as_str()) {
+        // 一整个来源：场上能看到的那些（筛掉的、已入库的不算）
+        keys.extend(corpus(&root).into_iter().filter(|(it, _, _)| it.src == src).map(|(it, _, _)| it.key));
+    }
+    keys.sort();
+    keys.dedup();
+    if req.get("dry").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Json(json!({ "count": keys.len() })).into_response();
+    }
+    if keys.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "没有要入库的：选中的都已经在库里了，或者不是库外的条目").into_response();
+    }
+    {
+        let mut js = imports().lock().unwrap();
+        if js.get(&root).map(|j| j.running).unwrap_or(false) {
+            return err(StatusCode::CONFLICT, "上一批还在入库：等它做完，或者先停下").into_response();
+        }
+        js.insert(root.clone(), ImportJob { running: true, total: keys.len(), ..Default::default() });
+    }
+    let total = keys.len();
+    let st2 = st.clone();
+    let root2 = root.clone();
+    spawn_background("litmus-import", move || {
+        for key in keys {
+            if imports().lock().unwrap().get(&root2).map(|j| j.stop).unwrap_or(true) {
+                break;
+            }
+            let title = find_item(&root2, &key).map(|(it, _)| it.title).unwrap_or_else(|| key.clone());
+            if let Some(j) = imports().lock().unwrap().get_mut(&root2) {
+                j.current = title.clone();
+            }
+            let r = import_one(&st2, &root2, &key, &mode, None);
+            if let Some(j) = imports().lock().unwrap().get_mut(&root2) {
+                j.done += 1;
+                match r {
+                    Ok(v) => {
+                        j.ok += 1;
+                        if let Some(p) = v["path"].as_str() {
+                            j.paths.push(p.to_string());
+                        }
+                    }
+                    Err((_, e)) => j.failed.push(format!("{title}：{e}")),
+                }
+            }
+        }
+        if let Some(j) = imports().lock().unwrap().get_mut(&root2) {
+            j.running = false;
+            j.current.clear();
+            j.finished = now_secs();
+        }
+    });
+    Json(json!({ "started": true, "total": total })).into_response()
 }
 
 #[cfg(test)]

@@ -237,6 +237,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/sources/{id}/scan", post(sources::scan))
         .route("/field/ext", get(sources::ext_get))
         .route("/field/ext/import", post(sources::ext_import))
+        .route("/field/ext/import-batch", post(sources::ext_import_batch))
         .route("/field/agent", post(field::agent))
         .route("/assets/reading-styles.js", get(field::reading_styles))
         .route("/sticky.html", get(|| async {

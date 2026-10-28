@@ -486,6 +486,26 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 .cu-bar{position:sticky;bottom:-16px;background:var(--sheet);padding:10px 0 4px;box-shadow:0 -1px 0 var(--rule)}
 #p-body label.chk.inline{display:inline-flex;align-items:center;gap:6px;margin:0;font:400 var(--fs-2)/1.4 var(--f-ui);color:var(--ink-2);letter-spacing:0;text-transform:none}
 .btn.wide{width:100%;margin-top:6px}
+/* 选择、批量、Zen / God */
+#marq{position:fixed;z-index:16;border:1.5px dashed var(--litmus);background:oklch(var(--litmus-c) / .08);border-radius:var(--r-xs);pointer-events:none;display:none}
+#pickbar{flex-wrap:wrap;justify-content:center;white-space:normal;max-width:calc(100vw - 32px);row-gap:6px}
+#pickbar .sep{width:1px;height:18px;background:oklch(var(--paper-c) / .3)}
+body.selecting #field{cursor:crosshair}
+body.zen #brand,body.zen #lens,body.zen #intent,body.zen #sed,body.zen #coach,body.zen #pickbar,body.zen #field,body.zen #veil{opacity:0;pointer-events:none}
+body.zen #sheet{width:100vw!important;transform:none;box-shadow:none}
+body.zen #doc{padding:48px 24px 160px;font-size:var(--fs-5)}
+body.zen #doc .inner{max-width:68ch}
+body.zen #sheet header .path,body.zen #sheet header .tag{opacity:.45}
+body.god #brand,body.god #lens,body.god #intent,body.god #sed,body.god #coach,body.god #pickbar,body.god #field,body.god #veil{opacity:0;pointer-events:none}
+body.god #sheet{width:100vw!important;transform:none;box-shadow:none}
+body.god #doc{overflow:hidden;padding:18px 24px 0;display:flex;flex-direction:column}
+body.god #doc .inner{max-width:none;flex:1;min-height:0;display:flex;flex-direction:column;width:100%}
+body.god #doc .inner > :not(.body){display:none}
+body.god #doc .body{flex:1;min-height:0}
+body.god .editw{grid-template-columns:1fr 1fr;height:100%;gap:0}
+body.god #editor{height:100%!important;min-height:0;overflow:auto;padding:8px 24px 120px 0;border-right:1px solid var(--rule)}
+body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;padding:8px 8px 120px 28px;position:static}
+#s-zen.on,#s-god.on{background:var(--ink);color:var(--paper)}
 </style>
 </head>
 <body>
@@ -513,7 +533,8 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
   <button class="ib" id="b-help" title="用法与旧功能位置（?）" aria-label="帮助"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6.2a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3V10"/><circle cx="8" cy="12.4" r=".6" fill="currentColor"/></svg></button>
 </div>
 
-<div id="pickbar"><span id="pickn">点选几篇文档，串成一条路径</span><button id="pick-go">串成路径走一遍</button><button class="g" id="pick-x">取消</button></div>
+<div id="pickbar" role="toolbar" aria-label="已选的文档"><span id="pickn">点选几篇文档</span><span id="pick-acts"></span><button class="g" id="pick-x">取消</button></div>
+<div id="marq" aria-hidden="true"></div>
 
 <div id="intent">
   <div id="cmds" role="listbox" aria-label="指令"></div>
@@ -536,6 +557,8 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
   <header>
     <span class="tag" id="s-rg"></span><span class="path" id="s-path"></span><span id="s-save"></span>
     <button class="btn" id="s-toc" title="目录">目录</button>
+    <button class="btn" id="s-zen" title="Zen：应用内全屏，只留这一篇（⌘⇧F，Esc 退出）">Zen</button>
+    <button class="btn" id="s-god" title="God：左边写、右边预览，铺满窗口（⌘⇧G，Esc 退出）">God</button>
     <button class="btn" id="s-edit">编辑</button>
     <button class="ib" id="s-more" aria-label="更多" title="更多"><svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
     <button class="ib" id="s-x" aria-label="关闭阅读（Esc）" title="Esc"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
@@ -579,9 +602,10 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
     <div class="keys">
       <div><kbd>任意字</kbd>直接开始输入</div><div><kbd>Esc</kbd>逐层退出</div>
       <div><kbd>F</kbd>看全</div><div><kbd>T</kbd>意义 / 时间排布</div>
-      <div><kbd>+</kbd><kbd>-</kbd>缩放</div><div><kbd>⇧</kbd>点选：串成路径</div>
+      <div><kbd>+</kbd><kbd>-</kbd>缩放</div><div><kbd>/选择</kbd>选择模式：点选、框选，批量操作</div>
       <div><kbd>双击</kbd>空白处放大（⇧ 缩小）</div><div><kbd>双指</kbd>捏合缩放、拖动；松手会滑一小段</div>
       <div><kbd>⌘E</kbd>阅读页里编辑 / 阅读</div><div><kbd>?</kbd>这一页</div>
+      <div><kbd>⇧</kbd>拖动：框选一片；<kbd>⇧</kbd>/<kbd>⌘</kbd>点：加减选</div><div><kbd>⌘⇧F</kbd>Zen 全屏 · <kbd>⌘⇧G</kbd>God 左写右看</div>
     </div>
 
     <h3>以前的界面里的东西在哪</h3>
@@ -1203,10 +1227,12 @@ function setNow(d, quiet){
     if (e.target.closest('.crystal')) return;
     field.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
     downNode = e.target.closest('.n'); downRg = e.target.closest('.rg'); start = [e.clientX, e.clientY, cam.tox, cam.toy]; moved = 0;
+    if ((e.shiftKey || picking) && !downNode && pts.size === 1 && e.pointerType !== 'touch'){ marqStart(e); start = null; return; }
     vel = [0, 0, performance.now()];
     if (pts.size === 2){ const [a, b] = [...pts.values()]; pinch0 = [Math.hypot(a[0] - b[0], a[1] - b[1]), cam.ts, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
   });
   field.addEventListener('pointermove', e => {
+    if (marq){ marqMove(e); return; }
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, [e.clientX, e.clientY]);
     if (pts.size === 2 && pinch0){
@@ -1224,6 +1250,7 @@ function setNow(d, quiet){
     }
   });
   const up = e => {
+    if (marq){ pts.delete(e.pointerId); if (!marqEnd() && picking) blankClick(); return; }
     pts.delete(e.pointerId); if (pts.size < 2) pinch0 = null; field.classList.remove('panning');
     const wasPan = start && moved > 4 && moved < 99 && pts.size === 0 && performance.now() - vel[2] < 80;
     if (moved <= 4 && start){
@@ -1261,17 +1288,104 @@ function dotClick(e){
   if (best) zoomAt(2.2, e.clientX, e.clientY); else blankClick();
 }
 function blankClick(){ if (document.body.classList.contains('reading')) closeDoc(); }
+/* ───────── 选择：⇧ / ⌘ 点选，⇧ 拖出框选，/选择 进入选择模式；选中后批量入库、移动、打标签、删除、串成路径 ───────── */
 let picking = false; const picks = [];
 function nodeClick(n, e){ if (picking || e.shiftKey || e.metaKey || e.ctrlKey){ togglePick(n); return; } openDoc(n); }
-function togglePick(n){
+function setPick(n, on){
   const i = picks.indexOf(n);
-  if (i >= 0){ picks.splice(i, 1); n.el.classList.remove('pick'); } else { picks.push(n); n.el.classList.add('pick'); }
-  $('pickbar').classList.toggle('on', picking || picks.length > 0);
-  $('pickn').textContent = picks.length ? '已选 ' + picks.length + ' 篇，按点选顺序走' : '点选几篇文档，串成一条路径';
+  if (on && i < 0){ picks.push(n); n.el.classList.add('pick'); }
+  if (!on && i >= 0){ picks.splice(i, 1); n.el.classList.remove('pick'); }
 }
-function endPick(){ picking = false; picks.splice(0).forEach(n => n.el.classList.remove('pick')); $('pickbar').classList.remove('on'); }
-$('pick-go').onclick = () => { if (picks.length < 2){ toast('至少选两篇'); return; } const list = picks.slice(); endPick(); tour(list.map(n => ({n, cap:n.ex}))); };
+function togglePick(n){ setPick(n, !picks.includes(n)); renderPickbar(); }
+function pickMany(list, add){ if (!add) picks.slice().forEach(n => setPick(n, false)); list.forEach(n => setPick(n, true)); renderPickbar(); }
+function endPick(){ picking = false; document.body.classList.remove('selecting'); picks.splice(0).forEach(n => n.el.classList.remove('pick')); $('pickbar').classList.remove('on'); }
+function startSelecting(){ picking = true; document.body.classList.add('selecting'); renderPickbar(); }
+function renderPickbar(){
+  const bar = $('pickbar'), ext = picks.filter(n => n.k === 'ext'), lib = picks.filter(n => n.k !== 'ext' && n.k !== 'answer');
+  bar.classList.toggle('on', picking || picks.length > 0);
+  $('pickn').textContent = picks.length ? '已选 ' + picks.length + ' 篇' + (ext.length && lib.length ? '（库外 ' + ext.length + ' · 库里 ' + lib.length + '）' : ext.length ? '（都在库外）' : '') : '点一下选中，⇧ 拖出一个框多选';
+  const b = (id, label, show) => show ? '<button data-pk="' + id + '">' + label + '</button>' : '';
+  $('pick-acts').innerHTML = (picks.length ? '<span class="sep"></span>' : '') +
+    b('import', '入库 ' + ext.length, ext.length) + b('digest', '让 AI 学', ext.length) +
+    b('move', '移到…', lib.length) + b('tag', '加标签', lib.length) +
+    b('path', '串成路径', picks.length >= 2) + b('more', '按节点选…', picks.length) + b('all', '全选视野内', true) +
+    b('del', ext.length && !lib.length ? '从场上拿掉' : '删除', picks.length);
+  $('pick-acts').querySelectorAll('[data-pk]').forEach(x => x.onclick = e => pickAction(x.dataset.pk, x, e));
+}
+function inView(n){ return n.born && n.vis > .05 && n.scx > 0 && n.scx < vw && n.scy > 0 && n.scy < vh; }
+async function pickAction(a, btn){
+  const ext = picks.filter(n => n.k === 'ext'), lib = picks.filter(n => n.k !== 'ext' && n.k !== 'answer');
+  if (a === 'all'){ pickMany(nodes.filter(inView), true); return; }
+  if (a === 'path'){ const list = picks.slice(); endPick(); tour(list.map(n => ({n, cap:n.ex}))); return; }
+  if (a === 'digest'){ startDigest({keys:ext.map(n => n.p), limit:ext.length}); return; }
+  if (a === 'more'){
+    const seed = picks.slice(), rs = new Set(seed.map(n => n.r)), ss = new Set(seed.filter(n => n.src).map(n => n.src)), ps = new Set(seed);
+    const near = new Set(); edges.forEach(([x, y]) => { if (ps.has(x)) near.add(y); if (ps.has(y)) near.add(x); });
+    openPop(btn, [
+      {label:'同区域的（' + nodes.filter(n => rs.has(n.r)).length + '）', run:() => pickMany(nodes.filter(n => rs.has(n.r)), true)},
+      ...(ss.size ? [{label:'同一个来源的（' + nodes.filter(n => ss.has(n.src)).length + '）', run:() => pickMany(nodes.filter(n => ss.has(n.src)), true)}] : []),
+      {label:'意思相近的（' + near.size + '）', run:() => pickMany([...near], true)},
+      {label:'同一种（' + ({ext:'库外', memo:'随手记', doc:'文档', source:'采集原文', answer:'答案'}[seed[0].k] || '文档') + '）', run:() => pickMany(nodes.filter(n => n.k === seed[0].k), true)},
+      '-',
+      {label:'反选视野内', run:() => { const v = nodes.filter(inView); pickMany(v.filter(n => !ps.has(n)), false); }}
+    ]);
+    return;
+  }
+  if (a === 'import'){
+    try { const r = await api('/field/ext/import-batch', {method:'POST', json:{keys:ext.map(n => n.p), mode:'copy'}}); ext.forEach(n => setPick(n, false)); renderPickbar(); pollJobs(true); toast('在后台把 ' + r.total + ' 篇复制进库（原件留在原处），左上角看进度；入库的会原地变成实心点'); }
+    catch(e){ toast('<b>没开始</b>：' + esc(e.message || e), true); }
+    return;
+  }
+  if (a === 'move'){
+    const common = lib.map(n => n.p.split('/').slice(0, -1).join('/')).reduce((x, y) => { while (x && !(y + '/').startsWith(x + '/')) x = x.split('/').slice(0, -1).join('/'); return x; });
+    const box = openPanel('把 ' + lib.length + ' 篇移到…', '<label for="mv-to">目标文件夹（Notes/ 下）</label><input type="text" id="mv-to" value="' + esc(common || 'Notes') + '"><p class="hint">链到它们的 [[双链]] 和链接会一起改。可以撤销。</p><div class="acts"><button class="btn pri" id="mv-go">移过去</button><span id="mv-m"></span></div>');
+    $('mv-go').onclick = async () => {
+      const to = $('mv-to').value.trim().replace(/\/+$/, ''); if (!/^Notes(\/|$)/.test(to)){ $('mv-m').className = 'bad'; $('mv-m').textContent = '要在 Notes/ 下'; return; }
+      const undo = [], fails = []; $('mv-go').disabled = true;
+      for (const n of lib){ const dst = to + '/' + n.p.split('/').pop(); if (dst === n.p) continue; try { await api('/doc/move', {method:'POST', json:{from:n.p, to:dst}}); undo.push({from:dst, to:n.p}); } catch(e){ fails.push(n.full + '：' + (e.message || e)); } }
+      closePanel(); endPick(); await refreshNow();
+      toastAct('移好了 ' + undo.length + ' 篇' + (fails.length ? '，' + fails.length + ' 篇没移成' : ''), '撤销', async () => { for (const m of undo) await api('/doc/move', {method:'POST', json:m}).catch(() => {}); await refreshNow(); toast('放回原处了'); });
+    };
+    return;
+  }
+  if (a === 'tag'){
+    const box = openPanel('给 ' + lib.length + ' 篇加标签', '<label for="tg-in">标签（空格或逗号分隔）</label><input type="text" id="tg-in" placeholder="比如 同步 方案"><div class="acts"><button class="btn pri" id="tg-go">加上</button><span id="tg-m"></span></div>');
+    $('tg-go').onclick = async () => {
+      const tags = $('tg-in').value.split(/[\s,，#]+/).map(x => x.trim()).filter(Boolean); if (!tags.length) return;
+      $('tg-go').disabled = true; let ok = 0;
+      for (const n of lib){ if (!/\.md$/i.test(n.p)) continue; try { const d = await api('/doc?path=' + encP(n.p)); await api('/doc?path=' + encP(n.p), {method:'PUT', body:addTags(d.source || '', tags), headers:{'content-type':'text/markdown'}}); ok++; } catch(e){} }
+      closePanel(); endPick(); await refreshNow(); toast('给 ' + ok + ' 篇加上了 ' + tags.map(t => '#' + esc(t)).join(' '));
+    };
+    return;
+  }
+  if (a === 'del'){
+    if (btn.dataset.sure !== '1'){ btn.dataset.sure = '1'; btn.textContent = '再点一次：' + (lib.length ? '库里 ' + lib.length + ' 篇进回收站' : '') + (lib.length && ext.length ? '，' : '') + (ext.length ? '库外 ' + ext.length + ' 篇拿掉（原件不动）' : ''); return; }
+    const trashed = [], fails = []; let batch = null;
+    for (const n of lib){ try { await api('/doc?path=' + encP(n.p), {method:'DELETE'}); trashed.push(n.p); } catch(e){ fails.push(n.full); } }
+    if (ext.length){ try { batch = (await api('/field/curate/apply', {method:'POST', json:{drop:ext.map(n => n.p)}})).batch; } catch(e){ fails.push('库外 ' + ext.length + ' 篇'); } }
+    endPick(); await refreshNow();
+    toastAct((trashed.length ? '库里 ' + trashed.length + ' 篇进了回收站' : '') + (trashed.length && batch ? '；' : '') + (batch ? '库外 ' + ext.length + ' 篇拿掉了' : '') + (fails.length ? '；' + fails.length + ' 项没成' : '') + '（右上角回收站能找回）', '撤销', async () => {
+      for (const p of trashed) await api('/trash/restore', {method:'POST', json:{path:p}}).catch(() => {});
+      if (batch) await api('/field/curate/undo', {method:'POST', json:{batch}}).catch(() => {});
+      await refreshNow(); toast('都放回来了');
+    });
+  }
+}
 $('pick-x').onclick = endPick;
+/* 框选：⇧ 拖（或在选择模式里直接拖）出一个框，框里的都选上 */
+let marq = null;
+function marqStart(e){ marq = {x:e.clientX, y:e.clientY, add:e.shiftKey || picking}; const m = $('marq'); m.style.display = 'block'; marqMove(e); }
+function marqMove(e){ if (!marq) return; const m = $('marq'), x0 = Math.min(marq.x, e.clientX), y0 = Math.min(marq.y, e.clientY); m.style.left = x0 + 'px'; m.style.top = y0 + 'px'; m.style.width = Math.abs(e.clientX - marq.x) + 'px'; m.style.height = Math.abs(e.clientY - marq.y) + 'px'; marq.x1 = e.clientX; marq.y1 = e.clientY; }
+function marqEnd(){
+  if (!marq) return false; $('marq').style.display = 'none';
+  const x0 = Math.min(marq.x, marq.x1 ?? marq.x), x1 = Math.max(marq.x, marq.x1 ?? marq.x), y0 = Math.min(marq.y, marq.y1 ?? marq.y), y1 = Math.max(marq.y, marq.y1 ?? marq.y);
+  const big = (x1 - x0) + (y1 - y0) > 8; marq = null;
+  if (!big) return false;
+  const hit = nodes.filter(n => n.born && n.vis > .05 && n.scx >= x0 && n.scx <= x1 && n.scy >= y0 && n.scy <= y1);
+  if (!picking) startSelecting();
+  pickMany(hit, true); if (!hit.length) toast('框里没有文档');
+  return true;
+}
 
 /* ───────── 阅读与编辑 ───────── */
 let reading = null, docData = null, editing = false;
@@ -1396,7 +1510,42 @@ function toggleEdit(){
   }
 }
 $('s-edit').onclick = toggleEdit;
+/* ───────── Zen（应用内全屏，只留这一篇）与 God（左写右看，铺满窗口） ───────── */
+let viewMode = '';
+function setMode(m){
+  if (!reading){ toast('先打开一篇'); return; }
+  if (viewMode === m) m = '';
+  const prev = viewMode; viewMode = m;
+  document.body.classList.toggle('zen', m === 'zen'); document.body.classList.toggle('god', m === 'god');
+  $('s-zen').classList.toggle('on', m === 'zen'); $('s-god').classList.toggle('on', m === 'god');
+  if (m === 'god'){
+    if (docData && docData.format === 'html'){ viewMode = ''; document.body.classList.remove('god'); $('s-god').classList.remove('on'); toast('HTML 文档不能边写边看'); return; }
+    if (!split){ split = true; document.body.classList.add('split'); }
+    if (!editing) toggleEdit(); else { const pv = $('preview'); if (pv){ pv.hidden = false; updatePreview(docData && docData.html); } }
+    setTimeout(wireGodScroll, 60);
+  } else if (prev === 'god'){
+    if (split){ split = false; document.body.classList.remove('split'); const pv = $('preview'); if (pv) pv.hidden = true; }
+  }
+  if (m) toast(m === 'zen' ? 'Zen：只留这一篇。Esc 退出' : 'God：左边写，右边预览（停笔一下就刷新）。Esc 退出');
+  kick();
+}
+/* God 里两边按比例同步滚动 */
+function wireGodScroll(){
+  const ed = $('editor'), pv = $('preview'); if (!ed || !pv || ed._god) return; ed._god = true;
+  let lock = 0;
+  ed.addEventListener('scroll', () => { if (!document.body.classList.contains('god') || lock === 2) { lock = 0; return; } lock = 1; const r = ed.scrollTop / Math.max(1, ed.scrollHeight - ed.clientHeight); pv.scrollTop = r * (pv.scrollHeight - pv.clientHeight); });
+  pv.addEventListener('scroll', () => { if (!document.body.classList.contains('god') || lock === 1) { lock = 0; return; } lock = 2; const r = pv.scrollTop / Math.max(1, pv.scrollHeight - pv.clientHeight); ed.scrollTop = r * (ed.scrollHeight - ed.clientHeight); });
+}
+$('s-zen').onclick = () => setMode('zen');
+$('s-god').onclick = () => setMode('god');
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')){ if (reading){ e.preventDefault(); setMode('zen'); } }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'g' || e.key === 'G')){ if (reading){ e.preventDefault(); setMode('god'); } }
+  if (e.key === 'Escape' && viewMode){ e.preventDefault(); e.stopImmediatePropagation(); setMode(viewMode); }
+}, true);
+
 async function closeDoc(){
+  if (viewMode){ viewMode = ''; document.body.classList.remove('zen', 'god'); $('s-zen').classList.remove('on'); $('s-god').classList.remove('on'); }
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还没存上</b>，原文保留在编辑框里，恢复连接后会自动重试', true); return; } }
   const sw = sheetW();
   editing = false; document.body.classList.remove('reading'); hideRing();
@@ -1633,7 +1782,10 @@ const CMDS = [
   ['/时间', '按时间重新铺开整片场', () => setLayout('time')],
   ['/意义', '回到按意义排布', () => setLayout('sem')],
   ['/看全', '把所有知识收进视野', () => fit()],
-  ['/路径', '点选几篇，串成一条演示路径', () => { picking = true; $('pickbar').classList.add('on'); $('pickn').textContent = '点选几篇文档，串成一条路径'; }],
+  ['/路径', '点选几篇，串成一条演示路径', () => startSelecting()],
+  ['/选择', '选择模式：点一下选中、拖出框多选；选中后批量入库、移动、打标签、删除（也可以 ⇧ 点选、⇧ 拖）', () => startSelecting()],
+  ['/Zen', 'Zen：正在读的这篇应用内全屏（⌘⇧F）', () => setMode('zen')],
+  ['/God', 'God：左边写、右边预览，铺满窗口（⌘⇧G）', () => setMode('god')],
   ['/今天', '把沉积条拖回今天', () => setNow(NDAYS)],
   ['/清空', '洗掉所有显色', () => { dissolveCrystal(); clearReaction(); }],
   ['/明暗', '切换明暗', toggleTheme],
@@ -1851,8 +2003,8 @@ $('s-more').onclick = () => {
   if (n.k === 'ext'){
     const fileLike = docData && docData.loc && docData.loc.startsWith('/');
     openPop($('s-more'), [
-      ...(fileLike && docData.exists ? [{label:'移进库（原件进 Assets）', run:() => $('doc').querySelector('[data-imp="move"]').click()}] : []),
       {label:fileLike ? '复制进库（原件留着）' : '导入进库', run:() => $('doc').querySelector('[data-imp="copy"]').click()},
+      ...(fileLike && docData.exists ? [{label:'移进库（原件也搬进来）', run:() => $('doc').querySelector('[data-imp="move"]').click()}] : []),
       {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
       {label:'复制原处路径', run:() => copyText(docData.loc || n.p)},
       '-',
@@ -2339,6 +2491,12 @@ async function openPlugins(){
   box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => { const p = plugins.find(x => x.id === b.dataset.toggle); await api('/plugins/toggle', {method:'POST', json:{name:p.id, enabled:!p.enabled}}).catch(e => toast(esc(e.message), true)); openPlugins(); });
   box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { const [id, i] = b.dataset.view.split(':'); const p = plugins.find(x => x.id === id); openPluginView(p, p.views[+i]); });
   box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => { const s = have.find(x => x.id === b.dataset.all); s.limit = null; b.disabled = true; try { await api('/sources', {method:'POST', json:{source:s}}); await api('/sources/' + s.id + '/scan', {method:'POST'}); pollJobs(true); } catch(e){ toast(esc(e.message), true); } openSources(); });
+  box.querySelectorAll('[data-impall]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.impall;
+    if (b.dataset.sure !== '1'){ try { const e = await api('/field/ext/import-batch', {method:'POST', json:{source:id, dry:true}}); if (!e.count){ toast('这个来源的都已经在库里了'); return; } b.dataset.sure = '1'; b.textContent = '确认：复制 ' + e.count + ' 篇进库'; b.classList.add('danger'); } catch(x){ toast(esc(x.message), true); } return; }
+    b.disabled = true;
+    try { const r = await api('/field/ext/import-batch', {method:'POST', json:{source:id, mode:'copy'}}); pollJobs(true); toast('在后台把 ' + r.total + ' 篇复制进库，左上角看进度'); openSources(); } catch(x){ b.disabled = false; toast(esc(x.message), true); }
+  });
   box.querySelectorAll('[data-ct]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '测试中…'; try { const t = await api('/connectors/test', {method:'POST', json:{id:b.dataset.ct}}); toast((t.ok ? '' : '<b>没连通</b>：') + esc(t.message), !t.ok); } catch(e){ toast(esc(e.message), true); } b.disabled = false; b.textContent = '测试'; });
   box.querySelectorAll('[data-dg]').forEach(b => b.onclick = () => startDigest({source:b.dataset.dg, limit:10}));
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
@@ -3170,7 +3328,7 @@ async function openSources(first){
     const status = sc.running ? '<span class="thinking"><i></i><i></i><i></i> ' + (sc.paused ? '已暂停 ' : '') + esc(sc.phase || '扫描中') + ' ' + (sc.seen || 0) + (sc.total ? ' / ' + sc.total : '') + '</span>' : sc.error ? '<span class="bad">' + esc(sc.error) + '</span>' : sc.finished ? s.items + ' 篇 · ' + new Date(sc.finished * 1000).toLocaleString() : '还没扫描';
     return '<div class="row"><div class="grow"><span>' + esc(s.name) + ' <em class="kind">' + (SRC_KIND[s.kind] || s.kind) + '</em>' + (s.enabled ? '' : ' <em class="kind">已停用</em>') + '</span><small>' + esc(s.path || s.connection || (s.services || []).join(' · ') || (s.rest && s.rest.url) || '') + '</small><small>' + status + '</small></div><div class="oacts">' +
       (s.kind === 'google' && !s.authorized ? '<button class="btn pri" data-gauth="' + esc(s.id) + '">连接 Google</button>' : '<button class="btn" data-scan="' + esc(s.id) + '"' + (sc.running ? ' disabled' : '') + '>' + (sc.finished ? '重新扫描' : '扫描') + '</button>') +
-      (s.limit && !sc.running ? '<button class="btn" data-all="' + esc(s.id) + '" title="现在只接了最近的 ' + s.limit + ' 个">全部接进来</button>' : '') + ((CONN.presets || []).some(p => p.kind === s.kind) ? '<button class="btn" data-ct="' + esc(s.id) + '">测试</button>' : '') + (s.items ? '<button class="btn" data-dg="' + esc(s.id) + '">让 AI 学一批</button>' : '') + '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
+      (s.limit && !sc.running ? '<button class="btn" data-all="' + esc(s.id) + '" title="现在只接了最近的 ' + s.limit + ' 个">全部接进来</button>' : '') + (s.items && !sc.running ? '<button class="btn" data-impall="' + esc(s.id) + '" title="把这个来源里还在库外的全部复制进库（原件留着）">全部入库</button>' : '') + ((CONN.presets || []).some(p => p.kind === s.kind) ? '<button class="btn" data-ct="' + esc(s.id) + '">测试</button>' : '') + (s.items ? '<button class="btn" data-dg="' + esc(s.id) + '">让 AI 学一批</button>' : '') + '<button class="btn" data-look="' + esc(s.id) + '">在场上看</button><button class="btn" data-off="' + esc(s.id) + '">' + (s.enabled ? '停用' : '启用') + '</button><button class="btn" data-del="' + esc(s.id) + '">移除</button></div></div>';
   };
   box.innerHTML = (first ? '<p class="lede">知识不只在库里。下面是在这台电脑上找到的、可以接进来的东西。接进来的内容<b>留在原处</b>，只建索引：在场上以虚线圈出现，能搜、能显色、能提问；你觉得值得的，再<b>导入</b>（移进库）或<b>先学习</b>、只把学习笔记存进库。</p>' : '<p class="hint" style="margin-top:0">接进来的内容留在原处、只建索引（存在这台设备的 .litmus/local/ 里，不同步）。在场上是虚线圈；打开后可以导入进库，或者先学习、只存学习笔记。</p>') +
     (have.length ? '<label>已接入 · ' + have.length + '</label>' + have.map(row).join('') : '') +
@@ -3423,7 +3581,7 @@ function scheduleFieldRefresh(gap){
 }
 function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
 function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
-const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选'};
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库'};
 function renderJobs(j){
   const b = $('jobs'); if (!b) return;
   const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
@@ -3642,7 +3800,7 @@ async function openExt(n){
 function extBanner(d){
   const fileLike = d.loc && d.loc.startsWith('/');
   return '<div class="extb"><b>库外</b><span>' + esc(d.src) + ' · ' + esc(EXT_KIND[d.kind] || d.kind) + ' · ' + esc(d.date || '') + '</span><small>' + esc(d.loc || '') + (fileLike && !d.exists ? '（原件已不在）' : '') + '</small>' + (d.note ? '<small class="bad">' + esc(d.note) + '</small>' : '') +
-    '<div class="acts">' + (fileLike && d.exists ? '<button class="btn pri" data-imp="move">移进库</button><button class="btn" data-imp="copy">复制进库</button>' : '<button class="btn pri" data-imp="copy">导入进库</button>') + '<button class="btn" data-imp="learn">先学习</button><button class="btn" data-imp="digest">让 AI 学</button>' + (fileLike && d.exists && DESK ? '<button class="btn" data-imp="reveal">在访达中显示</button>' : (!fileLike && /^https?:/.test(d.loc || '') ? '<a class="btn" href="' + esc(d.loc) + '" target="_blank" rel="noopener">打开原处</a>' : '')) + '</div></div>';
+    '<div class="acts">' + (fileLike && d.exists ? '<button class="btn pri" data-imp="copy" title="生成库里的一篇，原件留在原处">复制进库</button><button class="btn" data-imp="move" title="原件也搬进库（原处不再有）">移进库</button>' : '<button class="btn pri" data-imp="copy">导入进库</button>') + '<button class="btn" data-imp="learn">先学习</button><button class="btn" data-imp="digest">让 AI 学</button>' + (fileLike && d.exists && DESK ? '<button class="btn" data-imp="reveal">在访达中显示</button>' : (!fileLike && /^https?:/.test(d.loc || '') ? '<a class="btn" href="' + esc(d.loc) + '" target="_blank" rel="noopener">打开原处</a>' : '')) + '</div></div>';
 }
 function wireExtBanner(n, d){
   const el = $('doc').querySelector('.extb'); if (!el) return;

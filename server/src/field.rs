@@ -2155,6 +2155,57 @@ for line in sys.stdin:
     }
 
     #[tokio::test]
+    async fn batch_import_copies_a_whole_source_in_the_background() {
+        let (app, token, dir) = app();
+        let outside = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            std::fs::write(outside.path().join(format!("资料{i}.md")), format!("# 资料{i}\n\n第 {i} 份资料的正文，讲同步与冲突。")).unwrap();
+        }
+        let (_, r) = call(&app, &token, "POST", "/sources", &serde_json::json!({"source": {"kind": "folder", "name": "下载", "path": outside.path().to_string_lossy()}}).to_string()).await;
+        let id = r["source"]["id"].as_str().unwrap().to_string();
+        let (_, _) = call(&app, &token, "POST", &format!("/sources/{id}/scan"), "").await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        let keys: Vec<String> = d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").map(|x| x["p"].as_str().unwrap().to_string()).collect();
+        assert_eq!(keys.len(), 5);
+        // 选中两篇入库（默认复制）
+        let (st, r) = call(&app, &token, "POST", "/field/ext/import-batch", &serde_json::json!({"keys": [keys[0], keys[1], "Notes/不是库外的.md"]}).to_string()).await;
+        assert_eq!(st, 200, "{r}");
+        assert_eq!(r["total"], 2);
+        let mut j = Value::Null;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            j = call(&app, &token, "GET", "/jobs", "").await.1;
+            if j["busy"] == false {
+                break;
+            }
+        }
+        let imp = j["jobs"].as_array().unwrap().iter().find(|x| x["kind"] == "import").unwrap().clone();
+        assert_eq!((imp["state"].as_str(), imp["items"].as_u64()), (Some("done"), Some(2)), "{j}");
+        // 整个来源剩下的：估算 3 篇，入库后场上没有库外的了，原件都还在
+        let (_, e) = call(&app, &token, "POST", "/field/ext/import-batch", &serde_json::json!({"source": id, "dry": true}).to_string()).await;
+        assert_eq!(e["count"], 3);
+        let (_, _) = call(&app, &token, "POST", "/field/ext/import-batch", &serde_json::json!({"source": id}).to_string()).await;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if call(&app, &token, "GET", "/jobs", "").await.1["busy"] == false {
+                break;
+            }
+        }
+        let (_, d) = call(&app, &token, "GET", "/field/data", "").await;
+        assert_eq!(d["docs"].as_array().unwrap().iter().filter(|x| x["k"] == "ext").count(), 0);
+        assert_eq!(std::fs::read_dir(dir.path().join("Notes/Sources/下载")).unwrap().count(), 5);
+        assert!((0..5).all(|i| outside.path().join(format!("资料{i}.md")).exists()), "复制进库：原件留着");
+        let (st, _) = call(&app, &token, "POST", "/field/ext/import-batch", &serde_json::json!({"source": id}).to_string()).await;
+        assert_eq!(st, 400, "都入库了：没东西可入");
+    }
+
+    #[tokio::test]
     async fn outside_sources_are_indexed_in_place_and_imported_on_demand() {
         let (app, token, dir) = app();
         seed(&app, &token).await;

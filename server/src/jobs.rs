@@ -714,6 +714,14 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "can": if c.running { json!(["stop"]) } else { json!([]) },
         }));
     }
+    if let Some(j) = super::sources::import_snapshot(&root).filter(|j| recent(j.running, j.finished)) {
+        out.push(json!({
+            "id": "import", "kind": "import", "title": "批量入库（复制进库，原件留着）",
+            "state": if j.running { "running" } else if j.ok == 0 && !j.failed.is_empty() { "error" } else { "done" },
+            "done": j.done, "total": j.total, "phase": j.current, "items": j.ok, "error": j.failed.first().map(|f| format!("{} 篇没入库，比如 {f}", j.failed.len())), "finished": j.finished,
+            "can": if j.running { json!(["stop"]) } else { json!([]) },
+        }));
+    }
     let held = super::curate::load_store(&root).held.len();
     let pending = {
         let r = root.clone();
@@ -733,6 +741,8 @@ pub async fn job_control(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath
         super::sources::scan_control(sid, &action)
     } else if id == "digest" {
         digest_control(&root, &action)
+    } else if id == "import" && action == "stop" {
+        super::sources::import_stop(&root)
     } else if id == "curate" && action == "stop" {
         super::curate::job_stop(&root)
     } else if id == "patrol" && action == "stop" {
