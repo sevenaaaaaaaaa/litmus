@@ -31,7 +31,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.21.0"
+version = "0.28.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
