@@ -37,6 +37,7 @@ mod organize;
 mod sources;
 mod share;
 mod disk;
+mod watch;
 mod terminal;
 
 pub struct AppState {
@@ -316,6 +317,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/desktop/disk/search", get(disk::find))
         .route("/desktop/disk/peek", get(disk::peek))
         .route("/desktop/disk/import", post(disk::import))
+        .route("/watch", get(watch::status).put(watch::configure))
+        .route("/watch/scan", post(watch::scan_now))
+        .route("/watch/dismiss", post(watch::dismiss))
+        .route("/watch/import", post(watch::import))
         .route("/desktop/scan", get(desktop_scan))
         .route("/desktop/quarantine", post(desktop_quarantine))
         .route("/desktop/pull", post(desktop_pull))
@@ -2813,6 +2818,7 @@ pub fn spawn_watcher(state: Arc<AppState>) -> anyhow::Result<()> {
     let mut watcher = notify::recommended_watcher(tx)?;
     use notify::Watcher;
     watcher.watch(&notes_dir, notify::RecursiveMode::Recursive)?;
+    let watch_state = state.clone();
 
     std::thread::spawn(move || {
         let _keep = watcher;
@@ -2832,6 +2838,9 @@ pub fn spawn_watcher(state: Arc<AppState>) -> anyhow::Result<()> {
             }
         }
     });
+    if let Err(e) = watch::spawn(watch_state) {
+        eprintln!("[litmus] watch thread: {e}");
+    }
     Ok(())
 }
 
@@ -7510,6 +7519,104 @@ async fn comments_update(State(st): State<Arc<AppState>>, h: HeaderMap, body: By
     }
 }
 
+/// 一次外部文件导入的结果。
+pub(crate) enum ImportOutcome {
+    Copied { dest: String, extractor: String },
+    Duplicate,
+    Skipped { pending: bool },
+}
+
+/// 把一个外部文件收进 `Notes/Imported/<相对目录>`：复制、转码、写溯源、记去重索引。
+/// `src` 是导入根（决定目标里的相对子目录），`dest_root` 是 `Notes/Imported`。
+/// 调用方负责把 index 写回、sync 内核、记 audit。
+pub(crate) fn import_one(
+    st: &AppState,
+    root: &std::path::Path,
+    index: &mut serde_json::Map<String, Value>,
+    src: &std::path::Path,
+    p: &std::path::Path,
+    dest_root: &std::path::Path,
+) -> ImportOutcome {
+    let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
+    let Ok(bytes) = std::fs::read(p) else { return ImportOutcome::Skipped { pending: false } };
+    let sha = sha256_hex(&bytes);
+    if index.contains_key(&sha) {
+        return ImportOutcome::Duplicate; // 同内容已导入过（去重）
+    }
+    let mtime = std::fs::metadata(p).ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs()).unwrap_or(0);
+    let rel = p.parent().unwrap_or(std::path::Path::new("")).strip_prefix(src).unwrap_or(std::path::Path::new(""));
+
+    // 得到 (正文, 抽取器, 目标扩展名)。HTML 一等文档与 verbatim 代码/数据文本原样保留
+    // （扩展名即契约：.html 走内核原文保留路径，代码文件字节级往返）；其余提取文本转 md。
+    let got: Option<(String, String, &str)> = match ext.as_str() {
+        "md" | "markdown" => Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), "md")),
+        "html" | "htm" => {
+            // HTML 一等文档 + 项目内联：目录内相对引用（css/js/图片）折叠为自包含单文件
+            let raw = String::from_utf8_lossy(&bytes).into_owned();
+            let html_dir = p.parent().unwrap_or(src).strip_prefix(src).unwrap_or(std::path::Path::new("")).to_path_buf();
+            let inlined = inline_html_project(&raw, src, &html_dir);
+            Some((inlined, "native+inline".into(), "html"))
+        }
+        "txt" => Some((plain_to_md(&String::from_utf8_lossy(&bytes)), "native".into(), "md")),
+        _ if kernel_core::VERBATIM_EXTS.contains(&ext.as_str()) => {
+            Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), &ext))
+        }
+        // 办公 / 开源文档 / PDF：结构保真转换（图片落 Assets）
+        _ if kernel_convert::supports(&ext) || matches!(ext.as_str(), "pdf" | "doc" | "wps" | "pages" | "wordml" | "webarchive") => {
+            match import_document(&ext, &bytes) {
+                Ok((c, x)) => {
+                    let stem = p.file_stem().and_then(|x| x.to_str()).unwrap_or("doc").to_string();
+                    let mut k = st.kernel.lock().unwrap();
+                    let full = materialize(&mut k, c, &stem);
+                    Some((full, x, "md"))
+                }
+                Err(_) => match extract_text(p) {
+                    Some((t, x)) => Some((plain_to_md(&t), x, "md")),
+                    None => None,
+                },
+            }
+        }
+        _ => match extract_text(p) {
+            Some((t, x)) => Some((plain_to_md(&t), x, "md")),
+            None => Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), "html")),
+        },
+    };
+    match got {
+        Some((body, extractor, outext)) => {
+            let dest_dir = dest_root.join(rel);
+            let _ = std::fs::create_dir_all(&dest_dir);
+            let stem = p.file_stem().and_then(|x| x.to_str()).unwrap_or("doc");
+            let target = dest_dir.join(format!("{stem}.{outext}"));
+            if target.exists() {
+                return ImportOutcome::Duplicate;
+            }
+            let content = if outext == "md" {
+                with_provenance(&body, &p.display().to_string(), &sha, mtime, &extractor)
+            } else {
+                body
+            };
+            if std::fs::write(&target, content).is_err() {
+                return ImportOutcome::Skipped { pending: false };
+            }
+            let rel_out = target.strip_prefix(root).unwrap_or(&target).display().to_string();
+            index.insert(sha.clone(), json!({
+                "source": p.display().to_string(),
+                "dest": rel_out,
+                "mtime": mtime,
+                "extractor": extractor,
+                "imported_at": now_iso(),
+            }));
+            ImportOutcome::Copied { dest: rel_out, extractor }
+        }
+        None => ImportOutcome::Skipped {
+            pending: matches!(ext.as_str(), "docx"|"pptx"|"xlsx"|"pdf"|"epub"|"rtf"|"odt"|"doc"),
+        },
+    }
+}
+
 async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
@@ -7533,91 +7640,17 @@ async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with('.') || name == "node_modules" || name == "target" { continue; }
             if p.is_dir() { stack.push(p); continue; }
-            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
-            let rel = p.parent().unwrap().strip_prefix(src).unwrap_or(std::path::Path::new(""));
-            let Ok(bytes) = std::fs::read(&p) else { skipped += 1; continue };
-            let sha = sha256_hex(&bytes);
-            if index.contains_key(&sha) {
-                dup += 1;
-                continue; // 同内容已导入过（去重）
-            }
-            let mtime = std::fs::metadata(&p).ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs()).unwrap_or(0);
-
-            // 得到 (正文, 抽取器, 目标扩展名)。HTML 一等文档与 verbatim 代码/数据文本原样保留
-            // （扩展名即契约：.html 走内核原文保留路径，代码文件字节级往返）；其余提取文本转 md。
-            let got: Option<(String, String, &str)> = match ext.as_str() {
-                "md" | "markdown" => Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), "md")),
-                "html" | "htm" => {
-                    // HTML 一等文档 + 项目内联：目录内相对引用（css/js/图片）折叠为自包含单文件
-                    let raw = String::from_utf8_lossy(&bytes).into_owned();
-                    let html_dir = p.parent().unwrap().strip_prefix(src).unwrap_or(std::path::Path::new("")).to_path_buf();
-                    let inlined = inline_html_project(&raw, src, &html_dir);
-                    Some((inlined, "native+inline".into(), "html"))
-                }
-                "txt" => Some((plain_to_md(&String::from_utf8_lossy(&bytes)), "native".into(), "md")),
-                _ if kernel_core::VERBATIM_EXTS.contains(&ext.as_str()) => {
-                    Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), &ext))
-                }
-                // 办公 / 开源文档 / PDF：结构保真转换（图片落 Assets）
-                _ if kernel_convert::supports(&ext) || matches!(ext.as_str(), "pdf" | "doc" | "wps" | "pages" | "wordml" | "webarchive") => {
-                    match import_document(&ext, &bytes) {
-                        Ok((c, x)) => {
-                            let stem = p.file_stem().and_then(|x| x.to_str()).unwrap_or("doc").to_string();
-                            let mut k = st.kernel.lock().unwrap();
-                            let full = materialize(&mut k, c, &stem);
-                            Some((full, x, "md"))
-                        }
-                        Err(_) => match extract_text(&p) {
-                            Some((t, x)) => Some((plain_to_md(&t), x, "md")),
-                            None => None,
-                        },
+            match import_one(&st, &root, &mut index, src, &p, &dest_root) {
+                ImportOutcome::Copied { extractor, .. } => {
+                    copied += 1;
+                    if extractor != "native" {
+                        extracted += 1;
+                        *extraction.entry(extractor.clone()).or_insert(0) += 1;
                     }
                 }
-                _ => match extract_text(&p) {
-                    Some((t, x)) => Some((plain_to_md(&t), x, "md")),
-                    None => Some((String::from_utf8_lossy(&bytes).into_owned(), "native".into(), "html")),
-                },
-            };
-            match got {
-                Some((body, extractor, outext)) => {
-                    let dest_dir = dest_root.join(rel);
-                    let _ = std::fs::create_dir_all(&dest_dir);
-                    let stem = p.file_stem().and_then(|x| x.to_str()).unwrap_or("doc");
-                    let target = dest_dir.join(format!("{stem}.{outext}"));
-                    if target.exists() {
-                        dup += 1;
-                        continue;
-                    }
-                    let content = if outext == "md" {
-                        with_provenance(&body, &p.display().to_string(), &sha, mtime, &extractor)
-                    } else {
-                        body
-                    };
-                    if std::fs::write(&target, content).is_ok() {
-                        copied += 1;
-                        if extractor != "native" {
-                            extracted += 1;
-                            *extraction.entry(extractor.clone()).or_insert(0) += 1;
-                        }
-                        let rel_out = target.strip_prefix(&root).unwrap_or(&target).display().to_string();
-                        index.insert(sha.clone(), json!({
-                            "source": p.display().to_string(),
-                            "dest": rel_out,
-                            "mtime": mtime,
-                            "extractor": extractor,
-                            "imported_at": now_iso(),
-                        }));
-                    }
-                }
-                None => {
-                    if matches!(ext.as_str(), "docx"|"pptx"|"xlsx"|"pdf"|"epub"|"rtf"|"odt"|"doc") {
-                        pending += 1;
-                    } else {
-                        skipped += 1;
-                    }
+                ImportOutcome::Duplicate => dup += 1,
+                ImportOutcome::Skipped { pending: pd } => {
+                    if pd { pending += 1 } else { skipped += 1 }
                 }
             }
         }

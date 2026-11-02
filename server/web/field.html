@@ -162,6 +162,28 @@ body.reading #intent{transform:translateX(calc(-50% - min(330px,23.5vw)))}
 #cmds code{font:500 var(--fs-2) var(--f-mono);color:var(--ink);min-width:72px}
 #cmds span{color:var(--ink-2)}
 
+/* 观察目录：有新的文档时，在输入框上方轻轻出现一张纸 */
+#watch-card{display:flex;align-items:center;gap:10px;background:var(--sheet);border-radius:var(--r-lg);padding:9px 10px 9px 12px;box-shadow:var(--lift),inset 0 0 0 1px var(--rule)}
+#watch-card[hidden]{display:none}
+#watch-card .wc-dot{width:7px;height:7px;border-radius:50%;background:var(--litmus);flex:none;box-shadow:0 0 0 4px var(--litmus-wash)}
+#watch-card .wc-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+#watch-card .wc-t{font-size:var(--fs-2);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#watch-card .wc-t b{font-weight:600}
+#watch-card .wc-s{font-size:var(--fs-1);color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#watch-card .btn{padding:5px 10px;font-size:var(--fs-2)}
+#watch-card .ib{width:26px;height:26px;background:none;box-shadow:none}
+#p-body .row .grow span.wtitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#p-body .wf-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 2px}
+#p-body .wf{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border-radius:var(--r-pill);background:var(--paper);box-shadow:inset 0 0 0 1px var(--rule);font:400 var(--fs-2)/1.5 var(--f-ui);color:var(--ink)}
+#p-body .wf button{border:0;background:none;color:var(--ink-2);cursor:pointer;padding:0 4px;font:400 var(--fs-2)/1 var(--f-ui)}
+#p-body .wf button:hover{color:var(--ink)}
+#p-body .wf-add{border:0;background:none;color:var(--ink-2);cursor:pointer;padding:4px 10px;border-radius:var(--r-pill);box-shadow:inset 0 0 0 1px var(--rule);font:400 var(--fs-2)/1.4 var(--f-ui)}
+#p-body .wf-add:hover{color:var(--ink);background:var(--paper)}
+#p-body .row .grow span.wchip{display:inline-block;white-space:nowrap;padding:1px 7px;margin:3px 4px 0 0;border-radius:var(--r-pill);background:var(--litmus-wash);color:var(--ink-2);font-size:var(--fs-1);line-height:1.6}
+#p-body .wprev{display:block;color:var(--ink-2);font-size:var(--fs-2);line-height:1.5;margin-top:2px;white-space:normal}
+#p-body input[type=number]{width:72px;border:0;border-radius:var(--r-md);padding:7px 9px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule);outline:none}
+
+
 /* 沉积 */
 #sed{position:fixed;z-index:25;left:0;right:0;bottom:0;height:calc(34px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;align-items:center;gap:14px;box-sizing:border-box}
 #sed .lbl{font:400 var(--fs-1)/1 var(--f-mono);color:var(--ink-2);white-space:nowrap;min-width:116px;font-variant-numeric:tabular-nums}
@@ -606,6 +628,13 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 
 <div id="intent">
   <div id="cmds" role="listbox" aria-label="指令"></div>
+  <div id="watch-card" hidden>
+    <span class="wc-dot" aria-hidden="true"></span>
+    <div class="wc-main"><div class="wc-t" id="wc-t"></div><div class="wc-s" id="wc-s"></div></div>
+    <button class="btn" id="wc-look">看看</button>
+    <button class="ib" id="wc-x" aria-label="这次先收起" title="这次先收起"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg></button>
+  </div>
+
   <div id="bar">
     <div id="verb" data-v="找" title="系统判断的意图">找</div>
     <input id="q" autocomplete="off" spellcheck="false" placeholder="问一句、找一篇、记一笔，或输入 / 下指令" aria-label="问、找、记、令">
@@ -2038,6 +2067,7 @@ const CMDS = [
   ['/本机模型', '找这台电脑上的 Ollama、LM Studio，一键换成本机模型（嵌入也行）', () => openPrivate()],
   ['/终端', '桌面 App：在下面开一个终端（默认在库的文件夹里；Ctrl+` 开合）', () => openTerm()],
   ['/全盘', '桌面 App：这台电脑上的文件按名字和内容找（/全盘 关键词）', () => openDisk('')],
+  ['/观察', '桌面 App：盯着几个文件夹，有新文档就提醒你（只提醒，不会自己导入）', openWatch],
   ['/昵称', '别处同时开着这篇时，他们看到的你的名字', openNick],
   ['/库', '切换、新建或连接知识库', openVaults],
   ['/退出登录', '网页版退出登录', logout],
@@ -2678,6 +2708,175 @@ async function openDiskItem(x, back){
   };
   box.scrollTop = 0;
 }
+
+/* ═══════════ 桌面独占：观察目录（只提醒，不会自己导入） ═══════════ */
+const watchUI = { conf: null, state: null, muted: '', timer: 0 };
+function watchCs(){ return (watchUI.state && watchUI.state.candidates) || []; }
+function watchSig(){ return watchCs().map(c => c.path).join('|'); }
+async function loadWatch(){
+  if (!DESK) return null;
+  try {
+    const d = await api('/watch');
+    watchUI.conf = d.conf || {enabled:false, folders:[], recursive:true, days:7};
+    watchUI.state = d.state || {};
+    renderWatchCard();
+    return d;
+  } catch(e){ return null; }
+}
+function renderWatchCard(){
+  const el = $('watch-card'); if (!el) return;
+  const cs = watchCs(), on = watchUI.conf && watchUI.conf.enabled;
+  if (!on || !cs.length || watchUI.muted === watchSig()){ el.hidden = true; return; }
+  el.hidden = false;
+  const worth = cs.filter(c => c.verdict === 'worth').length;
+  $('wc-t').innerHTML = '发现 <b>' + cs.length + '</b> 篇新文档' + (worth ? '，其中 <b>' + worth + '</b> 篇像要留下的' : '');
+  const names = cs.slice(0, 2).map(c => esc(c.title || c.name));
+  $('wc-s').textContent = names.join(' · ') + (cs.length > 2 ? ' 等' : '') + ' · 只提醒，不会自己导入';
+}
+let watchKickTimer = 0;
+function kickWatch(times){
+  clearInterval(watchKickTimer);
+  let n = 0;
+  watchKickTimer = setInterval(async () => {
+    n++;
+    await loadWatch();
+    if (watchUI.conf && watchUI.conf.enabled && $('p-body').dataset.watch === '1' && watchUI.shown !== watchCs().length) fillWatchPanel(false);
+    if (n >= (times || 5)) clearInterval(watchKickTimer);
+  }, 1100);
+}
+function startWatchPoll(){
+  if (!DESK) return;
+  loadWatch();
+  clearInterval(watchUI.timer);
+  watchUI.timer = setInterval(() => {
+    if (!$('panel').hidden) return;
+    loadWatch();
+  }, 30000);
+}
+async function saveWatch(patch, msg){
+  try {
+    const d = await api('/watch', {method:'PUT', json: patch});
+    watchUI.conf = d.conf;
+    await loadWatch();
+    if ($('p-body').dataset.watch === '1') fillWatchPanel(true);
+    kickWatch(5);
+    if (msg) toast(esc(msg));
+    return true;
+  } catch(e){ toast(esc(e.message || e), true); return false; }
+}
+async function openWatch(){
+  if (!deskOnly('观察目录')) return;
+  const box = openPanel('观察目录', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  $('panel').querySelector('.pbox').style.width = 'min(760px,100%)';
+  const d = await loadWatch();
+  if (!d){ box.innerHTML = '<p class="empty">读不到观察设置。稍后再试。</p>'; return; }
+  box.dataset.watch = '1';
+  fillWatchPanel(true);
+}
+function fillWatchPanel(reset){
+  const box = $('p-body'); if (!box || box.dataset.watch !== '1') return;
+  const c = watchUI.conf || {enabled:false, folders:[], recursive:true, days:7};
+  if (reset){
+    box.innerHTML =
+      '<p class="hint" style="margin:0 0 2px">只在你开着的时候看这些文件夹。看到新文档只提醒你，不会自己导入；文件一直留在原处。</p>' +
+      '<label class="row chk" style="cursor:pointer"><input type="checkbox" id="w-on"' + (c.enabled ? ' checked' : '') + '><div class="grow"><span>开启观察</span><small>只在这台电脑上生效</small></div></label>' +
+      '<div id="w-folds"></div>' +
+      '<div class="row" id="w-add-row" hidden><div class="grow"><input type="text" id="w-add" placeholder="比如 ~/Downloads"></div><button class="btn" id="w-add-b">加上</button></div>' +
+      '<div class="row"><label style="display:flex;align-items:center;gap:8px;flex:1;margin:0;cursor:pointer;font:inherit;color:inherit"><input type="checkbox" id="w-rec"' + (c.recursive ? ' checked' : '') + '><span>连子文件夹</span></label><span class="hint" style="margin:0">回看最近</span><input type="number" id="w-days" min="1" max="90" value="' + (c.days || 7) + '" style="width:56px"><span class="hint" style="margin:0">天</span></div>' +
+      '<div class="acts" style="margin-top:10px"><button class="btn" id="w-scan">现在扫一遍</button><button class="btn" id="w-off">这次都先不用</button><span id="w-note" class="hint" style="margin:0"></span></div>' +
+      '<div class="lm"></div><div id="w-list"></div>';
+    $('w-on').onchange = () => saveWatch({enabled: $('w-on').checked}, $('w-on').checked ? '开始观察了：有新的会在这里提醒你' : '观察已关掉');
+    $('w-rec').onchange = () => saveWatch({recursive: $('w-rec').checked});
+    $('w-days').onchange = () => saveWatch({days: Math.max(1, Math.min(90, +$('w-days').value || 7))});
+    const addFolder = async () => {
+      const inp = $('w-add'), v = inp.value.trim(); if (!v) return;
+      const fs = (watchUI.conf.folders || []).slice(); if (!fs.includes(v)) fs.push(v);
+      const ok = await saveWatch({folders: fs}, '加上了：' + v);
+      if (ok){ inp.value = ''; const row = $('w-add-row'); if (row) row.hidden = true; }
+    };
+    $('w-add-b').onclick = addFolder;
+    $('w-add').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing){ e.preventDefault(); addFolder(); } });
+    $('w-scan').onclick = async () => {
+      const b = $('w-scan'); b.disabled = true; $('w-note').textContent = '正在看…';
+      try { await api('/watch/scan', {method:'POST'}); await new Promise(r => setTimeout(r, 1400)); await loadWatch(); fillWatchPanel(true); }
+      catch(e){ $('w-note').className = 'bad'; $('w-note').textContent = e.message || String(e); b.disabled = false; }
+    };
+    $('w-off').onclick = async () => {
+      const ps = watchCs().map(x => x.path); if (!ps.length) return;
+      try { await api('/watch/dismiss', {method:'POST', json:{paths: ps}}); await loadWatch(); fillWatchPanel(true); toast('这一批先不提醒了'); }
+      catch(e){ toast(esc(e.message || e), true); }
+    };
+  }
+  renderFolds();
+  renderWatchList();
+}
+function renderFolds(){
+  const el = $('w-folds'); if (!el) return;
+  const fs = (watchUI.conf && watchUI.conf.folders) || [];
+  const chips = fs.map((f, i) => {
+    const short = f.replace(/^\/Users\/[^/]+/, '~');
+    const base = short.replace(/\/+$/, '').split('/').filter(Boolean).pop() || short;
+    return '<span class="wf" title="' + esc(short) + '">' + esc(base) + '<button data-wf="' + i + '" aria-label="移除">×</button></span>';
+  }).join('');
+  el.innerHTML = '<div class="wf-acts">' + (chips || '<span class="hint" style="margin:0">还没加文件夹，先挑一个下载目录试试</span>') + '<button class="wf-add" id="w-add-toggle">＋ 文件夹</button></div>';
+  el.querySelectorAll('[data-wf]').forEach(b => b.onclick = () => {
+    const fs2 = (watchUI.conf.folders || []).slice(); fs2.splice(+b.dataset.wf, 1);
+    saveWatch({folders: fs2}, '移除了');
+  });
+  const tg = $('w-add-toggle');
+  if (tg) tg.onclick = () => {
+    const row = $('w-add-row'); if (!row) return;
+    row.hidden = !row.hidden;
+    if (!row.hidden){ const i = $('w-add'); i.focus(); i.select(); }
+  };
+}
+function renderWatchList(){
+  const el = $('w-list'); if (!el) return;
+  const cs = watchCs(); watchUI.shown = cs.length;
+  if (!cs.length){
+    el.innerHTML = '<div class="ph" style="margin-bottom:0">发现的新文档</div><p class="hint">' + (watchUI.conf.enabled ? '暂时没有。这里只在有新文件时出现。' : '开启观察以后，新出现的文档会列在这里。') + '</p>';
+    return;
+  }
+  const head = '<div class="ph" style="display:flex;align-items:center;gap:10px;margin-bottom:2px"><span style="flex:1">发现的新文档 · ' + cs.length + ' 篇</span><button class="btn pri" id="w-import" disabled>导入选中的</button></div>' +
+    '<p class="hint" style="margin:0 0 8px">原件留着，库里多一份副本；勾上要留下的，不勾就一直在原处。</p>';
+  const rows = cs.map(c => {
+    const checked = c.verdict === 'worth' ? ' checked' : '';
+    const meta = [String(c.ext || '').toUpperCase(), diskSize(c.size), c.folder ? c.folder.replace(/^\/Users\/[^/]+/, '~') : ''].filter(Boolean).join(' · ');
+    return '<div class="row" style="align-items:flex-start"><input type="checkbox" data-wp="' + esc(c.path) + '"' + checked + '>' +
+      '<div class="grow"><span class="wtitle">' + esc(c.title || c.name) + '</span>' +
+      '<small>' + esc(meta) + '</small>' +
+      (c.preview ? '<span class="wprev">' + esc(c.preview.slice(0, 160)) + '</span>' : '') +
+      '<small style="margin-top:4px">' + (c.reasons || []).map(r => '<span class="wchip">' + esc(r) + '</span>').join('') + '</small></div>' +
+      '<button class="btn" data-wx="' + esc(c.path) + '">不用</button></div>';
+  }).join('');
+  el.innerHTML = head + rows;
+  const upd = () => {
+    const n = el.querySelectorAll('[data-wp]:checked').length;
+    const b = $('w-import'); if (!b) return; b.disabled = !n;
+    b.textContent = n ? '导入选中的 ' + n + ' 篇' : '导入选中的';
+  };
+  el.querySelectorAll('[data-wp]').forEach(x => x.onchange = upd);
+  el.querySelectorAll('[data-wx]').forEach(b => b.onclick = async () => {
+    try { await api('/watch/dismiss', {method:'POST', json:{paths:[b.dataset.wx]}}); const row = b.closest('.row'); if (row) row.remove(); upd(); }
+    catch(e){ toast(esc(e.message || e), true); }
+  });
+  $('w-import').onclick = async () => {
+    const ps = [...el.querySelectorAll('[data-wp]:checked')].map(x => x.dataset.wp);
+    if (!ps.length) return;
+    const b = $('w-import'); b.disabled = true; b.textContent = '正在收…';
+    try {
+      const r = await api('/watch/import', {method:'POST', json:{paths: ps}});
+      const got = (r.imported || []).length, bad = (r.failed || []).length;
+      await refreshNow();
+      await loadWatch(); fillWatchPanel(true);
+      const first = (r.imported || [])[0]; const n = first && byPath.get(first.to);
+      toastAct('收下 ' + got + ' 篇' + (bad ? '，' + bad + ' 篇没成' : '') + '。原件都还在原处。', '打开', () => n && openDoc(n));
+    } catch(e){ toast(esc(e.message || e), true); b.disabled = false; b.textContent = '导入选中的'; }
+  };
+  upd();
+}
+$('wc-look').onclick = openWatch;
+$('wc-x').onclick = () => { watchUI.muted = watchSig(); renderWatchCard(); };
 
 function collectTopic(topic){
   if (!topic){
@@ -4996,8 +5195,8 @@ loadField().then(() => {
   setTimeout(initOnboarding, nodes.length ? 1800 : 600);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
-loadPlugins(); presence(); loadDisk(); loadPriv();
-window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openSettings};
+loadPlugins(); presence(); loadDisk(); loadPriv(); startWatchPoll();
+window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openWatch, openSettings};
 })();
 </script>
 </body>
