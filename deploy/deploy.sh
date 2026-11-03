@@ -102,6 +102,10 @@ fi
 
 # ─── 3. 服务器构建 + 重启（与旧脚本一致） ───
 step "服务器构建 + 重启 litmus"
-$SSH_CMD "cd ${REMOTE_DIR}/src && ${SKIP_BUILD:+echo skip-build || }cargo build --release -p litmus 2>&1 | tail -1; mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/litmus ${REMOTE_DIR}/bin/litmus.new && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
+if [ -n "$SKIP_BUILD" ]; then
+  echo "skip-build：保留服务器现有二进制"
+else
+  $SSH_CMD "set -o pipefail; cd ${REMOTE_DIR}/src && cargo build --release -p litmus 2>&1 | tail -1 && mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/litmus ${REMOTE_DIR}/bin/litmus.new && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
+fi
 $SSH_CMD "systemctl disable --now thirdc 2>/dev/null; cp ${REMOTE_DIR}/src/deploy/litmus.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable litmus && systemctl restart litmus"
 echo "Litmus: https://nownexts.com/litmus/  (daemon on 127.0.0.1:7700)"
