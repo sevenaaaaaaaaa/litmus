@@ -1,0 +1,8 @@
+# ConFlow 服务端依赖（CLI 直转只需 yt-dlp，见 README 快速开始）
+fastapi>=0.115
+uvicorn[standard]>=0.30
+yt-dlp>=2025.1.1
+markdown>=3.5
+# 可选：无字幕视频的本地转写兜底（Apple Silicon 用 mlx-whisper，其余用 faster-whisper）
+# mlx-whisper
+# faster-whisper

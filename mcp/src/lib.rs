@@ -797,6 +797,8 @@ mod tests {
         assert!(md.contains("讨论一下导出功能的方案"));
         assert!(md.contains("决定：卡片按块分页"));
         assert!(md.contains("待办：先做长图"));
+        assert!(md.contains("# 对话提炼 · 2026-10-01"));
+        assert!(!md.contains("ConFlow 对话流"));
         // 列表：最新一篇排序在前
         let list = conflow::list_conversations(&s).unwrap();
         assert_eq!(list[0]["date"], "2026-10-01");
@@ -805,6 +807,48 @@ mod tests {
         // 命令模式动词可达
         let out = agent::command_mode(&s, "总结对话");
         assert!(out.reply.contains("知识卡已生成"), "got: {}", out.reply);
+        let slash_out = agent::command_mode(&s, "/对话 2026-10-01");
+        assert!(slash_out.reply.contains("知识卡已生成"), "got: {}", slash_out.reply);
+        let explicit = conflow::digest(&s, "Notes/Agent/2026-10-01 对话.md").unwrap();
+        assert_eq!(explicit["source"], "Notes/Agent/2026-10-01 对话.md");
+    }
+
+    #[test]
+    fn conflow_digest_rejects_path_bypasses_in_core() {
+        let (s, _dir) = server();
+        for input in [
+            "/etc/passwd",
+            "../secret.md",
+            "Notes/Agent/../../secret.md",
+            r"Notes\Agent\secret.md",
+            "Notes/Other/secret.md",
+            "Notes/Agent/secret.html",
+            "2026-13-01",
+            "2026-02-30",
+            "not-a-date",
+        ] {
+            let err = conflow::digest(&s, input).unwrap_err();
+            assert!(err.contains("只能提炼"), "{input:?} unexpectedly returned: {err}");
+        }
+    }
+
+    #[test]
+    fn command_mode_cannot_bypass_digest_path_guard() {
+        let (s, dir) = server();
+        let secret = dir.path().join("secret.md");
+        std::fs::write(&secret, "# 不应读取\n\n决定：泄漏\n").unwrap();
+
+        for command in [
+            "/对话 Notes/Agent/../../secret.md",
+            "总结对话 /etc/passwd",
+            r"/对话 Notes\Agent\secret.md",
+        ] {
+            let out = agent::command_mode(&s, command);
+            assert!(out.reply.contains("总结失败：只能提炼"), "{command:?}: {}", out.reply);
+            assert_eq!(out.steps.len(), 1);
+            assert!(!out.steps[0].ok);
+        }
+        assert!(!dir.path().join("Notes/Conflow").exists());
     }
 
     #[test]
@@ -1476,8 +1520,8 @@ fn ssrf_guard(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/* ───────── ConFlow 对话流（矩阵产品 · 内置整合）─────────
-   独立开发、定期整合：ConFlow 的知识卡逻辑独立成模块，知识卡落在独立命名空间
+/* ───────── 对话提炼（旧 ConFlow 接口兼容）─────────
+   提炼逻辑独立成模块，知识卡继续落在原命名空间以兼容已有数据与 HTTP 接口
    Notes/Conflow/，未来独立部署版经 MCP 连接器替换本模块即可，Litmus 侧无感。 */
 pub mod conflow {
     use crate::McpServer;
@@ -1523,19 +1567,58 @@ pub mod conflow {
         Ok(out)
     }
 
+    fn is_valid_date(s: &str) -> bool {
+        let bytes = s.as_bytes();
+        if bytes.len() != 10
+            || bytes[4] != b'-'
+            || bytes[7] != b'-'
+            || bytes
+                .iter()
+                .enumerate()
+                .any(|(i, b)| i != 4 && i != 7 && !b.is_ascii_digit())
+        {
+            return false;
+        }
+        let year = s[0..4].parse::<u32>().unwrap_or(0);
+        let month = s[5..7].parse::<u32>().unwrap_or(0);
+        let day = s[8..10].parse::<u32>().unwrap_or(0);
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        let max_day = match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if leap => 29,
+            2 => 28,
+            _ => return false,
+        };
+        day >= 1 && day <= max_day
+    }
+
+    fn resolve_digest_source(server: &McpServer, rel_or_date: &str) -> Result<String, String> {
+        let input = rel_or_date.trim();
+        if input.is_empty() {
+            return list_conversations(server)?
+                .first()
+                .and_then(|c| c.get("path"))
+                .and_then(|p| p.as_str())
+                .map(str::to_string)
+                .ok_or_else(|| "库内还没有对话记录".to_string());
+        }
+        if is_valid_date(input) {
+            return Ok(format!("Notes/Agent/{input} 对话.md"));
+        }
+        if kernel_core::is_safe_doc_path(input)
+            && input.starts_with("Notes/Agent/")
+            && input.ends_with(".md")
+        {
+            return Ok(input.to_string());
+        }
+        Err("只能提炼日期或 Notes/Agent/ 下的安全 Markdown 文档".to_string())
+    }
+
     /// 生成知识卡（规则提炼，无需模型）：要点 = 我方各轮首句；决定 / 待办 = 关键词行。
     /// 空路径 = 最新一篇；传日期 = Notes/Agent/<日期> 对话.md。
     pub fn digest(server: &McpServer, rel_or_date: &str) -> Result<Value, String> {
-        let rel = if rel_or_date.trim().is_empty() {
-            list_conversations(server)?
-                .first()
-                .and_then(|c| c.get("path")).and_then(|p| p.as_str())
-                .ok_or("库内还没有对话记录")?.to_string()
-        } else if rel_or_date.contains('/') {
-            rel_or_date.trim().to_string()
-        } else {
-            format!("Notes/Agent/{} 对话.md", rel_or_date.trim())
-        };
+        let rel = resolve_digest_source(server, rel_or_date)?;
 
         let mut k = server.kernel.lock().map_err(|_| "内核锁异常".to_string())?;
         let text = std::fs::read_to_string(k.vault.root.join(&rel))
@@ -1580,7 +1663,7 @@ pub mod conflow {
             format!("{} → {}", turns.first().unwrap().0, turns.last().unwrap().0)
         } else { "—".to_string() };
 
-        let mut md = format!("# ConFlow 知识卡 · {date}\n\n> 来源：`{rel}` · {} 轮 · {duration}\n\n## 讨论要点\n", my_turns.len());
+        let mut md = format!("# 对话提炼 · {date}\n\n> 来源：`{rel}` · {} 轮 · {duration}\n\n## 讨论要点\n", my_turns.len());
         if points.is_empty() { md.push_str("- （无有效讨论）\n"); } else { for p in &points { md.push_str(&format!("- {p}\n")); } }
         md.push_str("\n## 决定\n");
         if decisions.is_empty() { md.push_str("- （未识别到明确决定）\n"); } else { for d in &decisions { md.push_str(&format!("- {d}\n")); } }
@@ -1593,7 +1676,7 @@ pub mod conflow {
                 md.push_str(&format!("- [ ] {clean}\n"));
             }
         }
-        md.push_str("\n> 由 ConFlow 对话流自动提炼（规则模式）。配好 AI 后在对话中说「用 AI 重新总结这篇对话」可获得语义级摘要。\n");
+        md.push_str("\n> 由对话提炼自动生成（规则模式）。配好 AI 后在对话中说「用 AI 重新总结这篇对话」可获得语义级摘要。\n");
 
         let digest_rel = format!("{DIR}/{date}-知识卡.md");
         k.put_doc(&digest_rel, &md).map_err(|e| e.to_string())?;
@@ -1633,7 +1716,8 @@ pub mod agent {
             ("新建", "new"), ("创建", "new"), ("new", "new"),
             ("采集", "pull"), ("拉取", "pull"), ("pull", "pull"),
             ("同步", "sync"), ("sync", "sync"), ("状态", "status"), ("status", "status"),
-            ("总结对话", "digest"), ("对话总结", "digest"), ("对话纪要", "digest"), ("digest", "digest"),
+            ("总结对话", "digest"), ("对话总结", "digest"), ("对话纪要", "digest"),
+            ("对话", "digest"), ("digest", "digest"),
         ];
         let (kind, rest) = verbs
             .iter()
@@ -1644,7 +1728,7 @@ pub mod agent {
         // 不需要模型的本地动作
         match kind {
             "digest" => {
-                // ConFlow 对话流：rest 可为日期（2026-09-25）或空（最新一篇）
+                // 对话提炼：rest 可为日期（2026-09-25）、安全路径或空（最新一篇）
                 return match crate::conflow::digest(server, rest) {
                     Ok(r) => Outcome {
                         mode: "command",

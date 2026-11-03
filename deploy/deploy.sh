@@ -82,7 +82,7 @@ RSYNC_FLAGS="-az"; [ "$DRY_RUN" = 1 ] && RSYNC_FLAGS="-azn --itemize-changes"
 rsync $RSYNC_FLAGS --delete -e "${SSH_OPTS}" \
   --exclude '.git' --exclude 'target' --exclude '.litmus/local' --exclude '.thirdc' \
   --exclude 'server-kb' --exclude '.deploy-ssh' \
-  --exclude 'desktop/gen' --exclude 'third_party' --exclude '.v2c' --exclude '.video_agent' \
+  --exclude 'desktop/gen' --exclude '.v2c' --exclude '.video_agent' \
   --exclude '.DS_Store' \
   --exclude '*.keystore' --exclude 'desktop/android-signing.properties' \
   --exclude '.gradle-mobile' --exclude '.venv*' --exclude '_cowork' --exclude 'node_modules' --exclude '/kb' \

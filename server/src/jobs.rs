@@ -743,6 +743,20 @@ pub async fn jobs(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRes
             "can": if j.running { json!(["stop"]) } else { json!([]) },
         }));
     }
+    for j in super::conflow::jobs_snapshot(&root).into_iter().filter(|j| {
+        matches!(j.status.as_str(), "queued" | "running")
+            || (j.finished > 0 && now.saturating_sub(j.finished) < 600)
+    }) {
+        out.push(json!({
+            "id": format!("conflow:{}", j.id), "kind": "conflow", "title": format!("加工：{}", j.title),
+            "state": j.status, "done": j.done, "total": j.total, "phase": j.phase,
+            "items": j.output_paths.len(), "error": j.error, "finished": j.finished,
+            "can": if j.status == "queued" || j.status == "running" { json!(["stop"]) }
+                else if j.status == "error" || j.status == "stopped" { json!(["retry"]) }
+                else { json!([]) },
+            "outputs": j.output_paths, "steps": j.steps, "qc": j.qc,
+        }));
+    }
     let dj = super::disk::snapshot();
     if st.desktop && recent(dj.running, dj.finished) {
         out.push(json!({
@@ -769,6 +783,8 @@ pub async fn job_control(State(st): State<Arc<AppState>>, h: HeaderMap, AxumPath
     let root = root_of(&st);
     let ok = if let Some(sid) = id.strip_prefix("scan:") {
         super::sources::scan_control(sid, &action)
+    } else if let Some(jid) = id.strip_prefix("conflow:") {
+        super::conflow::control(&root, jid, &action, Some(st.clone()))
     } else if id == "digest" {
         digest_control(&root, &action)
     } else if id == "import" && action == "stop" {

@@ -3168,9 +3168,11 @@ for line in sys.stdin:
         let (_, r) = call(&app, &t, "GET", &format!("/comments?path={}", urlenc(a)), "").await;
         assert_eq!(r["comments"][0]["text"], "旧的评论");
 
-        // 对话流只收 Notes/Agent/ 下的
-        let (st, _) = call(&app, &t, "POST", "/conflow/digest", r#"{"path":"Notes/发布/部署.md"}"#).await;
-        assert_eq!(st, 400);
+        // 对话提炼的新入口和旧 Beta 别名都只收 Notes/Agent/ 下的
+        for endpoint in ["/conversation/digest", "/conflow/digest"] {
+            let (st, _) = call(&app, &t, "POST", endpoint, r#"{"path":"Notes/发布/部署.md"}"#).await;
+            assert_eq!(st, 400, "{endpoint}");
+        }
 
         // 分支名：不能被 git 当成选项
         for bad in ["-b", "--orphan=x", "a..b", "a b", ""] {

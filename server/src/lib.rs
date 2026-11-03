@@ -33,6 +33,7 @@ mod wizard;
 mod quiz;
 mod field_tools;
 mod jobs;
+mod conflow;
 mod organize;
 mod sources;
 mod share;
@@ -232,6 +233,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/field/digest/accept", post(jobs::digest_accept))
         .route("/field/digest/reject", post(jobs::digest_reject))
         .route("/jobs", get(jobs::jobs))
+        .route("/processing", get(conflow::list).post(conflow::create))
+        .route("/processing/{id}", get(conflow::get))
+        .route("/processing/{id}/{action}", post(conflow::control_api))
         .route("/field/curate", get(curate::get).post(curate::start))
         .route("/connectors", get(connectors::list))
         .route("/connectors/test", post(connectors::test))
@@ -383,8 +387,11 @@ pub fn router(state: Arc<AppState>) -> Router {
             ([("cache-control", "public, max-age=300")], include_str!("../web/plugin-index.json"))
         }))
         .route("/ws", get(ws_handler))
-        .route("/conflow/conversations", get(conflow_conversations))
-        .route("/conflow/digest", post(conflow_digest))
+        .route("/conversation/conversations", get(conversation_conversations))
+        .route("/conversation/digest", post(conversation_digest))
+        // Beta 兼容别名：旧壳仍可用；真正的 ConFlow 加工走 /processing。
+        .route("/conflow/conversations", get(conversation_conversations))
+        .route("/conflow/digest", post(conversation_digest))
         // 默认只收 2MB 的请求体：大一点的附件、导入的文件、搬家的 zip 都会 413。放宽到 2GB
         .layer(axum::extract::DefaultBodyLimit::max(2 << 30))
         .with_state(state)
@@ -2268,13 +2275,60 @@ async fn search(
             /* 文件即真相：命中非文档文件时标注 kind=file，前端走下载/系统打开而非编辑器 */
             let fileset: std::collections::HashSet<String> =
                 k.index_files().unwrap_or_default().into_iter().collect();
-            let arr: Vec<Value> = hits
+            let root = k.vault.root.clone();
+            let scope = q.get("scope").filter(|s| !s.is_empty()).cloned();
+            let mut arr: Vec<Value> = hits
                 .into_iter()
+                .filter(|(path, _)| scope.as_ref().map_or(true, |s| path == s || path.starts_with(&(s.clone() + "/"))))
                 .map(|(path, rank)| {
                     let kind = if fileset.contains(&path) { "file" } else { "doc" };
-                    json!({ "path": path, "rank": rank, "kind": kind })
+                    let abs = root.join(&path);
+                    let meta = std::fs::metadata(&abs).ok();
+                    let mtime = meta
+                        .as_ref()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                    let fallback = path.rsplit('/').next().map(title_from_filename).unwrap_or_default();
+                    let (title, excerpt) = if kind == "doc" {
+                        let peek = peek_doc(&abs, &fallback);
+                        (peek.title, peek.excerpt)
+                    } else {
+                        (fallback, String::new())
+                    };
+                    let ext = path.rsplit_once('.').map(|(_, x)| x.to_ascii_lowercase()).unwrap_or_default();
+                    json!({ "path": path, "rank": rank, "kind": kind, "title": title,
+                            "excerpt": excerpt, "mtime": mtime, "size": size, "ext": ext })
                 })
                 .collect();
+            let mut seen: std::collections::HashSet<String> = arr
+                .iter()
+                .filter_map(|x| x.get("path").and_then(|p| p.as_str()).map(str::to_string))
+                .collect();
+            let ql = query.to_lowercase();
+            for path in fileset.iter().filter(|path| {
+                path.to_lowercase().contains(&ql)
+                    && scope.as_ref().map_or(true, |s| *path == s || path.starts_with(&(s.clone() + "/")))
+            }) {
+                if !seen.insert(path.clone()) {
+                    continue;
+                }
+                let abs = root.join(path);
+                let meta = std::fs::metadata(&abs).ok();
+                let mtime = meta
+                    .as_ref()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                let title = path.rsplit('/').next().map(title_from_filename).unwrap_or_default();
+                let ext = path.rsplit_once('.').map(|(_, x)| x.to_ascii_lowercase()).unwrap_or_default();
+                arr.push(json!({ "path": path, "rank": 1_000_000, "kind": "file", "title": title,
+                                 "excerpt": "", "mtime": mtime, "size": size, "ext": ext }));
+            }
             Json(json!({ "query": query, "hits": arr })).into_response()
         }
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
@@ -2952,6 +3006,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
+    use base64::Engine;
     use tower::ServiceExt;
 
     fn test_router() -> (Router, String, tempfile::TempDir) {
@@ -2960,6 +3015,66 @@ mod tests {
         let state = build_state(vault).unwrap();
         let token = state.token.clone();
         (router(state), token, dir)
+    }
+
+    #[test]
+    fn local_import_dir_requires_an_accessible_absolute_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(local_import_dir(dir.path().to_str().unwrap()).unwrap(), dir.path().canonicalize().unwrap());
+        assert!(local_import_dir("relative/folder").unwrap_err().contains("绝对路径"));
+        let file = dir.path().join("one.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert!(local_import_dir(file.to_str().unwrap()).unwrap_err().contains("不是文件夹"));
+        assert!(local_import_dir(dir.path().join("missing").to_str().unwrap()).unwrap_err().contains("无法访问"));
+    }
+
+    #[tokio::test]
+    async fn ingest_file_accepts_binary_upload_and_keeps_json_compatibility() {
+        let (app, token, _dir) = test_router();
+        let auth = format!("Bearer {token}");
+        let none = |_: &str| None;
+        let docx = kernel_convert::export::to_docx(
+            "# 二进制导入\n\n不再经过 base64。",
+            &kernel_convert::export::ExportOpts { title: None, load_image: &none },
+        )
+        .unwrap();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ingest/file?name=binary.docx")
+                    .header("authorization", &auth)
+                    .header("content-type", "application/octet-stream")
+                    .body(Body::from(docx))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v: Value = serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap()).unwrap();
+        assert_eq!(v["title"], "二进制导入");
+
+        let legacy = base64::engine::general_purpose::STANDARD.encode(
+            kernel_convert::export::to_docx(
+                "# 兼容导入\n\n旧客户端仍然可用。",
+                &kernel_convert::export::ExportOpts { title: None, load_image: &none },
+            )
+            .unwrap(),
+        );
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/ingest/file")
+                    .header("authorization", &auth)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"name":"legacy.docx","content_base64":legacy}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -3140,6 +3255,90 @@ mod tests {
             for d in docs { assert!(paths.insert(d["path"].as_str().unwrap().to_owned())); }
         }
         assert_eq!(paths.len(), 35);
+    }
+
+    #[tokio::test]
+    async fn classic_search_returns_metadata_files_scope_and_deep_tree() {
+        let (app, token, dir) = test_router();
+        let auth = format!("Bearer {token}");
+        std::fs::create_dir_all(dir.path().join("Notes/Projects/Alpha/Deep")).unwrap();
+        std::fs::write(
+            dir.path().join("Notes/Projects/Alpha/Deep/plan.md"),
+            "# Quarterly Plan\n\nA searchable roadmap excerpt.",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Notes/Projects/Alpha/report-needle.pdf"),
+            b"%PDF-test",
+        )
+        .unwrap();
+        let sync = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sync")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(sync.status(), StatusCode::OK);
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/search?q=roadmap&scope=Notes%2FProjects%2FAlpha")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        let hit = v["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["path"] == "Notes/Projects/Alpha/Deep/plan.md")
+            .unwrap();
+        assert_eq!(hit["title"], "Quarterly Plan");
+        assert!(hit["excerpt"].as_str().unwrap().contains("searchable"));
+        assert!(hit["mtime"].as_u64().unwrap() > 0);
+        assert!(hit["size"].as_u64().unwrap() > 0);
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/search?q=report-needle")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        assert!(v["hits"].as_array().unwrap().iter().any(|x| {
+            x["path"] == "Notes/Projects/Alpha/report-needle.pdf" && x["kind"] == "file"
+        }));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/tree")
+                    .header("authorization", &auth)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        let projects = v["dirs"].as_array().unwrap().iter().find(|x| x["name"] == "Projects").unwrap();
+        let alpha = projects["dirs"].as_array().unwrap().iter().find(|x| x["name"] == "Alpha").unwrap();
+        assert!(alpha["dirs"].as_array().unwrap().iter().any(|x| x["name"] == "Deep"));
     }
 
     #[tokio::test]
@@ -5187,8 +5386,8 @@ impl PresenceHub {
 
 use axum::extract::ws::WebSocketUpgrade;
 
-/* ───────── ConFlow 对话流（矩阵整合）：对话列表 + 知识卡生成 ───────── */
-async fn conflow_conversations(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+/* ───────── 对话提炼：对话列表 + 知识卡生成 ───────── */
+async fn conversation_conversations(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     match litmus_mcp::conflow::list_conversations(&st.mcp) {
         Ok(list) => Json(json!({ "conversations": list })).into_response(),
@@ -5196,7 +5395,7 @@ async fn conflow_conversations(State(st): State<Arc<AppState>>, h: HeaderMap) ->
     }
 }
 
-async fn conflow_digest(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+async fn conversation_digest(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let path = req.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -5206,7 +5405,7 @@ async fn conflow_digest(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
     }
     match litmus_mcp::conflow::digest(&st.mcp, &path) {
         Ok(r) => {
-            audit_log(&st.kernel.lock().unwrap().vault.sidecar(), "conflow-digest", &r);
+            audit_log(&st.kernel.lock().unwrap().vault.sidecar(), "conversation-digest", &r);
             Json(json!({ "ok": true, "result": r })).into_response()
         }
         Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
@@ -5977,20 +6176,56 @@ a[href^=\"http\"]::after{content:\" (\" attr(href) \")\";font-size:.8em;color:#7
 }
 
 /// PDF / DOCX 内容解析：上传文件 → shell python3 extract_doc.py → 导入为文档。
-async fn ingest_file(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+const MAX_INGEST_FILE_BYTES: usize = 512 << 20;
+
+async fn ingest_file(
+    State(st): State<Arc<AppState>>,
+    Query(q): Query<HashMap<String, String>>,
+    h: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
-    let req: Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    if body.len() > MAX_INGEST_FILE_BYTES {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "单个文件不能超过 512 MB").into_response();
+    }
+    let is_json = h
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/json"));
+    let req: Option<Value> = if is_json {
+        match serde_json::from_slice(&body) {
+            Ok(v) => Some(v),
+            Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+        }
+    } else {
+        None
     };
-    let name = req.get("name").and_then(|n| n.as_str()).unwrap_or("file.pdf").to_string();
-    let content_b64 = req.get("content_base64").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let name = req
+        .as_ref()
+        .and_then(|v| v.get("name"))
+        .and_then(|n| n.as_str())
+        .or_else(|| q.get("name").map(String::as_str))
+        .unwrap_or("file.pdf")
+        .to_string();
+    let content_b64 = req
+        .as_ref()
+        .and_then(|v| v.get("content_base64"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
     // 客户端已解析好的 Markdown（PDF 走浏览器内 pdf.js 版式分析）
-    let client_md = req.get("markdown").and_then(|c| c.as_str()).map(String::from).filter(|s| !s.trim().is_empty());
+    let client_md = req
+        .as_ref()
+        .and_then(|v| v.get("markdown"))
+        .and_then(|c| c.as_str())
+        .map(String::from)
+        .filter(|s| !s.trim().is_empty());
     use base64::Engine;
-    let bytes = if content_b64.is_empty() {
+    let bytes = if !is_json {
+        body.to_vec()
+    } else if content_b64.is_empty() {
         Vec::new()
     } else {
         match base64::engine::general_purpose::STANDARD.decode(&content_b64) {
@@ -6009,7 +6244,7 @@ async fn ingest_file(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes)
             let r = kernel_core::tidy::tidy(&md, &kernel_core::tidy::TidyOptions { promote_title: true, pangu: false });
             let mut c = kernel_convert::Converted { markdown: r.markdown, ..Default::default() };
             // 客户端带来的图片（PDF 页内图）：[{name, content_base64}]，正文里用 kc-img://n 占位
-            if let Some(arr) = req.get("images").and_then(|v| v.as_array()) {
+            if let Some(arr) = req.as_ref().and_then(|v| v.get("images")).and_then(|v| v.as_array()) {
                 for (i, im) in arr.iter().enumerate() {
                     let b = im.get("content_base64").and_then(|x| x.as_str()).and_then(|x| base64::engine::general_purpose::STANDARD.decode(x).ok());
                     if let Some(b) = b {
@@ -6477,8 +6712,14 @@ async fn browse(
         } else {
             /* 文件即真相：非文档文件（.txt/.pdf/.zip/图片…）一样列出来，
                供下载、系统打开、访达显示——不许因为内核不解析就隐身。 */
-            let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-            files.push(json!({ "path": format!("{dir}/{name}"), "name": name, "size": size }));
+            let meta = std::fs::metadata(&p).ok();
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mtime = meta
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            files.push(json!({ "path": format!("{dir}/{name}"), "name": name, "size": size, "mtime": mtime }));
         }
     }
 
@@ -6582,16 +6823,19 @@ async fn tree(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoRespons
     let dirs = walk(&notes, &root);
     let root_files = count_docs_immediate(&notes);
     let total = dirs.iter().map(|d| d.count).sum::<usize>() + root_files;
+    fn tree_json(n: &N) -> Value {
+        json!({
+            "name": n.name,
+            "path": n.path,
+            "count": n.count,
+            "dirs": n.dirs.iter().map(tree_json).collect::<Vec<_>>()
+        })
+    }
     Json(json!({
         "path": "Notes",
         "count": total,
         "files": root_files,
-        "dirs": dirs.iter().map(|d| json!({
-            "name": d.name,
-            "path": d.path,
-            "count": d.count,
-            "dirs": d.dirs.iter().map(|x| json!({"name": x.name, "path": x.path, "count": x.count})).collect::<Vec<_>>()
-        })).collect::<Vec<_>>(),
+        "dirs": dirs.iter().map(tree_json).collect::<Vec<_>>(),
     }))
     .into_response()
 }
@@ -7617,22 +7861,38 @@ pub(crate) fn import_one(
     }
 }
 
+fn local_import_dir(path: &str) -> Result<std::path::PathBuf, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("请先选择一个文件夹".into());
+    }
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err(format!("请选择绝对路径：{path}"));
+    }
+    let meta = std::fs::metadata(p).map_err(|e| format!("无法访问这个路径：{path}（{e}）"))?;
+    if !meta.is_dir() {
+        return Err(format!("这不是文件夹：{path}"));
+    }
+    p.canonicalize().map_err(|e| format!("无法读取这个文件夹：{path}（{e}）"))
+}
+
 async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let path = req.get("path").and_then(|p| p.as_str()).unwrap_or("").to_string();
-    if !path.starts_with('/') || !std::path::Path::new(&path).is_dir() {
-        return err(StatusCode::BAD_REQUEST, format!("路径无效或不存在：{path}")).into_response();
-    }
+    let src = match local_import_dir(&path) {
+        Ok(p) => p,
+        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
+    };
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
     let dest_root = root.join("Notes").join("Imported");
-    let src = std::path::Path::new(&path);
     let mut index = read_import_index(&root);
 
     let (mut copied, mut dup, mut extracted, mut pending, mut skipped) = (0usize, 0usize, 0usize, 0usize, 0usize);
     let mut extraction = std::collections::BTreeMap::<String, usize>::new();
-    let mut stack = vec![src.to_path_buf()];
+    let mut stack = vec![src.clone()];
     while let Some(dir) = stack.pop() {
         let Ok(rd) = std::fs::read_dir(&dir) else { continue };
         for e in rd.filter_map(|e| e.ok()) {
@@ -7640,7 +7900,7 @@ async fn desktop_import(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
             let name = e.file_name().to_string_lossy().into_owned();
             if name.starts_with('.') || name == "node_modules" || name == "target" { continue; }
             if p.is_dir() { stack.push(p); continue; }
-            match import_one(&st, &root, &mut index, src, &p, &dest_root) {
+            match import_one(&st, &root, &mut index, &src, &p, &dest_root) {
                 ImportOutcome::Copied { extractor, .. } => {
                     copied += 1;
                     if extractor != "native" {

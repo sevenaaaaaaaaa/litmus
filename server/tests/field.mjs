@@ -7,6 +7,12 @@ import vm from 'node:vm';
 
 const html = fs.readFileSync(new URL('../web/field.html', import.meta.url), 'utf8');
 
+test('知识场主脚本可完整解析', () => {
+  const m = html.match(/<script data-cfasync="false">([\s\S]*?)<\/script>/);
+  assert.ok(m, '找不到知识场主脚本');
+  assert.doesNotThrow(() => new vm.Script(m[1]));
+});
+
 /** 取顶层 `function name(` 的源码：函数体都缩进，到第一处顶格的 `}` 为止（一行写完的函数到行尾）。 */
 function fn(name) {
   const start = html.indexOf('\nfunction ' + name + '(') + 1;
@@ -72,6 +78,50 @@ test('shortLabel：场上的标签只留主干', () => {
   assert.equal(v('ADR-0002 — 文件为内容真相，op-log 为并发真相'), 'ADR-0002 文件为内容真相');
   assert.equal(v('发布流程（新版）'), '发布流程');
   assert.ok(v('一'.repeat(40)).endsWith('…'));
+});
+
+test('uploadPct：上传进度可读，未知总量时显示已传大小', () => {
+  const c = ctx(['uploadPct']);
+  assert.equal(vm.runInContext('uploadPct(0.426, 426)', c), '已上传 43%');
+  assert.equal(vm.runInContext('uploadPct(null, 1572864)', c), '已上传 1.5 MB');
+});
+
+test('processingPayload：按后端约定序列化来源与加工参数', () => {
+  const c = ctx(['processingPayload']);
+  const one = JSON.parse(vm.runInContext(`JSON.stringify(processingPayload('url', ' https://example.com/v ', [], ' 演示 ', {
+    genre:'tutorial', language:'zh', theme:'给新手', article:true, slides:true,
+    script:false, storyboard:true, html_animation:false, frames:'16'
+  }))`, c));
+  assert.deepEqual(one, {
+    source_kind:'url', source:'https://example.com/v', title:'演示',
+    options:{genre:'tutorial', language:'zh', theme:'给新手', article:true, slides:true, script:false, storyboard:true, html_animation:false, frames:16}
+  });
+  const many = JSON.parse(vm.runInContext(`JSON.stringify(processingPayload('selection', '', [' Notes/A.md ', '', 'Notes/B.md'], '', {article:true, frames:999}))`, c));
+  assert.deepEqual(many.sources, ['Notes/A.md', 'Notes/B.md']);
+  assert.equal(many.options.frames, 120);
+  assert.ok(!('source' in many) && !('title' in many));
+});
+
+test('processingEntry：/加工入口优先识别 URL、选区与当前文档', () => {
+  const c = ctx(['processingEntry']);
+  const run = (input, doc, selected) => JSON.parse(vm.runInContext(`JSON.stringify(processingEntry(${JSON.stringify(input)}, ${JSON.stringify(doc)}, ${JSON.stringify(selected)}))`, c));
+  assert.deepEqual(run('https://youtu.be/demo', 'Notes/A.md', ['Notes/B.md']), {source_kind:'url', source:'https://youtu.be/demo'});
+  assert.deepEqual(run('做成课程', 'Notes/A.md', ['Notes/B.md', 'Notes/C.md']), {source_kind:'selection', sources:['Notes/B.md', 'Notes/C.md'], theme:'做成课程'});
+  assert.deepEqual(run('', 'Notes/A.md', []), {source_kind:'doc', source:'Notes/A.md', theme:''});
+  assert.match(html, /\['\/加工'/);
+  assert.match(html, /用 ConFlow 加工/);
+});
+
+test('mergeFileResults：文件名精确匹配优先，并合并全文结果', () => {
+  const c = ctx(['fileName', 'mergeFileResults']);
+  const out = JSON.parse(vm.runInContext(`JSON.stringify(mergeFileResults(
+    [{path:'Notes/项目计划.md', title:'项目计划', kind:'doc'}],
+    [{path:'Notes/旧项目.md', title:'旧项目', kind:'doc', rank:0.1}, {path:'Notes/项目计划.md', title:'项目计划', kind:'doc', rank:0.2}],
+    '项目计划'
+  ))`, c));
+  assert.equal(out.length, 2);
+  assert.equal(out[0].path, 'Notes/项目计划.md');
+  assert.equal(out[0].exact, 4);
 });
 
 test('merge3：不重叠的改动都留下，撞在一处的两边都留并标出', () => {

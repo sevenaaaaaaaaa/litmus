@@ -217,6 +217,8 @@ body.reading #intent{transform:translateX(calc(-50% - min(330px,23.5vw)))}
 .thinking{display:inline-flex;gap:4px;align-items:center;color:var(--ink-2);font-size:var(--fs-2)}
 .thinking i{width:5px;height:5px;border-radius:50%;background:var(--litmus);animation:pulse 1.2s infinite}
 .thinking i:nth-child(2){animation-delay:.15s}.thinking i:nth-child(3){animation-delay:.3s}
+.upload-progress{width:100%;height:8px;accent-color:var(--litmus);margin:12px 0 4px}
+.upload-file{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-3)}
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
 
 /* 阅读页 */
@@ -280,6 +282,40 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 #toast.on{transform:translate(-50%,0)}
 #toast b{color:var(--litmus);font-weight:600}
 #toast.bad b{color:var(--acid)}
+
+/* 传统文件栏：不经过 Agent，按磁盘目录浏览、精确搜索和管理 */
+#files{position:fixed;z-index:39;inset:0 auto 0 0;width:min(340px,88vw);box-sizing:border-box;background:var(--sheet);box-shadow:1px 0 0 var(--rule),20px 0 48px -32px oklch(var(--ink-c) / .35);transform:translateX(-104%);transition:transform var(--dur-4) var(--ease-out);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);-webkit-app-region:no-drag}
+body.files-open #files{transform:none}
+#files header{display:flex;align-items:center;gap:8px;padding:11px 10px 9px 14px;border-bottom:1px solid var(--rule)}
+#files header b{font:650 var(--fs-3)/1 var(--f-display);flex:1}
+#files .fsearch{padding:10px 12px 8px}
+#files .fsearch input{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);background:var(--paper);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule);padding:9px 11px;font:400 var(--fs-3) var(--f-ui);outline:none}
+#files .fsearch input:focus{box-shadow:inset 0 0 0 1.5px var(--litmus)}
+#files .ftools{display:flex;align-items:center;gap:5px;padding:0 12px 8px;flex-wrap:wrap}
+#files .ftools select{border:0;background:var(--rule);color:var(--ink);border-radius:var(--r-md);padding:6px 7px;font:400 var(--fs-1) var(--f-ui)}
+#files .ftools .scope{margin-left:auto;display:flex;align-items:center;gap:4px;font:400 var(--fs-1) var(--f-ui);color:var(--ink-2)}
+#files .fcrumb{display:flex;align-items:center;gap:2px;padding:1px 12px 8px;overflow-x:auto;scrollbar-width:none;white-space:nowrap}
+#files .fcrumb button{border:0;background:none;color:var(--ink-2);padding:3px;cursor:pointer;font:500 var(--fs-1) var(--f-ui)}
+#files .fcrumb button:last-child{color:var(--ink)}
+#files .fnew{display:flex;gap:5px;padding:0 12px 8px}
+#files .fnew .btn{padding:5px 9px}
+#ftree{max-height:34%;overflow:auto;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:6px 4px}
+.ftr{display:flex;align-items:center;width:100%;box-sizing:border-box;border:0;background:none;color:var(--ink);padding:5px 7px 5px calc(8px + var(--fd,0) * 14px);border-radius:var(--r-sm);cursor:pointer;text-align:left;font:400 var(--fs-2) var(--f-ui)}
+.ftr:hover,.ftr.on{background:var(--litmus-wash)}
+.ftr i{width:14px;color:var(--ink-2);font:normal var(--fs-1) var(--f-mono)}
+.ftr span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ftr small{color:var(--ink-2);font:400 var(--fs-1) var(--f-mono)}
+#flist{flex:1;min-height:0;overflow:auto;padding:5px 7px 18px}
+.fri{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;border:0;background:none;color:var(--ink);padding:8px 7px;border-radius:var(--r-sm);text-align:left;cursor:pointer}
+.fri:hover,.fri.sel{background:var(--litmus-wash)}
+.fri .fi{width:18px;color:var(--ink-2);text-align:center;font:500 var(--fs-1) var(--f-mono)}
+.fri .fm{flex:1;min-width:0}
+.fri b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 var(--fs-2) var(--f-ui)}
+.fri small,.fri em{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2);font:400 var(--fs-1)/1.45 var(--f-ui);font-style:normal}
+.fri .more{border:0;background:none;color:var(--ink-2);padding:5px;cursor:pointer;border-radius:var(--r-sm)}
+.fri .more:hover{background:var(--rule);color:var(--ink)}
+#fmore{display:block;margin:8px auto}
+#fstate{padding:12px;color:var(--ink-2);font:400 var(--fs-2)/1.6 var(--f-ui)}
 
 #veil{position:fixed;inset:0;z-index:12;display:grid;place-items:center;pointer-events:none}
 #veil p{font:400 var(--fs-3)/1.7 var(--f-ui);color:var(--ink-2);text-align:center;max-width:36ch;margin:0}
@@ -357,6 +393,16 @@ body.touring #intent,body.touring .crystal{opacity:0;pointer-events:none}
 #p-body .row input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--litmus)}
 #p-body .row .grow input[type=text]{padding:6px 10px}
 #p-body select.sel{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);padding:9px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule)}
+#p-body .proc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+#p-body .proc-grid .wide{grid-column:1/-1}
+#p-body .proc-outs{display:flex;gap:8px 14px;flex-wrap:wrap;padding:4px 0}
+#p-body .proc-job{padding:12px 0;border-top:1px dashed var(--rule)}
+#p-body .proc-job:first-child{border-top:0}
+#p-body .proc-job .ph{display:flex;align-items:flex-start;gap:10px}
+#p-body .proc-job .ph .grow span{white-space:normal;font-weight:600}
+#p-body .proc-job .ph small{display:block;margin-top:2px}
+#p-body .proc-job progress{width:100%;height:6px;accent-color:var(--litmus);margin:8px 0 0}
+@media(max-width:600px){#p-body .proc-grid{grid-template-columns:1fr}}
 .rg{pointer-events:auto;cursor:default}
 body.login > :not(#login){display:none!important}
 #login{position:fixed;inset:0;margin:auto;width:min(340px,calc(100vw - 32px));height:max-content;display:flex;flex-direction:column;gap:10px;padding:28px;background:var(--sheet);border-radius:var(--r-lg);box-shadow:var(--lift),inset 0 0 0 1px var(--rule)}
@@ -462,6 +508,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 .dtags .chip{background:var(--paper);padding:3px 9px;font-size:var(--fs-1)}
 
 @media (max-width:720px){
+  #files{width:100%;z-index:45}
   #sheet{width:100%;top:auto;height:86%;border-radius:var(--r-lg) var(--r-lg) 0 0;transform:translateY(104%)}
   body.reading #intent{transform:translateX(-50%);opacity:0;pointer-events:none}
   #doc{padding:22px 20px 80px}
@@ -554,6 +601,7 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 #pickbar .sep{width:1px;height:18px;background:oklch(var(--paper-c) / .3)}
 body.selecting #field{cursor:crosshair}
 body.zen #brand,body.zen #lens,body.zen #intent,body.zen #sed,body.zen #coach,body.zen #pickbar,body.zen #field,body.zen #veil{opacity:0;pointer-events:none}
+body.zen #files,body.god #files{opacity:0;pointer-events:none}
 body.zen #sheet{width:100vw!important;transform:none;box-shadow:none}
 body.zen #doc{padding:48px 24px 160px;font-size:var(--fs-5)}
 body.zen #doc .inner{max-width:68ch}
@@ -617,11 +665,26 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
     <button id="l-sem" class="on" aria-pressed="true" title="按意义排布（T 切换）">意义</button>
     <button id="l-time" aria-pressed="false" title="按时间排布（T 切换）">时间</button>
   </div>
+  <button class="ib" id="b-files" title="文件（⌘⇧E）" aria-label="打开文件栏" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.8 4.2h4l1.3 1.5h7.1v7.1H1.8z"/><path d="M1.8 4.2V2.8h4.5l1.2 1.4"/></svg></button>
   <button class="ib" id="b-fit" title="看全（F）" aria-label="看全"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
   <button class="ib" id="b-theme" title="明暗" aria-label="切换明暗"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
   <button class="ib" id="b-trash" title="回收站：删掉的、筛掉的都在这里，能找回" aria-label="回收站"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v4M9 7v4"/></svg></button>
   <button class="ib" id="b-help" title="用法与旧功能位置（?）" aria-label="帮助"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6.2a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3V10"/><circle cx="8" cy="12.4" r=".6" fill="currentColor"/></svg></button>
 </div>
+
+<aside id="files" aria-label="文件">
+  <header><b>文件</b><button class="ib" id="f-refresh" title="刷新" aria-label="刷新文件栏">↻</button><button class="ib" id="f-x" title="关闭（⌘⇧E）" aria-label="关闭文件栏"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></header>
+  <div class="fsearch"><input id="f-q" type="search" autocomplete="off" spellcheck="false" placeholder="按文件名、路径或正文搜索"></div>
+  <div class="ftools">
+    <select id="f-kind" aria-label="文件类型"><option value="all">全部</option><option value="doc">文档</option><option value="file">附件</option></select>
+    <select id="f-sort" aria-label="排序"><option value="rank">相关度</option><option value="mtime">最近修改</option><option value="name">名称</option></select>
+    <label class="scope"><input id="f-scope" type="checkbox">当前文件夹</label>
+  </div>
+  <nav class="fcrumb" id="f-crumb" aria-label="文件路径"></nav>
+  <div class="fnew"><button class="btn pri" id="f-new-doc">新建文档</button><button class="btn" id="f-new-dir">新建文件夹</button><button class="btn" id="f-light">在场上亮起</button></div>
+  <div id="ftree" role="tree" aria-label="文件夹"></div>
+  <div id="flist" role="listbox" aria-label="文件"></div>
+</aside>
 
 <div id="pickbar" role="toolbar" aria-label="已选的文档"><span id="pickn">点选几篇文档</span><span id="pick-acts"></span><button class="g" id="pick-x">取消</button></div>
 <div id="marq" aria-hidden="true"></div>
@@ -700,6 +763,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
     <h3>快捷键</h3>
     <div class="keys">
       <div><kbd>任意字</kbd>直接开始输入</div><div><kbd>Esc</kbd>逐层退出</div>
+      <div><kbd>⌘⇧E</kbd>打开 / 收起传统文件栏</div>
       <div><kbd>F</kbd>看全</div><div><kbd>T</kbd>意义 / 时间排布</div>
       <div><kbd>+</kbd><kbd>-</kbd>缩放</div><div><kbd>/选择</kbd>选择模式：点选、框选，批量操作</div>
       <div><kbd>双击</kbd>空白处放大（⇧ 缩小）</div><div><kbd>双指</kbd>捏合缩放、拖动；松手会滑一小段</div>
@@ -715,7 +779,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>评论</td><td>划选正文 →「评论」；页头「评论」看全部、回复、解决；正文里被评论的那段会标出来</td></tr>
         <tr><td>复制文档、下载原文件</td><td>阅读页「更多」→ 复制一份 / 下载原文件</td></tr>
         <tr><td>主题预设</td><td>/主题：11 套配色（只换纸、墨、线和石蕊蓝，版式不变）；明暗仍是右上角开关</td></tr>
-        <tr><td>Conflow 对话流</td><td>/对话：和 Agent 的每天的对话，一键提炼成知识卡；读对话那篇时「更多」→ 提炼成知识卡</td></tr>
+        <tr><td>对话提炼</td><td>/对话：把和 Agent 的每日对话提炼成知识卡；读对话那篇时「更多」→ 提炼成知识卡</td></tr>
         <tr><td>画布 / 时间线</td><td>右上角「意义 / 时间」两种排布</td></tr>
         <tr><td>⌘K 搜索、RAG</td><td>底部一行的「找 / 问」，结果直接画在场上</td></tr>
         <tr><td>Agent 对话</td><td>「帮我…」或 /做：带工具的 Agent，左上角是步骤，场上是它走过的路；写出的文档以石蕊红出现</td></tr>
@@ -828,6 +892,34 @@ async function api(path, opts){
   if (res.status === 401){ try { localStorage.removeItem('litmus_token'); } catch(e){} location.replace(BASE + '/'); throw new Error('登录已失效'); }
   if (!res.ok) throw Object.assign(new Error(data.error || (res.status + ' ' + res.statusText)), {status:res.status, data});
   return data;
+}
+
+function uploadBinary(path, body, onProgress, signal){
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const fail = (message, status) => reject(Object.assign(new Error(message), {status}));
+    xhr.open('POST', BASE + path);
+    xhr.setRequestHeader('authorization', 'Bearer ' + token);
+    if (myPeer != null) xhr.setRequestHeader('x-litmus-peer', String(myPeer));
+    xhr.setRequestHeader('content-type', body.type || 'application/octet-stream');
+    xhr.upload.onprogress = e => { if (onProgress) onProgress(e.lengthComputable ? e.loaded / e.total : null, e.loaded, e.total); };
+    xhr.onerror = () => fail(navigator.onLine === false ? '当前离线，恢复连接后再试' : '上传时连接断开了，请重试');
+    xhr.onabort = () => reject(Object.assign(new Error('已取消'), {name:'AbortError'}));
+    xhr.onload = () => {
+      let data = {}; try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; } catch(_){ data = {raw:xhr.responseText}; }
+      if (xhr.status === 401){ try { localStorage.removeItem('litmus_token'); } catch(e){} location.replace(BASE + '/'); fail('登录已失效', 401); return; }
+      if (xhr.status < 200 || xhr.status >= 300){ fail(data.error || ('HTTP ' + xhr.status), xhr.status); return; }
+      resolve(data);
+    };
+    if (signal){
+      if (signal.aborted){ xhr.abort(); return; }
+      signal.addEventListener('abort', () => xhr.abort(), {once:true});
+    }
+    xhr.send(body);
+  });
+}
+function uploadPct(progress, loaded){
+  return progress == null ? '已上传 ' + (loaded / 1048576).toFixed(1) + ' MB' : '已上传 ' + Math.round(progress * 100) + '%';
 }
 
 /* ───────── 小工具 ───────── */
@@ -1417,6 +1509,7 @@ function renderPickbar(){
   const b = (id, label, show) => show ? '<button data-pk="' + id + '">' + label + '</button>' : '';
   $('pick-acts').innerHTML = (picks.length ? '<span class="sep"></span>' : '') +
     b('import', '入库 ' + ext.length, ext.length) + b('digest', '让 AI 学', ext.length) +
+    b('processing', '加工', picks.length) +
     b('move', '移到…', lib.length) + b('tag', '加标签', lib.length) +
     b('path', '串成路径', picks.length >= 2) + b('more', '按节点选…', picks.length) + b('all', '全选视野内', true) +
     b('del', ext.length && !lib.length ? '从场上拿掉' : '删除', picks.length);
@@ -1427,6 +1520,7 @@ async function pickAction(a, btn){
   const ext = picks.filter(n => n.k === 'ext'), lib = picks.filter(n => n.k !== 'ext' && n.k !== 'answer');
   if (a === 'all'){ pickMany(nodes.filter(inView), true); return; }
   if (a === 'path'){ const list = picks.slice(); endPick(); tour(list.map(n => ({n, cap:n.ex}))); return; }
+  if (a === 'processing'){ openProcessing({source_kind:'selection', sources:picks.filter(n => n.k !== 'answer').map(n => n.p), title:'加工 ' + picks.length + ' 篇'}); return; }
   if (a === 'digest'){ startDigest({keys:ext.map(n => n.p), limit:ext.length}); return; }
   if (a === 'more'){
     const seed = picks.slice(), rs = new Set(seed.map(n => n.r)), ss = new Set(seed.filter(n => n.src).map(n => n.src)), ps = new Set(seed);
@@ -1997,7 +2091,7 @@ async function capture(text){
 }
 function flash(n){ n.tgt = 1; n.delay = 0; kick(); setTimeout(() => { n.tgt = 0; kick(); }, 1600); }
 let refreshing = null;
-async function refreshNow(){ if (refreshing) await refreshing; refreshing = loadField().finally(() => { refreshing = null; }); return refreshing; }
+async function refreshNow(){ if (refreshing) await refreshing; refreshing = loadField().finally(() => { refreshing = null; }); const r = await refreshing; if (filesUI && filesUI.open) refreshFiles(true).catch(() => {}); return r; }
 let refreshT = 0; function refreshSoon(){ clearTimeout(refreshT); refreshT = setTimeout(() => refreshNow().catch(() => {}), 800); }
 addEventListener('focus', () => { if (!editing) refreshSoon(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !editing) refreshSoon(); });
@@ -2041,11 +2135,13 @@ const CMDS = [
   ['/主题', '界面配色预设：官方默认、Notion、Claude、Apple、Linear 等 11 套（只换颜色，版式不变）', openThemes],
   ['/新建', '新建一篇文档（可接标题：/新建 周报）', () => newDoc('')],
   ['/最近', '最近打开和最近改过的文档', openRecent],
+  ['/文件', '传统文件栏：按目录浏览、精确搜索、移动和复制文件', () => openFilesAt('Notes')],
   ['/文件夹', '所有文件夹：新建、改名或移动、复制，把一个文件夹的文档在场上亮起', () => openFolders()],
   ['/评论', '正在读的这篇的评论（划选正文就能评论）', () => openComments()],
   ['/回收站', '找回删掉的文档和筛掉的库外条目（右上角也有入口）', openTrash],
   ['/同步', '把外部编辑器里的改动合进来', syncNow],
   ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
+  ['/加工', '用 ConFlow 把网址、文档或选中的多篇内容加工成文章、幻灯片、短视频脚本、分镜或 HTML 动画', () => openProcessing(processingEntry('', reading && reading.p, picks.map(n => n.p)))],
   ['/导入', '导入文件，或从 Obsidian、Notion、飞书搬家（也可以直接把文件、zip 拖进窗口）', () => openImport()],
   ['/搬家', '从 Obsidian 库、Notion 导出、飞书导出、Markdown 文件夹整个搬进来（先出清单）', () => openImport()],
   ['/做', '让 Agent 去做一件事（/做 把本周随手记整理成周报）', () => { q.value = '帮我'; q.focus(); onInput(); }],
@@ -2060,7 +2156,7 @@ const CMDS = [
   ['/出题', '给正在读的这篇出几道复习题（配了模型由模型出，没配按规则出）', () => reading ? openQuestions(reading) : toast('先打开一篇')],
   ['/日历', '哪天写了什么、哪天该复习', () => openCalendar()],
   ['/记忆', 'Agent 记住的事：偏好、事实、决定', openMemory],
-  ['/对话', '和 Agent 的对话记录（Conflow 对话流），一键提炼成知识卡', openConflow],
+  ['/对话', '和 Agent 的对话记录，一键提炼成知识卡', openConflow],
   ['/记住', '让 Agent 记住一件事（/记住 周报不超过 300 字）', () => openMemory()],
   ['/凭证', 'API 密钥等凭证（只在本机）', openSecrets],
   ['/私密', '本机模型与私密模式：模型、嵌入只在本机或局域网，要出网的事一律不做', () => openPrivate()],
@@ -2108,7 +2204,11 @@ function onInput(){
   const s = q.value, v = intentOf(s);
   $('verb').dataset.v = v; $('verb').textContent = v;
   $('go-t').textContent = !s.trim() ? '显色' : {找:'打开', 问:'结晶答案', 记:'落进场里', 令:'执行', 收:'收进库里', 办:'让它去做', 标:'看这个标签'}[v];
-  if (v === '收'){ hideCmds(); $('reading').innerHTML = '<span>回车：抓取这个网页，转成 Markdown 存进 Notes/Web/</span>'; hints(); return; }
+  if (v === '收'){
+    hideCmds(); $('reading').innerHTML = '<span>回车：抓取这个网页，转成 Markdown 存进 Notes/Web/</span>' + (isVideoUrl(s.trim()) ? '<button class="btn" id="url-process">用 ConFlow 加工</button>' : '');
+    if ($('url-process')) $('url-process').onclick = () => { const url = q.value.trim(); q.value = ''; onInput(); openProcessing({source_kind:'url', source:url}); };
+    hints(); return;
+  }
   if (v === '令'){ showCmds(s.trim().slice(1)); $('reading').innerHTML = ''; hints(); return; }
   if (v === '办'){ hideCmds(); $('reading').innerHTML = '<span>回车：Agent 会自己搜、读、写，每一步都画在场上' + (reading ? '（以正在读的这篇为上下文）' : '') + '</span>'; hints(); return; }
   if (v === '标'){ hideCmds(); clearTimeout(inputT); inputT = setTimeout(() => { if (q.value === s) showTag(s.trim()); }, 110); hints(); return; }
@@ -2160,8 +2260,8 @@ async function submit(){
   const s = q.value.trim(), v = intentOf(s);
   if (!s){ q.focus(); return; }
   if (v === '令'){
-    const m = s.match(/^[\/、](新建|采集|做|视图|视角|记住)\s+(.+)$/);
-    if (m){ q.value = ''; onInput(); hideCmds(); ({新建:newDoc, 采集:collectTopic, 做:runAgent, 视图:makeView, 记住:t => remember(t.trim()), 视角:v => { loadViews().then(() => { const hit = views.find(x => x.name === v.trim()); hit ? goView(hit) : saveView(v); }); }})[m[1]](m[2]); return; }
+    const m = s.match(/^[\/、](新建|采集|加工|做|视图|视角|记住)\s+(.+)$/);
+    if (m){ q.value = ''; onInput(); hideCmds(); ({新建:newDoc, 采集:collectTopic, 加工:t => openProcessing(processingEntry(t, reading && reading.p, picks.map(n => n.p))), 做:runAgent, 视图:makeView, 记住:t => remember(t.trim()), 视角:v => { loadViews().then(() => { const hit = views.find(x => x.name === v.trim()); hit ? goView(hit) : saveView(v); }); }})[m[1]](m[2]); return; }
     runCmd(($('cmds')._list || [])[cmdSel]); return;
   }
   if (v === '记'){ const body = s.replace(/^[+＋]|^记[\s:：]/, '').trim(); q.value = ''; onInput(); capture(body); return; }
@@ -2226,6 +2326,118 @@ function recentList(){ try { return JSON.parse(localStorage.getItem('litmus_rece
 function pushRecent(p){ try { const l = recentList().filter(x => x !== p); l.unshift(p); localStorage.setItem('litmus_recent', JSON.stringify(l.slice(0, 30))); } catch(e){} }
 function docRow(n, sub){ return '<div class="row"><div class="grow"><span>' + esc(n.full || n.title) + '</span><small>' + esc(sub || n.p) + '</small></div><button class="btn" data-open="' + esc(n.p) + '">打开</button></div>'; }
 function wireOpen(box){ box.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const n = byPath.get(b.dataset.open); closePanel(); if (n) openDoc(n); }); }
+
+/* 传统文件栏：目录树、精确搜索、浏览和文件操作统一在这里，不触发 Agent。 */
+const filesUI = {open:false, path:'Notes', tree:null, browse:null, expanded:new Set(['Notes']), query:'', results:[], selected:0, timer:0};
+function fileWhen(ts){ if (!ts) return ''; const d = new Date(ts * 1000); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function fileSize(n){ return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n ? n + ' B' : ''; }
+function fileName(p){ return String(p || '').split('/').pop() || 'Notes'; }
+function fileDir(p){ const i = String(p || '').lastIndexOf('/'); return i > 0 ? p.slice(0, i) : 'Notes'; }
+function mergeFileResults(local, remote, qv){
+  const ql = String(qv || '').trim().toLocaleLowerCase(), map = new Map();
+  (remote || []).forEach((x, i) => map.set(x.path, Object.assign({_order:i, exact:0}, x)));
+  (local || []).forEach(x => map.set(x.path, Object.assign({_order:999999, rank:999999}, map.get(x.path) || {}, x)));
+  return [...map.values()].map(x => {
+    const title = String(x.title || fileName(x.path)).toLocaleLowerCase(), path = String(x.path || '').toLocaleLowerCase();
+    x.exact = !ql ? 0 : title === ql ? 4 : title.startsWith(ql) ? 3 : title.includes(ql) ? 2 : path.includes(ql) ? 1 : 0;
+    return x;
+  }).sort((a, b) => b.exact - a.exact || (+a.rank || 0) - (+b.rank || 0) || a._order - b._order);
+}
+function saveFilesState(){ try { localStorage.setItem('litmus_files', JSON.stringify({open:filesUI.open, path:filesUI.path, expanded:[...filesUI.expanded]})); } catch(e){} }
+function toggleFiles(force){
+  filesUI.open = force == null ? !filesUI.open : !!force;
+  document.body.classList.toggle('files-open', filesUI.open); $('b-files').setAttribute('aria-pressed', filesUI.open ? 'true' : 'false'); saveFilesState();
+  if (filesUI.open){ refreshFiles(false); setTimeout(() => $('f-q').focus(), 40); }
+}
+async function openFilesAt(path){
+  filesUI.path = path && /^Notes(?:\/|$)/.test(path) ? path : 'Notes';
+  let p = filesUI.path; while (p && p !== 'Notes'){ filesUI.expanded.add(p); p = fileDir(p); } filesUI.expanded.add('Notes');
+  if (!filesUI.open) toggleFiles(true); else await refreshFiles(false);
+}
+function flattenTree(dirs, depth, out){ (dirs || []).forEach(d => { out.push({d, depth}); if (filesUI.expanded.has(d.path)) flattenTree(d.dirs, depth + 1, out); }); return out; }
+function renderFileTree(){
+  const root = {name:'库根', path:'Notes', count:(filesUI.tree || {}).count || 0, dirs:(filesUI.tree || {}).dirs || []};
+  const rows = [{d:root, depth:0}]; if (filesUI.expanded.has('Notes')) flattenTree(root.dirs, 1, rows);
+  $('ftree').innerHTML = rows.map(({d, depth}) => { const open = filesUI.expanded.has(d.path), kids = (d.dirs || []).length;
+    return '<button class="ftr' + (d.path === filesUI.path ? ' on' : '') + '" style="--fd:' + depth + '" data-fdir="' + esc(d.path) + '" role="treeitem" aria-expanded="' + (kids ? String(open) : 'false') + '"><i>' + (kids ? (open ? '−' : '+') : '·') + '</i><span>' + esc(d.name) + '</span><small>' + d.count + '</small></button>'; }).join('');
+  $('ftree').querySelectorAll('[data-fdir]').forEach(b => b.onclick = () => {
+    const path = b.dataset.fdir;
+    if (filesUI.path === path){ filesUI.expanded.has(path) ? filesUI.expanded.delete(path) : filesUI.expanded.add(path); renderFileTree(); saveFilesState(); return; }
+    filesUI.expanded.add(path); browseFiles(path); saveFilesState();
+  });
+}
+function renderFileCrumbs(crumbs){
+  $('f-crumb').innerHTML = (crumbs || [{name:'库根', path:'Notes'}]).map((c, i, a) => '<button data-fcrumb="' + esc(c.path) + '">' + esc(c.name) + (i < a.length - 1 ? ' /' : '') + '</button>').join('');
+  $('f-crumb').querySelectorAll('[data-fcrumb]').forEach(b => b.onclick = () => browseFiles(b.dataset.fcrumb));
+}
+function fileRows(){
+  let rows = filesUI.query ? filesUI.results.slice() : (() => { const b = filesUI.browse || {}; return [
+    ...(b.folders || []).map(x => Object.assign({kind:'dir', title:x.name}, x)),
+    ...(b.docs || []).map(x => Object.assign({kind:'doc'}, x)),
+    ...(b.files || []).map(x => Object.assign({kind:'file', title:x.name}, x))]; })();
+  const kind = $('f-kind').value, scope = $('f-scope').checked;
+  if (kind !== 'all') rows = rows.filter(x => x.kind === kind);
+  if (scope) rows = rows.filter(x => x.path === filesUI.path || x.path.startsWith(filesUI.path + '/'));
+  const sort = $('f-sort').value;
+  if (sort === 'mtime') rows.sort((a, b) => (+b.mtime || 0) - (+a.mtime || 0) || String(a.title || a.name).localeCompare(String(b.title || b.name), 'zh'));
+  if (sort === 'name') rows.sort((a, b) => String(a.title || a.name).localeCompare(String(b.title || b.name), 'zh'));
+  return rows;
+}
+function renderFileList(){
+  const rows = fileRows(), list = $('flist');
+  if (!rows.length){ list.innerHTML = '<p id="fstate">' + (filesUI.query ? '没有找到。可以换个关键词，或取消“当前文件夹”。' : '这个文件夹是空的。') + '</p>'; return; }
+  filesUI.selected = Math.min(filesUI.selected, rows.length - 1);
+  list.innerHTML = rows.map((x, i) => { const title = x.title || x.name || fileName(x.path), folder = x.kind === 'dir';
+    const meta = folder ? ((x.count || 0) + ' 个文件') : [filesUI.query ? x.path : '', fileWhen(x.mtime), fileSize(x.size)].filter(Boolean).join(' · ');
+    return '<div class="fri' + (i === filesUI.selected ? ' sel' : '') + '" data-fi="' + i + '" role="option" aria-selected="' + (i === filesUI.selected) + '"><span class="fi">' + (folder ? '▸' : x.kind === 'file' ? '◇' : '•') + '</span><div class="fm"><b>' + esc(title) + '</b><small>' + esc(meta) + '</small>' + (x.excerpt ? '<em>' + esc(x.excerpt) + '</em>' : '') + '</div><button class="more" data-fmore="' + i + '" aria-label="更多">•••</button></div>'; }).join('') +
+    ((!filesUI.query && filesUI.browse && (filesUI.browse.docs || []).length < (filesUI.browse.total_docs || 0)) ? '<button class="btn" id="fmore">载入更多</button>' : '');
+  list.querySelectorAll('[data-fi]').forEach(el => el.onclick = e => { if (e.target.closest('[data-fmore]')) return; const x = rows[+el.dataset.fi]; filesUI.selected = +el.dataset.fi; if (x.kind === 'dir') browseFiles(x.path); else if (x.kind === 'doc') openFileDoc(x.path); else downloadRaw({p:x.path}); });
+  list.querySelectorAll('[data-fmore]').forEach(b => b.onclick = e => { e.stopPropagation(); fileMenu(b, rows[+b.dataset.fmore]); });
+  if ($('fmore')) $('fmore').onclick = () => browseFiles(filesUI.path, true);
+}
+async function openFileDoc(path){ let n = byPath.get(path); if (!n){ await refreshNow(); n = byPath.get(path); } if (n) openDoc(n); else toast('这篇暂时没有进入知识场索引', true); }
+function fileMenu(anchor, x){
+  if (x.kind === 'dir'){ openPop(anchor, [{label:'打开', run:() => browseFiles(x.path)}, {label:'在场上亮起', run:() => lightFileFolder(x.path)}, '-', {label:'改名或移动…', run:() => fileDirForm('改名或移动文件夹', x.path, '/dir/move')}, {label:'复制…', run:() => fileDirForm('复制文件夹', x.path, '/dir/copy')}, {label:'删除空文件夹', cls:'danger', run:async () => { try { await api('/dir?path=' + encP(x.path), {method:'DELETE'}); await refreshFiles(true); toast('已删除空文件夹'); } catch(e){ toast('<b>没删掉</b>：' + esc(e.message || e), true); } }}]); return; }
+  if (x.kind === 'doc'){ const n = byPath.get(x.path); openPop(anchor, [{label:'打开', run:() => openFileDoc(x.path)}, ...(n ? [{label:'重命名或移动…', run:() => moveDoc(n)}, {label:'复制一份', run:() => duplicateDoc(n)}, {label:'移到回收站', cls:'danger', run:() => deleteDoc(n)}] : []), {label:'下载原文件', run:() => downloadRaw({p:x.path})}]); return; }
+  openPop(anchor, [{label:'下载原文件', run:() => downloadRaw({p:x.path})}]);
+}
+function fileDirForm(title, from, endpoint){
+  const box = openPanel(title, '<label>新的位置</label><input id="ff-to" type="text" value="' + esc(endpoint === '/dir/copy' ? from + ' 副本' : from) + '"><p class="hint">路径要在 Notes/ 下。</p><div class="acts"><button class="btn pri" id="ff-go">确定</button><span id="ff-err" class="bad"></span></div>');
+  const go = async () => { const to = $('ff-to').value.trim().replace(/\/+$/, ''); if (!/^Notes\/./.test(to)){ $('ff-err').textContent = '要放在 Notes/ 下'; return; }
+    try { await api(endpoint, {method:'POST', json:{from, to}}); closePanel(); filesUI.path = endpoint === '/dir/move' && (filesUI.path === from || filesUI.path.startsWith(from + '/')) ? to + filesUI.path.slice(from.length) : filesUI.path; await refreshNow(); await refreshFiles(true); toast('已完成'); } catch(e){ $('ff-err').textContent = e.message || String(e); } };
+  $('ff-go').onclick = go; box.querySelector('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+}
+function lightFileFolder(path){ const set = nodes.filter(n => n.p === path || n.p.startsWith(path + '/')); query = ''; lastRel = set.map(n => ({n, norm:1})); paint(lastRel, {soft:set.length > 40}); if (set.length) fit(set); readoutText('文件夹「' + path + '」· ' + set.length + ' 篇'); }
+async function browseFiles(path, more){
+  filesUI.path = path || filesUI.path || 'Notes'; filesUI.query = ''; $('f-q').value = ''; filesUI.selected = 0;
+  const offset = more && filesUI.browse && filesUI.browse.path === filesUI.path ? (filesUI.browse.docs || []).length : 0; if (!more) $('flist').innerHTML = '<p id="fstate">正在读取…</p>';
+  try { const r = await api('/browse?path=' + encP(filesUI.path) + (offset ? '&offset=' + offset : '')); if (more && filesUI.browse && filesUI.browse.path === r.path) r.docs = (filesUI.browse.docs || []).concat(r.docs || []); filesUI.browse = r; renderFileCrumbs(r.breadcrumb); renderFileTree(); renderFileList(); saveFilesState(); }
+  catch(e){ $('flist').innerHTML = '<p id="fstate" class="bad">' + esc(e.message || e) + '</p>'; }
+}
+async function searchFiles(text){
+  const s = text.trim(); filesUI.query = s; filesUI.selected = 0; if (!s){ renderFileList(); return; } $('flist').innerHTML = '<p id="fstate">正在搜索…</p>';
+  const local = nodes.filter(n => (n.full + ' ' + n.p).toLocaleLowerCase().includes(s.toLocaleLowerCase())).map(n => ({path:n.p, title:n.full, excerpt:n.ex, mtime:n.m, kind:'doc'}));
+  try { const scope = $('f-scope').checked ? '&scope=' + encP(filesUI.path) : ''; const r = await api('/search?q=' + encodeURIComponent(s) + scope); if ($('f-q').value.trim() !== s) return; filesUI.results = mergeFileResults(local, r.hits || [], s); renderFileList(); }
+  catch(e){ filesUI.results = mergeFileResults(local, [], s); renderFileList(); }
+}
+async function refreshFiles(forceTree){ if (!filesUI.open) return; if (forceTree || !filesUI.tree){ try { filesUI.tree = await api('/tree'); } catch(e){} } renderFileTree(); if ($('f-q').value.trim()) searchFiles($('f-q').value); else browseFiles(filesUI.path); }
+function newFileDir(){
+  const base = filesUI.path === 'Notes' ? 'Notes/' : filesUI.path + '/'; const box = openPanel('新建文件夹', '<label>文件夹路径</label><input id="fn-dir" type="text" value="' + esc(base) + '"><div class="acts"><button class="btn pri" id="fn-go">新建</button><span id="fn-err" class="bad"></span></div>');
+  const go = async () => { const path = $('fn-dir').value.trim().replace(/\/+$/, ''); try { await api('/dir', {method:'POST', json:{path}}); closePanel(); filesUI.expanded.add(fileDir(path)); await refreshFiles(true); browseFiles(path); } catch(e){ $('fn-err').textContent = e.message || String(e); } };
+  $('fn-go').onclick = go; box.querySelector('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
+}
+$('b-files').onclick = () => toggleFiles(); $('f-x').onclick = () => toggleFiles(false); $('f-refresh').onclick = () => refreshFiles(true);
+$('f-new-doc').onclick = () => newDoc('', filesUI.path); $('f-new-dir').onclick = newFileDir; $('f-light').onclick = () => lightFileFolder(filesUI.path);
+$('f-kind').onchange = renderFileList; $('f-sort').onchange = renderFileList; $('f-scope').onchange = () => filesUI.query ? searchFiles(filesUI.query) : renderFileList();
+$('f-q').addEventListener('input', () => { clearTimeout(filesUI.timer); filesUI.timer = setTimeout(() => searchFiles($('f-q').value), 160); });
+$('f-q').addEventListener('keydown', e => { const rows = fileRows();
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); filesUI.selected = Math.max(0, Math.min(rows.length - 1, filesUI.selected + (e.key === 'ArrowDown' ? 1 : -1))); renderFileList(); const s = $('flist').querySelector('.sel'); if (s) s.scrollIntoView({block:'nearest'}); }
+  if (e.key === 'Enter' && rows[filesUI.selected]){ e.preventDefault(); const x = rows[filesUI.selected]; x.kind === 'dir' ? browseFiles(x.path) : x.kind === 'doc' ? openFileDoc(x.path) : downloadRaw({p:x.path}); }
+  if (e.key === 'Escape'){ e.stopPropagation(); if ($('f-q').value){ $('f-q').value = ''; filesUI.query = ''; renderFileList(); } else toggleFiles(false); }
+});
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'e' || e.key === 'E')){ e.preventDefault(); toggleFiles(); } else if (e.key === 'Escape' && filesUI.open && $('panel').hidden && !popEl && !(document.activeElement && document.activeElement.closest('#files input'))){ e.preventDefault(); toggleFiles(false); } }, true);
+try { const s = JSON.parse(localStorage.getItem('litmus_files') || '{}'); if (s.path && /^Notes(?:\/|$)/.test(s.path)) filesUI.path = s.path; if (Array.isArray(s.expanded)) filesUI.expanded = new Set(s.expanded.concat('Notes')); if (s.open) setTimeout(() => toggleFiles(true), 0); } catch(e){}
+
 function openRecent(){
   const opened = recentList().map(p => byPath.get(p)).filter(Boolean).slice(0, 8);
   const changed = nodes.slice().sort((a, b) => b.m - a.m).slice(0, 12);
@@ -2237,10 +2449,11 @@ function openRecent(){
 
 /* 新建 */
 const safeFile = s => s.replace(/[\\/:*?"<>|？\n\r\t#]/g, '').trim().slice(0, 60);
-async function newDoc(title){
+async function newDoc(title, defaultDir){
   title = (title || '').trim();
   if (!title){
-    const box = openPanel('新建文档', '<label for="nd-t">标题</label><input type="text" id="nd-t" placeholder="比如：十月复盘"><label for="nd-dir">放在</label><input type="text" id="nd-dir" value="Notes/"><p class="hint">标题就是文件名。区域不用选：写完以后它会自己落到意思最近的地方。</p><div class="acts"><button class="btn pri" id="nd-go">新建并开始写</button></div>');
+    const dir = defaultDir ? defaultDir.replace(/\/+$/, '') + '/' : 'Notes/';
+    const box = openPanel('新建文档', '<label for="nd-t">标题</label><input type="text" id="nd-t" placeholder="比如：十月复盘"><label for="nd-dir">放在</label><input type="text" id="nd-dir" value="' + esc(dir) + '"><p class="hint">标题就是文件名。区域不用选：写完以后它会自己落到意思最近的地方。</p><div class="acts"><button class="btn pri" id="nd-go">新建并开始写</button></div>');
     const go = () => { const t = $('nd-t').value.trim(); if (!t){ $('nd-t').focus(); return; } const d = $('nd-dir').value.trim().replace(/\/*$/, '/'); closePanel(); createDoc(t, d); };
     $('nd-go').onclick = go; box.querySelector('#nd-t').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
     return;
@@ -2268,6 +2481,7 @@ $('s-more').onclick = () => {
       {label:fileLike ? '复制进库（原件留着）' : '导入进库', run:() => $('doc').querySelector('[data-imp="copy"]').click()},
       ...(fileLike && docData.exists ? [{label:'移进库（原件也搬进来）', run:() => $('doc').querySelector('[data-imp="move"]').click()}] : []),
       {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
+      {label:'加工成…', run:() => openProcessing({source_kind:'doc', source:n.p, title:n.full || n.title})},
       {label:'复制原处路径', run:() => copyText(docData.loc || n.p)},
       '-',
       {label:'管理数据源…', run:() => openSources()}
@@ -2283,6 +2497,7 @@ $('s-more').onclick = () => {
     ...(DESK && n.k !== 'ext' ? [{label:'在终端里打开所在文件夹', run:() => openTerm({fresh:true, cwd:n.p.slice(0, n.p.lastIndexOf('/'))})}] : []),
     '-',
     ...(isMd ? [{label:'评论' + (cmts.path === n.p && cmts.list.length ? '（' + cmts.list.length + '）' : '') + '…', run:() => openComments()}] : []),
+    {label:'加工成…', run:() => openProcessing({source_kind:'doc', source:n.p, title:n.full || n.title})},
     ...(isConv ? [{label:'提炼成知识卡', run:() => conflowDigest(n.p)}] : []),
     ...(isMd ? [{label:'魔法排版（只修格式）', run:() => tidyDoc(n, 'rule')}, {label:'AI 排版（不改文字）', run:() => tidyDoc(n, 'ai')}, {label:split ? '收起分栏' : '分栏：边写边看', run:() => { if (!editing) toggleEdit(); setSplit(!split); }}] : []),
     {label:'阅读风格…', run:pickStyle},
@@ -2317,17 +2532,21 @@ function moveDoc(n){
     if (to === n.p){ closePanel(); return; }
     if (byPath.has(to)){ $('mv-err').textContent = '那里已经有一篇同名文档'; return; }
     if (editing) await flushSave();
-    try { await api('/doc/move', {method:'POST', json:{from:n.p, to}}); }
+    const wasOpen = reading === n, otherOpen = reading && !wasOpen ? reading.p : '';
+    let moved;
+    try { moved = await api('/doc/move', {method:'POST', json:{from:n.p, to}}); }
     catch(e){ $('mv-err').textContent = e.message || String(e); return; }
-    closePanel(); await closeDoc(); await refreshNow();
-    const m = byPath.get(to); if (m){ openDoc(m); flash(m); }
+    closePanel(); if (wasOpen) await closeDoc(); await refreshNow();
+    if (wasOpen){ const m = byPath.get(to); if (m){ openDoc(m); flash(m); } }
+    else if (otherOpen && moved.relinked){ editing = false; const m = byPath.get(otherOpen); if (m) openDoc(m); }
     toast('已移到 <b>' + esc(to) + '</b>');
   };
   $('mv-go').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) go(); });
 }
 /* 文件夹：场是按意思铺的，文件夹只是磁盘上的位置。这里能看全、改名移动、复制、新建，
    「亮起」把一个文件夹里的文档在场上显色 */
-async function openFolders(focus){
+function openFolders(focus){ openFilesAt(focus || 'Notes'); }
+async function openFoldersLegacy(focus){
   const box = openPanel('文件夹', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   let t = {dirs:[]}; try { t = await api('/tree'); } catch(e){}
   const cnt = new Map(), add = d => { if (!cnt.has(d)) cnt.set(d, 0); };
@@ -2386,9 +2605,10 @@ async function openFolders(focus){
 }
 async function deleteDoc(n){
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还没存上</b>，先别删', true); return; } }
+  const wasOpen = reading === n;
   try { await api('/doc?path=' + encP(n.p), {method:'DELETE'}); }
   catch(e){ toast('<b>没删掉</b>：' + esc(e.message || e), true); return; }
-  editing = false; document.body.classList.remove('reading'); reading = null; clearReaction();
+  if (wasOpen){ editing = false; document.body.classList.remove('reading'); reading = null; clearReaction(); }
   await refreshNow();
   toastAct('已移到回收站：<b>' + esc(n.full || n.title) + '</b>', '撤销', async () => {
     try { await api('/trash/restore', {method:'POST', json:{path:n.p}}); await refreshNow(); const m = byPath.get(n.p); if (m){ flash(m); toast('已找回'); } }
@@ -2513,6 +2733,124 @@ async function syncNow(){
 
 /* 收：网页、主题、文件 */
 async function collectUrl(url){ return localizeUrl(url); }
+function isVideoUrl(url){
+  try { const h = new URL(url).hostname.toLowerCase(); return /(^|\.)((youtube\.com)|(youtu\.be)|(bilibili\.com)|(b23\.tv)|(vimeo\.com)|(douyin\.com)|(tiktok\.com)|(x\.com)|(twitter\.com))$/.test(h); }
+  catch(e){ return false; }
+}
+function processingEntry(input, doc, selected){
+  const t = String(input || '').trim(), many = Array.isArray(selected) ? selected.filter(Boolean) : [];
+  if (/^https?:\/\/\S+$/i.test(t)) return {source_kind:'url', source:t};
+  if (many.length) return {source_kind:'selection', sources:many, theme:t};
+  if (doc) return {source_kind:'doc', source:doc, theme:t};
+  return {source_kind:'url', source:'', theme:t};
+}
+function processingPayload(sourceKind, source, sources, title, options){
+  const out = {source_kind:sourceKind, title:String(title || '').trim(), options:{}};
+  if (sourceKind === 'selection') out.sources = (sources || []).map(x => String(x).trim()).filter(Boolean);
+  else out.source = String(source || '').trim();
+  const o = options || {};
+  ['genre','language','theme'].forEach(k => { const v = String(o[k] || '').trim(); if (v) out.options[k] = v; });
+  ['article','slides','script','storyboard','html_animation'].forEach(k => { out.options[k] = !!o[k]; });
+  const frames = Math.max(1, Math.min(120, parseInt(o.frames, 10) || 8));
+  out.options.frames = frames;
+  if (!out.title) delete out.title;
+  return out;
+}
+function processingArtifacts(job){
+  const a = [], add = (kind, value, label) => {
+    if (!value) return;
+    if (Array.isArray(value)){ value.forEach((x, i) => add(kind, x, label ? label + (value.length > 1 ? ' ' + (i + 1) : '') : '产物')); return; }
+    if (typeof value === 'object'){
+      if (value.path || value.url || value.href){ add(value.kind || kind, value.path || value.url || value.href, value.label || value.title || label); return; }
+      Object.entries(value).forEach(([k, v]) => add(k, v, k === 'manifest' || k === 'manifest_path' ? '打开清单' : k === 'article' || k === 'article_path' ? '打开文章' : '打开' + k));
+      return;
+    }
+    if (!a.some(x => x.value === value)) a.push({kind:kind || '', value:String(value), label:label || (kind === 'manifest' ? '打开清单' : kind === 'article' ? '打开文章' : '打开产物')});
+  };
+  add('manifest', job.manifest_path || job.manifest, '打开清单');
+  add('article', job.article_path || job.article, '打开文章');
+  (job.output_paths || []).forEach(p => add(p.endsWith('/加工清单.md') ? 'manifest' : p.endsWith('/文章.md') ? 'article' : '', p, p.endsWith('/加工清单.md') ? '打开清单' : p.endsWith('/文章.md') ? '打开文章' : '打开产物'));
+  add('', job.artifacts || job.outputs || job.result);
+  return a;
+}
+let processingSeed = null, processingPollT = 0, processingSeen = new Map();
+async function openProcessing(seed){
+  processingSeed = Object.assign({}, processingEntry('', reading && reading.p, picks.map(n => n.p)), seed || {});
+  const box = openPanel('ConFlow 加工', '<div id="processing-root"><span class="thinking"><i></i><i></i><i></i> 正在读取加工任务</span></div>');
+  $('panel').querySelector('.pbox').style.width = 'min(820px,100%)';
+  let d = {jobs:[]}; try { d = await api('/processing'); } catch(e){ d.error = e.message || String(e); }
+  renderProcessing(box, d);
+}
+function renderProcessing(box, data){
+  if (!box || !$('processing-root')) return;
+  const seed = processingSeed || {}, selected = (seed.sources || picks.map(n => n.p)).filter(Boolean), doc = seed.source_kind === 'doc' ? seed.source : reading && reading.p;
+  const kind = seed.source_kind || (selected.length ? 'selection' : doc ? 'doc' : 'url');
+  const sourceRows =
+    '<label class="row chk"><input type="radio" name="pr-src" value="url"' + (kind === 'url' ? ' checked' : '') + '><div class="grow"><span>视频或网页 URL</span><input type="text" id="pr-url" value="' + esc(kind === 'url' ? seed.source || '' : '') + '" placeholder="https://…"></div></label>' +
+    '<label class="row chk"><input type="radio" name="pr-src" value="doc"' + (kind === 'doc' ? ' checked' : '') + '><div class="grow"><span>一篇文档</span><input type="text" id="pr-doc" value="' + esc(doc || '') + '" placeholder="Notes/…"></div></label>' +
+    '<label class="row chk"><input type="radio" name="pr-src" value="selection"' + (kind === 'selection' ? ' checked' : '') + (selected.length ? '' : ' disabled') + '><div class="grow"><span>当前选中的 ' + selected.length + ' 篇</span><small>' + esc(selected.slice(0, 3).join(' · ')) + (selected.length > 3 ? ' 等' : '') + '</small></div></label>';
+  const form = '<div id="pr-form"><label>来源</label>' + sourceRows +
+    '<div class="proc-grid"><div class="wide"><label for="pr-title">任务标题（可选）</label><input type="text" id="pr-title" value="' + esc(seed.title || '') + '" placeholder="比如：把访谈加工成产品介绍"></div>' +
+    '<div><label for="pr-genre">文体</label><select class="sel" id="pr-genre"><option value="auto">自动判断</option><option value="tutorial">教程</option><option value="science">科普</option><option value="commentary">评论</option><option value="other">其他</option></select></div>' +
+    '<div><label for="pr-lang">语言</label><select class="sel" id="pr-lang"><option value="zh">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="ru">Русский</option><option value="ar">العربية</option></select></div>' +
+    '<div class="wide"><label for="pr-theme">主题或加工要求</label><input type="text" id="pr-theme" value="' + esc(seed.theme || '') + '" placeholder="重点、受众、风格…"></div>' +
+    '<div class="wide"><label>产物</label><div class="proc-outs">' +
+      '<label class="chk inline"><input type="checkbox" data-pr-out="article" checked>文章</label>' +
+      '<label class="chk inline"><input type="checkbox" data-pr-out="slides">幻灯片</label>' +
+      '<label class="chk inline"><input type="checkbox" data-pr-out="script">短视频脚本</label>' +
+      '<label class="chk inline"><input type="checkbox" data-pr-out="storyboard">分镜</label>' +
+      '<label class="chk inline"><input type="checkbox" data-pr-out="html_animation">HTML 动画</label></div></div>' +
+    '<div><label for="pr-frames">帧数</label><input type="number" id="pr-frames" min="1" max="120" value="8"></div></div>' +
+    '<div class="acts"><button class="btn pri" id="pr-go">开始加工</button><button class="btn" id="pr-refresh">刷新任务</button><span id="pr-msg"></span></div></div>';
+  const jobs = (data.jobs || []).map(processingJobHtml).join('');
+  $('processing-root').innerHTML = form + '<label>任务历史</label><div id="pr-jobs">' + (jobs || '<p class="empty">还没有加工任务。</p>') + '</div>' + (data.error ? '<p class="bad">暂时读不到任务：' + esc(data.error) + '</p>' : '');
+  wireProcessing(box, selected);
+}
+function processingJobHtml(j){
+  const state = j.state || j.status || 'pending', names = {pending:'等待中', queued:'等待中', running:'加工中', done:'已完成', completed:'已完成', error:'没做完', failed:'没做完', stopped:'已停止', cancelled:'已停止'};
+  const arts = processingArtifacts(j);
+  const actions = (state === 'running' || state === 'pending' || state === 'queued' ? '<button class="btn" data-pr-act="stop" data-pr-id="' + esc(j.id) + '">停止</button>' : '') +
+    (state === 'error' || state === 'failed' || state === 'stopped' || state === 'cancelled' ? '<button class="btn" data-pr-act="retry" data-pr-id="' + esc(j.id) + '">重试</button>' : '') +
+    arts.map((a, i) => '<button class="btn' + (a.kind === 'article' ? ' pri' : '') + '" data-pr-open="' + esc(j.id) + '" data-pr-art="' + i + '">' + esc(a.label) + '</button>').join('');
+  const done = Number(j.done || j.progress && j.progress.done || 0), total = Number(j.total || j.progress && j.progress.total || 0), pct = total ? Math.round(done / total * 100) : Number(j.progress || 0);
+  return '<div class="proc-job" data-pr-job="' + esc(j.id) + '"><div class="ph"><div class="grow"><span>' + esc(j.title || j.name || '加工任务') + '</span><small>' + esc(names[state] || state) + (j.phase ? ' · ' + j.phase : '') + (total ? ' · ' + done + '/' + total : '') + '</small></div></div>' +
+    ((state === 'running' || state === 'pending' || state === 'queued') ? '<progress max="100" value="' + Math.max(0, Math.min(100, pct || 0)) + '"></progress>' : '') +
+    (j.error ? '<p class="bad">' + esc(j.error) + '</p>' : '') + (actions ? '<div class="acts">' + actions + '</div>' : '') + '</div>';
+}
+function wireProcessing(box, selected){
+  $('pr-refresh').onclick = () => openProcessing(processingSeed);
+  box.querySelectorAll('input[name=pr-src]').forEach(r => r.onchange = () => { const id = r.value === 'url' ? 'pr-url' : r.value === 'doc' ? 'pr-doc' : ''; if (id && $(id)) $(id).focus(); });
+  $('pr-go').onclick = async () => {
+    const sk = box.querySelector('input[name=pr-src]:checked').value, outputs = {};
+    box.querySelectorAll('[data-pr-out]').forEach(x => { outputs[x.dataset.prOut] = x.checked; });
+    if (!Object.values(outputs).some(Boolean)){ $('pr-msg').className = 'bad'; $('pr-msg').textContent = '至少选一种产物'; return; }
+    const payload = processingPayload(sk, sk === 'url' ? $('pr-url').value : $('pr-doc').value, selected, $('pr-title').value, Object.assign(outputs, {genre:$('pr-genre').value, language:$('pr-lang').value, theme:$('pr-theme').value, frames:$('pr-frames').value}));
+    if ((sk === 'selection' ? !payload.sources.length : !payload.source)){ $('pr-msg').className = 'bad'; $('pr-msg').textContent = '请先选来源'; return; }
+    $('pr-go').disabled = true; $('pr-msg').className = ''; $('pr-msg').textContent = '正在创建…';
+    try { await api('/processing', {method:'POST', json:payload}); processingSeed = payload; pollJobs(true); openProcessing(processingSeed); }
+    catch(e){ $('pr-go').disabled = false; $('pr-msg').className = 'bad'; $('pr-msg').textContent = e.message || String(e); }
+  };
+  wireProcessingJobs(box);
+}
+function wireProcessingJobs(box){
+  box.querySelectorAll('[data-pr-act]').forEach(b => b.onclick = async () => {
+    b.disabled = true; try { await api('/processing/' + encodeURIComponent(b.dataset.prId) + '/' + b.dataset.prAct, {method:'POST'}); openProcessing(processingSeed); pollJobs(true); } catch(e){ b.disabled = false; toast(esc(e.message || e), true); }
+  });
+  box.querySelectorAll('[data-pr-open]').forEach(b => b.onclick = async () => {
+    const d = await api('/processing/' + encodeURIComponent(b.dataset.prOpen)).catch(() => null), j = d && (d.job || d);
+    const a = j && processingArtifacts(j)[+b.dataset.prArt]; if (a) openProcessingArtifact(a.value);
+  });
+}
+function updateProcessingHistory(data){
+  const el = $('pr-jobs'); if (!el) return;
+  el.innerHTML = (data.jobs || []).map(processingJobHtml).join('') || '<p class="empty">还没有加工任务。</p>';
+  wireProcessingJobs(el);
+}
+async function openProcessingArtifact(value){
+  if (/^https?:\/\//i.test(value)){ window.open(value, '_blank', 'noopener'); return; }
+  await refreshNow(); const n = byPath.get(value);
+  if (n){ closePanel(); openDoc(n); flash(n); } else toast('产物在 <b>' + esc(value) + '</b>，刷新知识场后即可打开');
+}
 function openNick(){
   const box = openPanel('我的昵称', '<label for="nk-t">名字</label><input type="text" id="nk-t" maxlength="16" placeholder="比如：小明"><p class="hint">另一台设备或另一个窗口同时开着同一篇时，会看到这个名字和你的光标；评论也署这个名字。只存在这台设备的浏览器里。</p><div class="acts"><button class="btn pri" id="nk-go">保存</button></div>');
   const inp = box.querySelector('#nk-t'); const cur = myName(); inp.value = cur === '我' ? '' : cur;
@@ -2894,6 +3232,7 @@ function collectTopic(topic){
   }).catch(e => toast('<b>采集失败</b>：' + esc(e.message || e), true));
 }
 const TEXT_EXT = /\.(md|markdown|txt|html?)$/i, CONV_EXT = /\.(docx|doc|odt|pptx|xlsx|epub|rtf|pdf)$/i;
+const MAX_CONV_UPLOAD = 512 * 1048576;
 function pickFiles(){
   const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true;
   inp.accept = '.md,.markdown,.txt,.html,.htm,.docx,.odt,.pptx,.xlsx,.epub,.rtf,.pdf';
@@ -2925,9 +3264,21 @@ function openImport(){
 }
 function litPaths(paths, label){ const set = (paths || []).map(p => byPath.get(p)).filter(Boolean); query = ''; lastRel = set.map(n => ({n, norm:1})); paint(lastRel, {soft:set.length > 40}); if (set.length) fit(set); readoutText(label + ' · ' + set.length + ' 篇'); }
 async function wizardUpload(file, kind){
-  const box = openPanel('搬家', '<span class="thinking"><i></i><i></i><i></i> 正在上传 ' + esc(file.name) + '（' + (file.size / 1048576).toFixed(1) + ' MB）</span>');
-  try { const r = await api('/field/wizard/upload?name=' + encodeURIComponent(file.name), {method:'POST', body:file, headers:{'content-type':'application/zip'}}); wizardPlan({upload:r.upload, kind}); }
-  catch(e){ box.innerHTML = '<p class="bad">没传上去：' + esc(e.message || e) + '</p>'; }
+  const ctl = new AbortController();
+  const box = openPanel('搬家', '<div class="upload-file">' + esc(file.name) + ' · ' + (file.size / 1048576).toFixed(1) + ' MB</div><progress class="upload-progress" id="wz-up" max="1"></progress><p class="hint" id="wz-up-t">准备上传…</p><div class="acts"><button class="btn" id="wz-cancel">取消</button></div>');
+  $('wz-cancel').onclick = () => ctl.abort();
+  try {
+    const r = await uploadBinary('/field/wizard/upload?name=' + encodeURIComponent(file.name), file, (p, loaded) => {
+      const bar = $('wz-up'), text = $('wz-up-t'); if (!bar || !text) return;
+      if (p == null) bar.removeAttribute('value'); else bar.value = p;
+      text.textContent = uploadPct(p, loaded);
+    }, ctl.signal);
+    wizardPlan({upload:r.upload, kind});
+  } catch(e){
+    if (e.name === 'AbortError'){ openImport(); return; }
+    box.innerHTML = '<p class="bad">没传上去：' + esc(e.message || e) + '</p><div class="acts"><button class="btn pri" id="wz-retry">重试</button><button class="btn" id="wz-back2">返回</button></div>';
+    $('wz-retry').onclick = () => wizardUpload(file, kind); $('wz-back2').onclick = openImport;
+  }
 }
 async function wizardPlan(srcIn){
   wizSrc = Object.assign({}, srcIn);
@@ -2969,9 +3320,20 @@ async function wizardUndo(id, btn){
 async function importFiles(files){
   /* 拖进来的是 zip（Notion、飞书的导出，或压缩好的 Obsidian 库）：走搬家向导 */
   const zips = files.filter(f => /\.zip$/i.test(f.name));
-  if (zips.length){ wizardUpload(zips[0]); files = files.filter(f => !/\.zip$/i.test(f.name)); if (!files.length) return; }
+  const zip = zips[0] || null;
+  if (zip){ files = files.filter(f => !/\.zip$/i.test(f.name)); if (!files.length){ wizardUpload(zip); return; } }
+  if (!files.length) return;
   const ok = [], bad = [], used = new Set();
-  for (const f of files){
+  const ctl = new AbortController();
+  openPanel('导入文件', '<div class="upload-file" id="im-cur"></div><progress class="upload-progress" id="im-up" max="1" value="0"></progress><p class="hint" id="im-up-t">准备导入 ' + files.length + ' 个文件…</p><div class="acts"><button class="btn" id="im-cancel">取消剩余导入</button></div>');
+  let cancelled = false;
+  $('im-cancel').onclick = () => { cancelled = true; ctl.abort(); };
+  for (let fi = 0; fi < files.length; fi++){
+    if (cancelled) break;
+    const f = files[fi], cur = $('im-cur'), note = $('im-up-t'), bar = $('im-up');
+    if (cur) cur.textContent = f.name;
+    if (note) note.textContent = '第 ' + (fi + 1) + ' / ' + files.length + ' 个';
+    if (bar) bar.value = 0;
     try {
       if (TEXT_EXT.test(f.name)){
         let text = await f.text(); const isHtml = /\.html?$/i.test(f.name);
@@ -2984,16 +3346,25 @@ async function importFiles(files){
         await api('/doc?path=' + encP(path), {method:'PUT', body:text, headers:{'content-type':isHtml ? 'text/html' : 'text/markdown'}});
         ok.push(path);
       } else if (CONV_EXT.test(f.name)){
-        const buf = new Uint8Array(await f.arrayBuffer()); let b64 = '';
-        for (let i = 0; i < buf.length; i += 0x8000) b64 += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-        const r = await api('/ingest/file', {method:'POST', json:{name:f.name, content_base64:btoa(b64)}});
+        if (f.size > MAX_CONV_UPLOAD){ bad.push(f.name + '（超过 512 MB，请拆分后再导入）'); continue; }
+        const r = await uploadBinary('/ingest/file?name=' + encodeURIComponent(f.name), f, (p, loaded) => {
+          const b = $('im-up'), t = $('im-up-t'); if (!b || !t) return;
+          if (p == null) b.removeAttribute('value'); else b.value = p;
+          t.textContent = '第 ' + (fi + 1) + ' / ' + files.length + ' 个 · ' + uploadPct(p, loaded);
+        }, ctl.signal);
         ok.push(r.rel);
       } else bad.push(f.name + '（不支持这种格式）');
-    } catch(e){ bad.push(f.name + '（' + (e.message || e) + '）'); }
+    } catch(e){
+      if (e.name === 'AbortError'){ cancelled = true; break; }
+      bad.push(f.name + '（' + (e.message || e) + '）');
+    }
   }
+  closePanel();
   if (ok.length){ await refreshNow(); const ns = ok.map(p => byPath.get(p)).filter(Boolean); if (ns.length){ paint(ns.map(n => ({n, norm:1})), {soft:true}); fit(ns); } }
-  if (bad.length) toast((ok.length ? '导入了 <b>' + ok.length + '</b> 篇；' : '') + '没导入：' + esc(bad.join('、')), true);
+  if (cancelled) toast('已停止；已经导入 <b>' + ok.length + '</b> 篇，剩下的没有动');
+  else if (bad.length) toast((ok.length ? '导入了 <b>' + ok.length + '</b> 篇；' : '') + '没导入：' + esc(bad.join('、')), true);
   else if (ok.length) toast('导入了 <b>' + ok.length + '</b> 篇，已经落到场上');
+  if (zip && !cancelled) wizardUpload(zip);
 }
 let dragDepth = 0;
 addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ dragDepth++; $('drop').classList.add('on'); } });
@@ -3540,11 +3911,11 @@ async function openThemes(){
     list.map(([k, v]) => '<div class="row">' + sw(v) + '<div class="grow"><span>' + esc(v.name) + (cur === v.name ? ' · 正在用' : '') + '</span><small>' + esc(v.desc || '') + '</small></div>' + (cur === v.name ? '' : '<button class="btn" data-k="' + esc(k) + '">用这套</button>') + '</div>').join('');
   box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const v = b.dataset.k ? d.presets[b.dataset.k] : null; applyPreset(v); toast(v ? '主题换成 <b>' + esc(v.name) + '</b>' : '回到鹿蕊内置主题'); openThemes(); });
 }
-/* Conflow 对话流：和 Agent 的对话按天存在 Notes/Agent/「日期 对话.md」，一键提炼成知识卡（Notes/Conflow/） */
+/* 对话提炼：和 Agent 的对话按天存在 Notes/Agent/「日期 对话.md」，一键提炼成知识卡（Notes/Conflow/） */
 async function conflowDigest(path, btn){
   if (btn){ btn.disabled = true; btn.textContent = '提炼中…'; }
   try {
-    const r = await api('/conflow/digest', {method:'POST', json:{path}});
+    const r = await api('/conversation/digest', {method:'POST', json:{path}});
     await refreshNow();
     const card = r.result && r.result.digest, m = card && byPath.get(card);
     toast('知识卡好了：<b>' + esc((card || '').split('/').pop().replace(/\.md$/, '')) + '</b>' + (r.result ? '（要点 ' + (r.result.points || 0) + ' · 决定 ' + (r.result.decisions || 0) + ' · 待办 ' + (r.result.actions || 0) + '）' : ''));
@@ -3552,8 +3923,8 @@ async function conflowDigest(path, btn){
   } catch(e){ if (btn){ btn.disabled = false; btn.textContent = '提炼知识卡'; } toast('<b>没提炼出来</b>：' + esc(e.message || e), true); }
 }
 async function openConflow(){
-  const box = openPanel('对话流', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
-  let r; try { r = await api('/conflow/conversations'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
+  const box = openPanel('对话提炼', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
+  let r; try { r = await api('/conversation/conversations'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
   const cs = r.conversations || [], cards = nodes.filter(n => n.p.startsWith('Notes/Conflow/')).sort((a, b) => b.p.localeCompare(a.p));
   const hasCard = c => byPath.has('Notes/Conflow/' + c.date + '-知识卡.md');
   box.innerHTML = '<p class="hint" style="margin-top:0">「帮我…」和 Agent 的每次对话都按天存进 Notes/Agent/，是普通文档。提炼知识卡会把要点、决定、待办理成一篇，存进 Notes/Conflow/。</p>' +
@@ -4813,7 +5184,18 @@ document.addEventListener('pointerdown', () => { lastInput = Date.now(); }, true
 async function pollJobs(now){
   clearTimeout(jobsT);
   if (document.hidden && !now){ jobsT = setTimeout(pollJobs, 30000); return; }
-  let j; try { j = await api('/jobs'); } catch(e){ jobsT = setTimeout(pollJobs, 30000); return; }
+  let j, processing = {jobs:[]};
+  try { [j, processing] = await Promise.all([api('/jobs'), api('/processing').catch(() => ({jobs:[]}))]); } catch(e){ jobsT = setTimeout(pollJobs, 30000); return; }
+  const existing = new Set((j.jobs || []).filter(x => x.kind === 'processing' || x.kind === 'process' || x.kind === 'conflow').map(x => String(x.id).replace(/^conflow:/, '')));
+  (processing.jobs || []).forEach(x => {
+    const id = String(x.id), state = x.state || x.status || 'pending', prev = processingSeen.get(id);
+    if ((state === 'done' || state === 'completed') && prev && prev !== state) processingCompleted(x);
+    processingSeen.set(id, state);
+    if (existing.has(id) || !['pending','queued','running','done','completed','error','failed','stopped','cancelled'].includes(state)) return;
+    j.jobs.push({id:x.id, kind:'processing', title:x.title || x.name || 'ConFlow 加工', state:state === 'completed' ? 'done' : state === 'failed' || state === 'cancelled' || state === 'stopped' ? 'error' : state === 'queued' || state === 'pending' ? 'running' : state, phase:x.phase || '', done:Number(x.done || x.progress && x.progress.done || 0), total:Number(x.total || x.progress && x.progress.total || 0), error:x.error || '', can:state === 'running' || state === 'pending' || state === 'queued' ? ['stop'] : state === 'error' || state === 'failed' || state === 'stopped' || state === 'cancelled' ? ['retry'] : [], _processing:true});
+  });
+  j.busy = !!(j.busy || (processing.jobs || []).some(x => ['pending','queued','running'].includes(x.state || x.status)));
+  updateProcessingHistory(processing);
   const wasBusy = jobsLast && jobsLast.busy;
   jobsLast = j; renderJobs(j);
   /* 库外内容一批批进来：场跟着一批批出现。扫描进行中最多 10 秒刷一次，打字、拖动、阅读编辑时让路 */
@@ -4822,6 +5204,13 @@ async function pollJobs(now){
   jobsRev = j.rev;
   if (wizWatch){ const w = j.jobs.find(x => x.kind === 'wizard'); if (w && w.state !== 'running'){ wizWatch = false; wizardDone(); } }
   jobsT = setTimeout(pollJobs, j.busy ? 2000 : j.jobs.length || j.pending ? 15000 : 30000);
+}
+async function processingCompleted(job){
+  await refreshNow().catch(() => {});
+  const paths = job.output_paths || [], p = paths.find(x => /\/加工清单\.md$/.test(x)) || paths.find(x => /\/文章\.md$/.test(x)) || paths[0];
+  const n = p && byPath.get(p);
+  if (n){ flash(n); openDoc(n); toast('ConFlow 加工完成，已经打开主产物'); }
+  else toast('ConFlow 加工完成，产物已写回知识库');
 }
 function scheduleFieldRefresh(gap){
   clearTimeout(fieldRefT);
@@ -4834,7 +5223,7 @@ function scheduleFieldRefresh(gap){
 }
 function dragging(){ return document.body.classList.contains('panning') || !!(window.__field && window.__field.dragging); }
 function jobPct(x){ return x.total ? Math.min(100, Math.round(x.done / x.total * 100)) : 0; }
-const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库', wizard:'搬家', disk:'全盘索引'};
+const JOB_VERB = {scan:'接入', digest:'学习', patrol:'巡检', curate:'筛选', import:'入库', wizard:'搬家', disk:'全盘索引', processing:'加工', process:'加工', conflow:'加工'};
 function renderJobs(j){
   const b = $('jobs'); if (!b) return;
   const live = j.jobs.filter(x => x.state === 'running' || x.state === 'paused');
@@ -4846,13 +5235,13 @@ function renderJobs(j){
   }
   if (!live.length && !j.pending && fresh.length){
     b.hidden = false; b.classList.add('idle'); b.classList.remove('paused'); b.style.setProperty('--p', 100);
-    const x = fresh[0]; $('jobs-t').textContent = (x.state === 'error' ? '没做完 · ' : '做完了 · ') + JOB_VERB[x.kind] + (x.items ? ' ' + x.items : '');
+    const x = fresh[0]; $('jobs-t').textContent = (x.state === 'error' ? '没做完 · ' : '做完了 · ') + (JOB_VERB[x.kind] || x.title || '任务') + (x.items ? ' ' + x.items : '');
     clearTimeout(renderJobs.t); renderJobs.t = setTimeout(() => renderJobs(jobsLast), 8200); if (jobsPopOpen()) renderJobsPop(); return;
   }
   if (!live.length && !j.pending && !j.held){ b.hidden = true; if (jobsPopOpen()) renderJobsPop(); return; }
   b.hidden = false;
   let label, pct = 0;
-  if (live.length === 1){ const x = live[0]; pct = jobPct(x); label = (x.state === 'paused' ? '已暂停 · ' : '') + JOB_VERB[x.kind] + ' ' + (x.total ? x.done + '/' + x.total : x.done || '…'); }
+  if (live.length === 1){ const x = live[0]; pct = jobPct(x); label = (x.state === 'paused' ? '已暂停 · ' : '') + (JOB_VERB[x.kind] || x.title || '任务') + ' ' + (x.total ? x.done + '/' + x.total : x.done || '…'); }
   else if (live.length > 1){ const d = live.reduce((a, x) => a + x.done, 0), t = live.reduce((a, x) => a + (x.total || x.done), 0); pct = t ? Math.round(d / t * 100) : 0; label = live.length + ' 项 · ' + pct + '%'; }
   else { pct = 100; label = j.pending + ' 篇待收下'; }
   if (live.length && j.pending) label += ' · ' + j.pending + ' 待收';
@@ -4868,12 +5257,12 @@ function renderJobsPop(){
       ({running:'', paused:'已暂停 · ', done:'做完了 · ', error:'没做完 · '}[x.state] || '') + (x.phase && (x.state === 'running' || x.state === 'paused') ? esc(x.phase) + ' · ' : '') + (x.total ? x.done + ' / ' + x.total : x.done ? x.done + '' : '准备中') + (x.kind === 'digest' && x.items ? ' · 学成 ' + x.items : '') + '</small></div>' +
       (x.state === 'running' || x.state === 'paused' ? '<div class="jbar"><i style="width:' + jobPct(x) + '%"></i></div>' : '') +
       (x.error ? '<small class="bad">' + esc(x.error) + '</small>' : '') +
-      ((x.can || []).length ? '<div class="ja">' + (x.can.includes('pause') ? (x.state === 'paused' ? '<button class="btn" data-ja="resume" data-jid="' + esc(x.id) + '">继续</button>' : '<button class="btn" data-ja="pause" data-jid="' + esc(x.id) + '">暂停</button>') : '') + '<button class="btn" data-ja="stop" data-jid="' + esc(x.id) + '">停下</button></div>' : '') + '</div>').join('');
+      ((x.can || []).length ? '<div class="ja">' + (x.can.includes('pause') ? (x.state === 'paused' ? '<button class="btn" data-ja="resume" data-jid="' + esc(x.id) + '">继续</button>' : '<button class="btn" data-ja="pause" data-jid="' + esc(x.id) + '">暂停</button>') : '') + (x.can.includes('stop') ? '<button class="btn" data-ja="stop" data-jid="' + esc(x.id) + '"' + (x._processing ? ' data-processing="1"' : '') + '>停下</button>' : '') + (x.can.includes('retry') ? '<button class="btn" data-ja="retry" data-jid="' + esc(x.id) + '"' + (x._processing ? ' data-processing="1"' : '') + '>重试</button>' : '') + '</div>' : '') + '</div>').join('');
   p.innerHTML = (rows || '<p class="hint" style="margin:6px 8px">后台没有在做的事。</p>') +
     (j.pending ? '<button class="btn pri wide" id="jp-review">' + j.pending + ' 篇学习笔记等你收下</button>' : '') +
     (j.held ? '<button class="btn wide" id="jp-held">' + j.held + ' 篇新扫到的像过程文档，等你确认</button>' : '') +
     '<p class="hint" style="margin:8px 8px 4px">后台用低优先级慢慢做，不影响你写东西。关掉 App 会停下，做完的都留着。</p>';
-  p.querySelectorAll('[data-ja]').forEach(btn => btn.onclick = async e => { e.stopPropagation(); btn.disabled = true; try { await api('/jobs/' + encodeURIComponent(btn.dataset.jid) + '/' + btn.dataset.ja, {method:'POST'}); } catch(err){ toast(esc(err.message), true); } pollJobs(true); });
+  p.querySelectorAll('[data-ja]').forEach(btn => btn.onclick = async e => { e.stopPropagation(); btn.disabled = true; try { await api((btn.dataset.processing ? '/processing/' : '/jobs/') + encodeURIComponent(btn.dataset.jid) + '/' + btn.dataset.ja, {method:'POST'}); } catch(err){ toast(esc(err.message), true); } pollJobs(true); });
   if ($('jp-review')) $('jp-review').onclick = () => { p.hidden = true; openDigest(); };
   if ($('jp-held')) $('jp-held').onclick = () => { p.hidden = true; openCurate('held'); };
 }
@@ -5196,7 +5585,7 @@ loadField().then(() => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });
 }).catch(() => {});
 loadPlugins(); presence(); loadDisk(); loadPriv(); startWatchPoll();
-window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openWatch, openSettings};
+window.__field = {openImport, wizardPlan, wizardUpload, openComments, openFolders, openThemes, applyPreset, openConflow, conflowDigest, openProcessing, duplicateDoc, downloadRaw, anchorOf, get cmts(){ return cmts; }, openSources, saveLearning, startDigest, openDigest, pollJobs, initOnboarding, get onb(){ return onb; }, openExt, mergeForm, markStale, refreshStale, archiveDoc, lineDiff, applyUndo, get org(){ return orgState; }, openSecrets, openVaults, logout, openMemory, remember, startLearn, endLearn, openReview, openCalendar, localizeUrl, sectionsOf, addTags, setH1, get learn(){ return learnRun; }, openRegions, openViews, saveView, goView, openOrganize, undoOrganize, shareDoc, makeShare, openShares, openUpdate, ssePost, get views(){ return views; }, runAgent, endAgent, get agent(){ return agentRun; }, showTag, tidyDoc, setSplit, setStyle, publishDoc, openPublish, openPlugins, openDesign, openConnections, openGit, openBackup, makeView, openTags, get nodes(){ return nodes; }, get links(){ return links; }, react, ask, capture, openDoc, setLayout, fit, cam, importFiles, newDoc, openTrash, openRecent, openWatch, openSettings};
 })();
 </script>
 </body>
