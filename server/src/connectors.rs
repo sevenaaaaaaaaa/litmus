@@ -297,7 +297,7 @@ fn gh_publish(root: &Path, s: &Source, title: &str, md: &str, prev: Option<&Valu
     }
     // 已有同名文件：带上 sha 才能更新
     let sha = client.get(&url).bearer_auth(&token).header("accept", "application/vnd.github+json").send().ok().filter(|r| r.status().is_success()).and_then(|r| r.json::<Value>().ok()).and_then(|v| v["sha"].as_str().map(String::from));
-    let mut body = json!({ "message": format!("docs: {}（从鹿蕊 Litmus 发出）", title), "content": base64::engine::general_purpose::STANDARD.encode(md.as_bytes()) });
+    let mut body = json!({ "message": format!("docs: {}（从 Litmus 发出）", title), "content": base64::engine::general_purpose::STANDARD.encode(md.as_bytes()) });
     if let Some(sh) = &sha {
         body["sha"] = json!(sh);
     }
@@ -1335,7 +1335,7 @@ fn scan_inflow(root: &Path, s: &Source, prev: &HashMap<String, Item>) -> Result<
         let notes = if_req(client.get(format!("{base}/api/v1/agent/notes")).query(&[("workspace_id", ws.as_str()), ("limit", "200")]), key.as_deref()).unwrap_or(json!({}));
         for n in notes["notes"].as_array().into_iter().flatten() {
             if out.len() >= MAX_ITEMS { break; }
-            // 从鹿蕊发过去的那些不再接回来，免得场上出现两份
+            // 从 Litmus 发过去的那些不再接回来，免得场上出现两份
             if n["author"] == "litmus" {
                 continue;
             }

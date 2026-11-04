@@ -68,7 +68,7 @@ jobs:
             if [[ -n "${{ inputs.tag }}" && "${{ inputs.tag }}" != "v$VER" ]]; then
               echo "::error::补发标签 ${{ inputs.tag }} 与 Cargo.toml 版本 $VER 不一致"; exit 1
             fi
-            NAME="鹿蕊 Litmus v$VER"
+            NAME="Litmus v$VER"
           fi
           # MSI needs a purely numeric version (build field <= 65535): nightly uses days since 2026-01-01.
           "$PY" - "$VER" <<'PYEOF'

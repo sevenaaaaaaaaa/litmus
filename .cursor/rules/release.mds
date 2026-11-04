@@ -1,5 +1,5 @@
 ---
-description: 鹿蕊 Litmus 发版流程（桌面 + 移动 + 自更新）
+description: Litmus 发版流程（桌面 + 移动 + 自更新）
 globs:
 alwaysApply: false
 ---

@@ -3325,7 +3325,7 @@ for line in sys.stdin:
     }
 
     /// 发布：新建目标（密钥进凭证库、litmus.toml 只写名字）；没设范围的要确认才发整个库；
-    /// 一键 wiki 只发范围里的；不能发到鹿蕊代码仓库；看清单能提示像密钥的内容
+    /// 一键 wiki 只发范围里的；不能发到 Litmus 代码仓库；看清单能提示像密钥的内容
     #[tokio::test]
     async fn publishing_is_scoped_confirmed_and_keeps_secrets_out_of_config() {
         let (app, t, dir) = app();
@@ -3352,7 +3352,7 @@ for line in sys.stdin:
         assert_eq!(st, 200, "{r}");
         let index = std::fs::read_to_string(root.join("site-test/index.html")).unwrap();
         assert!(index.contains("同步小站") && index.contains("同步协议") && !index.contains("发布站点"), "{index}");
-        // 不能发到鹿蕊的代码仓库
+        // 不能发到 Litmus 的代码仓库
         let (st, r) = call(&app, &t, "POST", "/publish/targets", r#"{"target":{"name":"错","kind":"git","remote":"https://github.com/sevenaaaaaaaaa/litmus.git"}}"#).await;
         assert_eq!(st, 400, "{r}");
         // 删掉

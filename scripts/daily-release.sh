@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 鹿蕊 Litmus 每日 Nightly 构建：同步 → 测试 → 以 X.(Y+1).0-nightly.YYYYMMDD 本地打 macOS app + DMG
+# Litmus 每日 Nightly 构建：同步 → 测试 → 以 X.(Y+1).0-nightly.YYYYMMDD 本地打 macOS app + DMG
 # → 强制移动 tag `nightly` 并推送（触发 CI 三平台 Nightly 产物 + latest.json）→ 更新唯一的 GitHub
 # 预发布「Nightly」→ 更新本机 /Applications。
 #

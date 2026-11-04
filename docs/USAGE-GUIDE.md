@@ -1,4 +1,4 @@
-# Litmus Studio 使用指南
+# Litmus 使用指南
 
 > 核心定位 · Features · 具体用例。写给刚开始用 Litmus 的研究者、写作者与想要一个本地
 > 知识工作台的用户,也是官网素材源之一。桌面客户端:GitHub Releases。

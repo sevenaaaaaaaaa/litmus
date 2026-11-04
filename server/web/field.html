@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>鹿蕊 Litmus · 知识场</title>
+<title>Litmus · 知识场</title>
 <link rel="icon" href="icon48.png">
+<link rel="manifest" href="manifest-pwa.json">
 <script>
 /* 主题与桌面标记必须早于首帧 */
 (function(){
@@ -656,7 +657,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 
 <div class="chrome" id="brand">
   <svg viewBox="182 182 664 664" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="62" stroke-linecap="round" stroke-linejoin="round"><path d="M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262"/></g><g fill="currentColor"><circle id="m1" cx="318" cy="272" r="48"/><circle id="m2" cx="418" cy="262" r="48"/><circle id="m3" cx="588" cy="232" r="48"/><circle id="m4" cx="708" cy="262" r="48"/></g></svg>
-  <b>鹿蕊</b><span id="vault"></span>
+  <b>Litmus</b><span id="vault"></span>
   <button id="jobs" hidden aria-haspopup="true"><i class="jr" aria-hidden="true"></i><span id="jobs-t"></span></button>
 </div>
 
@@ -745,7 +746,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 <section id="help" aria-label="用法">
   <button class="ib close" id="help-x" aria-label="关闭"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   <div class="w">
-    <div class="eyebrow">鹿蕊 · 知识场</div>
+    <div class="eyebrow">Litmus · 知识场</div>
     <h2>知识遇到问题，就会显色</h2>
     <p class="lede">整座库按意思铺在一片场上：越像的文档离得越近，区域名由内容自动得出。底部那一行是唯一的入口，提问时相关的知识会从最相关的那篇开始变蓝，答案在它们之间生成，并用线连回每一处出处。文件仍然是普通的 Markdown，位置只是可以随时重算的索引。</p>
 
@@ -817,7 +818,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
         <tr><td>全盘索引（桌面 App）</td><td>/全盘：这台电脑上的文件按名字和内容找；打开后「找」的时候顺带给出电脑上的结果，值得的「收进库里」。索引只在这台电脑上</td></tr>
         <tr><td>清理会话、过程文档</td><td>/筛选，或「帮我把会话和过程文档剔除」：规则先分、拿不准的交给 AI，出清单你改判后再删；库里的进回收站，库外的不再上场、原件不动，可整批撤销</td></tr>
         <tr><td>上手引导、这一版的新东西</td><td>/上手 重新走一遍；/新东西 再看这一版多了什么</td></tr>
-        <tr><td>后台进度</td><td>左上角「鹿蕊」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
+        <tr><td>后台进度</td><td>左上角「Litmus」旁的小条，或 /进度：接入、AI 学习、巡检，可暂停、停下</td></tr>
         <tr><td>AI 学习</td><td>/数据源 每个来源的「让 AI 学一批」、库外文档上的「让 AI 学」或 /AI学习；学成的在 /待收下，确认后才进 Notes/学习/</td></tr>
         <tr><td>社区插件、网页本地化</td><td>/插件 里的社区插件一键装；粘贴网址回车，正文和图片一起存进库</td></tr>
       </tbody>
@@ -852,7 +853,7 @@ if (!token){ showLogin(); return; }
 function showLogin(){
   document.body.classList.add('login');
   const el = document.createElement('form'); el.id = 'login'; el.autocomplete = 'on';
-  el.innerHTML = '<b>鹿蕊</b><p>登录到这个知识库</p><input type="text" id="lg-u" name="username" placeholder="用户名" autocomplete="username" required><input type="password" id="lg-p" name="password" placeholder="密码" autocomplete="current-password" required><button type="submit">登录</button><p class="bad" id="lg-e" role="alert"></p>';
+  el.innerHTML = '<b>Litmus</b><p>登录到这个知识库</p><input type="text" id="lg-u" name="username" placeholder="用户名" autocomplete="username" required><input type="password" id="lg-p" name="password" placeholder="密码" autocomplete="current-password" required><button type="submit">登录</button><p class="bad" id="lg-e" role="alert"></p>';
   document.body.appendChild(el);
   setTimeout(() => document.getElementById('lg-u').focus(), 30);
   el.onsubmit = async e => {
@@ -886,7 +887,7 @@ async function api(path, opts){
       if (r.status >= 400) throw Object.assign(new Error(d.error || ('HTTP ' + r.status)), {status:r.status});
       return d;
     }
-    throw new Error(navigator.onLine === false ? '当前离线，恢复连接后再试' : '连不上鹿蕊服务，稍后再试');
+    throw new Error(navigator.onLine === false ? '当前离线，恢复连接后再试' : '连不上 Litmus 服务，稍后再试');
   }
   const text = await res.text(); let data;
   try { data = text ? JSON.parse(text) : {}; } catch(_){ data = {raw:text}; }
@@ -3741,7 +3742,7 @@ async function publishDoc(n){
     const r = await api('/publish', {method:'POST', json:{path:n.p}});
     const url = r.public_url || (location.origin + BASE + r.url);
     box.innerHTML = '<label>网页地址</label><input type="text" id="pub-url" readonly value="' + esc(url) + '">' +
-      (r.public_url ? '<p class="hint">已经推到公开地址，发给别人就能打开。</p>' : r.hint ? '<p class="hint">' + esc(r.hint) + '</p>' : isLoopback() ? '<p class="hint">这是本机地址，别人打不开。在 /发布 里配一个发布目标（Git Pages、S3、Cloudflare Pages），再「部署」就有公开地址。</p>' : '<p class="hint">鹿蕊跑在你的服务器上，这个地址可以直接发给别人。</p>') +
+      (r.public_url ? '<p class="hint">已经推到公开地址，发给别人就能打开。</p>' : r.hint ? '<p class="hint">' + esc(r.hint) + '</p>' : isLoopback() ? '<p class="hint">这是本机地址，别人打不开。在 /发布 里配一个发布目标（Git Pages、S3、Cloudflare Pages），再「部署」就有公开地址。</p>' : '<p class="hint">Litmus 跑在你的服务器上，这个地址可以直接发给别人。</p>') +
       '<div class="acts"><button class="btn pri" id="pub-copy">复制地址</button><a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">打开看看</a></div>';
     $('pub-copy').onclick = () => copyText(url);
   } catch(e){ box.innerHTML = '<p class="bad">发布失败：' + esc(e.message || e) + '</p>'; }
@@ -3829,7 +3830,7 @@ function editTarget(t){
   const F = (id, label, val, ph, type) => '<label for="' + id + '">' + label + '</label><input type="' + (type || 'text') + '" id="' + id + '" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off">';
   const box = openPanel(t ? '发布目标：' + t.name : '新建发布目标', F('pt-name', '名字', v.name, '比如 我的站') + '<label for="pt-kind">种类</label><select id="pt-kind" class="sel">' + Object.entries(PUB_KIND).map(([k, n]) => '<option value="' + k + '"' + (k === k0 ? ' selected' : '') + '>' + n + '</option>').join('') + '</select><div id="pt-f"></div>' +
     '<label class="row" style="margin-top:12px"><input type="checkbox" id="pt-def"' + (v.is_default ? ' checked' : '') + '><div class="grow"><span>设为默认目标</span></div></label>' +
-    '<p class="hint">密钥、令牌只存进这台设备加密的凭证库（/凭证），litmus.toml 里只写名字。笔记不会进鹿蕊的代码仓库：给站点单独建一个仓库。</p><div class="acts"><button class="btn pri" id="pt-save">保存</button>' + (t ? '<button class="btn" id="pt-del">删除这个目标</button>' : '') + '<button class="btn" id="pt-back">返回</button></div><p id="pt-msg"></p>');
+    '<p class="hint">密钥、令牌只存进这台设备加密的凭证库（/凭证），litmus.toml 里只写名字。笔记不会进 Litmus 的代码仓库：给站点单独建一个仓库。</p><div class="acts"><button class="btn pri" id="pt-save">保存</button>' + (t ? '<button class="btn" id="pt-del">删除这个目标</button>' : '') + '<button class="btn" id="pt-back">返回</button></div><p id="pt-msg"></p>');
   const fields = () => {
     const k = $('pt-kind').value, sec = (id, label, ph) => F(id, label + '（存进凭证库）', '', ph || (t ? '已存的话留空表示不改' : ''), 'password');
     $('pt-f').innerHTML = k === 'git' ? F('pt-remote', '仓库地址', v.remote, 'https://github.com/你的名字/你的名字.github.io.git') + F('pt-branch', '分支', v.branch, 'gh-pages（用户站点仓库填 main）') + sec('pt-tok', 'GitHub 令牌（要 Contents 写权限；用 ssh 地址可不填）') + F('pt-url', '公开地址', v.public_base_url, 'https://你的名字.github.io/')
@@ -3846,7 +3847,7 @@ function editTarget(t){
     const slug = name.replace(/[^\w]+/g, '_').toLowerCase() || 'site';
     const tg = {name, kind:k, include:v.include || [], title:v.title || null};
     const secrets = {};
-    if (k === 'git'){ Object.assign(tg, {remote:g('pt-remote'), branch:g('pt-branch') || 'gh-pages', public_base_url:g('pt-url') || null, token_env:v.token_env || 'github_token', force:true}); if (g('pt-tok')) secrets[tg.token_env] = g('pt-tok'); if (/github\.com[/:]sevenaaaaaaaaa\/litmus(\.git)?\/?$/i.test(tg.remote)){ $('pt-msg').className = 'bad'; $('pt-msg').textContent = '不能发到鹿蕊的代码仓库'; return; } }
+    if (k === 'git'){ Object.assign(tg, {remote:g('pt-remote'), branch:g('pt-branch') || 'gh-pages', public_base_url:g('pt-url') || null, token_env:v.token_env || 'github_token', force:true}); if (g('pt-tok')) secrets[tg.token_env] = g('pt-tok'); if (/github\.com[/:]sevenaaaaaaaaa\/litmus(\.git)?\/?$/i.test(tg.remote)){ $('pt-msg').className = 'bad'; $('pt-msg').textContent = '不能发到 Litmus 的代码仓库'; return; } }
     else if (k === 's3'){ Object.assign(tg, {endpoint:g('pt-ep'), bucket:g('pt-bucket'), region:g('pt-region') || null, prefix:g('pt-prefix') || null, public_base_url:g('pt-url') || null, access_key_env:v.access_key_env || 's3_access_key_' + slug, secret_key_env:v.secret_key_env || 's3_secret_key_' + slug}); if (g('pt-ak')) secrets[tg.access_key_env] = g('pt-ak'); if (g('pt-sk')) secrets[tg.secret_key_env] = g('pt-sk'); }
     else if (k === 'cf-pages'){ Object.assign(tg, {account_id:g('pt-acc'), project:g('pt-proj'), public_base_url:g('pt-url') || null, token_env:v.token_env || 'cf_api_token'}); if (g('pt-tok')) secrets[tg.token_env] = g('pt-tok'); }
     else if (k === 'webdav'){ Object.assign(tg, {endpoint:g('pt-ep'), access_key_env:v.access_key_env || 'webdav_user_' + slug, secret_key_env:v.secret_key_env || 'webdav_pass_' + slug}); if (g('pt-ak')) secrets[tg.access_key_env] = g('pt-ak'); if (g('pt-sk')) secrets[tg.secret_key_env] = g('pt-sk'); }
@@ -3964,9 +3965,9 @@ async function openThemes(){
   const list = Object.entries(d.presets || {}), cur = curPreset();
   const sw = v => '<span class="swl"><i style="background:' + esc(v.light.bg || '') + '"></i><i style="background:' + esc(v.light.accent || '') + '"></i><i style="background:' + esc(v.dark.bg || '') + '"></i></span>';
   box.innerHTML = '<p class="hint" style="margin-top:0">换的是界面的纸、墨、线和石蕊蓝；明暗跟着右上角的开关。发布出去的网页用 /设计 里的规范。</p>' +
-    '<div class="row"><div class="grow"><span>鹿蕊（内置）' + (cur ? '' : ' · 正在用') + '</span><small>纸与墨，石蕊蓝显色</small></div>' + (cur ? '<button class="btn" data-k="">用这套</button>' : '') + '</div>' +
+    '<div class="row"><div class="grow"><span>Litmus（内置）' + (cur ? '' : ' · 正在用') + '</span><small>纸与墨，石蕊蓝显色</small></div>' + (cur ? '<button class="btn" data-k="">用这套</button>' : '') + '</div>' +
     list.map(([k, v]) => '<div class="row">' + sw(v) + '<div class="grow"><span>' + esc(v.name) + (cur === v.name ? ' · 正在用' : '') + '</span><small>' + esc(v.desc || '') + '</small></div>' + (cur === v.name ? '' : '<button class="btn" data-k="' + esc(k) + '">用这套</button>') + '</div>').join('');
-  box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const v = b.dataset.k ? d.presets[b.dataset.k] : null; applyPreset(v); toast(v ? '主题换成 <b>' + esc(v.name) + '</b>' : '回到鹿蕊内置主题'); openThemes(); });
+  box.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const v = b.dataset.k ? d.presets[b.dataset.k] : null; applyPreset(v); toast(v ? '主题换成 <b>' + esc(v.name) + '</b>' : '回到 Litmus 内置主题'); openThemes(); });
 }
 /* 对话提炼：和 Agent 的对话按天存在 Notes/Agent/「日期 对话.md」，一键提炼成知识卡（Notes/Conflow/） */
 async function conflowDigest(path, btn){
@@ -4603,7 +4604,7 @@ addEventListener('menu:check-update', () => openUpdate());
 addEventListener('tray-new-doc', () => newDoc(''));
 addEventListener('tray-open-doc', e => { const p = e.detail && e.detail.path; const n = p && byPath.get(p); if (n) openDoc(n); else if (p) refreshNow().then(() => { const m = byPath.get(p); if (m) openDoc(m); }); });
 async function openUpdate(){
-  if (!DESK){ openPanel('更新', '<p>浏览器里用的是服务器上的鹿蕊，服务器更新后刷新页面就是新版。桌面 App 支持一键自更新。</p>'); return; }
+  if (!DESK){ openPanel('更新', '<p>浏览器里用的是服务器上的 Litmus，服务器更新后刷新页面就是新版。桌面 App 支持一键自更新。</p>'); return; }
   const box = openPanel('更新', '<p id="up-st"><span class="thinking"><i></i><i></i><i></i> 正在检查</span></p><div class="acts" id="up-acts" hidden><button class="btn pri" id="up-go">下载并安装</button></div>');
   try {
     const r = await window.__TAURI_INTERNALS__.invoke('desktop_check_update');
@@ -4674,10 +4675,10 @@ async function openVaults(){
     return;
   }
   const list = webSpaces(), here = location.origin + BASE;
-  const box = openPanel('知识库', '<p class="hint" style="margin-top:0">这是网页里的鹿蕊：一个地址就是一个库。下面记着你连过的库（只存在这个浏览器里）。</p>' +
+  const box = openPanel('知识库', '<p class="hint" style="margin-top:0">这是网页里的 Litmus：一个地址就是一个库。下面记着你连过的库（只存在这个浏览器里）。</p>' +
     '<div class="row"><div class="grow"><span>' + esc(vaultName || '当前库') + ' · 当前</span><small>' + esc(here) + '</small></div></div>' +
     list.filter(w => w.url !== here).map((w, i) => '<div class="row"><div class="grow"><span>' + esc(w.name || w.url) + '</span><small>' + esc(w.url) + '</small></div><button class="btn" data-go="' + i + '">切过去</button><button class="btn" data-rm="' + i + '">移除</button></div>').join('') +
-    '<label for="ws-url">连接另一个库</label><input type="text" id="ws-url" placeholder="地址，比如 https://example.com/litmus"><input type="password" id="ws-tok" placeholder="令牌（那台鹿蕊的 .litmus/local/machine.toml 里的 token）" style="margin-top:8px"><input type="text" id="ws-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="ws-go">记下并切过去</button></div>');
+    '<label for="ws-url">连接另一个库</label><input type="text" id="ws-url" placeholder="地址，比如 https://example.com/litmus"><input type="password" id="ws-tok" placeholder="令牌（那台 Litmus 的 .litmus/local/machine.toml 里的 token）" style="margin-top:8px"><input type="text" id="ws-name" placeholder="叫它什么（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="ws-go">记下并切过去</button></div>');
   const others = list.filter(w => w.url !== here);
   box.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const w = others[+b.dataset.go]; try { localStorage.setItem('litmus_token', w.token); localStorage.setItem('litmus_last_ws', w.url); } catch(e){} location.href = w.url + '/field?token=' + encodeURIComponent(w.token); });
   box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { const w = others[+b.dataset.rm]; try { localStorage.setItem('litmus_workspaces', JSON.stringify(list.filter(x => x !== w))); } catch(e){} openVaults(); });
@@ -5096,7 +5097,7 @@ const ONB_STEPS = [
   {id:'ask', h:'问它一句', p:'输入一个问题，比如「我最近记了什么？」。相关的知识会在场上变蓝；回车结晶出答案。', act:'填一个问题', run:() => { q.value = '我最近记了什么？'; q.focus(); onInput(); }},
   {id:'source', h:'接一个来源，先少接一点', p:'下载、文稿、截图、各项目里的 md、Agent 会话……都能<b>留在原处</b>接进来。先只挑一个、只接最近的 300 个，用顺了再放开；扫描在后台慢慢做，不会卡住你。', act:'挑一个来源', run:() => openSources(true)},
   {id:'digest', h:'让 AI 学一小批（可选）', p:'从接进来的里挑 10 篇，AI 在后台学成「要点 + 出处」的学习笔记，<b>你确认后才进库</b>。开始前会讲清发什么、发给谁。', act:'学 10 篇', run:() => startDigest({limit:10})},
-  {id:'progress', h:'进度在左上角', p:'扫描和学习都在后台做，可以接着写东西。左上角「鹿蕊」旁边的小条随时看进度、暂停、停下；学成的笔记也在那里等你收下。', act:'知道了', run:() => { flashJobs(); onbDone('progress'); }},
+  {id:'progress', h:'进度在左上角', p:'扫描和学习都在后台做，可以接着写东西。左上角「Litmus」旁边的小条随时看进度、暂停、停下；学成的笔记也在那里等你收下。', act:'知道了', run:() => { flashJobs(); onbDone('progress'); }},
 ];
 async function initOnboarding(){
   try { onb = await api('/field/onboarding'); } catch(e){ return; }

@@ -976,9 +976,9 @@ pub async fn google_start(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q
 
 /// GET /sources/google/callback?code&state：免令牌（浏览器从 Google 跳回来），state 必须是刚发出去的那个。
 pub async fn google_callback(State(st): State<Arc<AppState>>, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
-    let page = |msg: &str| axum::response::Html(format!("<!doctype html><meta charset=utf-8><title>鹿蕊 · Google</title><body style=\"font:16px/1.7 system-ui;padding:48px;max-width:560px;margin:auto\"><h2>鹿蕊 Litmus</h2><p>{msg}</p></body>"));
+    let page = |msg: &str| axum::response::Html(format!("<!doctype html><meta charset=utf-8><title>Litmus · Google</title><body style=\"font:16px/1.7 system-ui;padding:48px;max-width:560px;margin:auto\"><h2>Litmus</h2><p>{msg}</p></body>"));
     let state = q.get("state").cloned().unwrap_or_default();
-    let Some((id, redirect)) = oauth_pending().lock().unwrap().remove(&state) else { return page("授权链接已失效，请回到鹿蕊重新点「连接 Google」。").into_response() };
+    let Some((id, redirect)) = oauth_pending().lock().unwrap().remove(&state) else { return page("授权链接已失效，请回到 Litmus 重新点「连接 Google」。").into_response() };
     let Some(code) = q.get("code").cloned() else { return page(&format!("没有授权：{}", q.get("error").cloned().unwrap_or_default())).into_response() };
     let root = st.kernel.lock().unwrap().vault.root.clone();
     let (Some(cid), Some(csec)) = (secret(&root, "google_client_id"), secret(&root, "google_client_secret")) else { return page("凭证库里缺 google_client_id / google_client_secret。").into_response() };
@@ -999,9 +999,9 @@ pub async fn google_callback(State(st): State<Arc<AppState>>, Query(q): Query<Ha
             let mut rows = secrets_load(&root);
             let name = format!("google_refresh:{id}");
             rows.retain(|r| r.get("name").and_then(|n| n.as_str()) != Some(name.as_str()));
-            rows.insert(0, json!({ "name": name, "value": refresh, "note": "Google 授权（鹿蕊数据源）", "updated": now_secs() * 1000 }));
+            rows.insert(0, json!({ "name": name, "value": refresh, "note": "Google 授权（Litmus 数据源）", "updated": now_secs() * 1000 }));
             let _ = super::secrets_save(&root, &rows);
-            page("已连接 Google。可以关掉这页，回到鹿蕊点「扫描」。").into_response()
+            page("已连接 Google。可以关掉这页，回到 Litmus 点「扫描」。").into_response()
         }
         Ok(Err(e)) => page(&format!("换取授权失败：{e}")).into_response(),
         Err(e) => page(&format!("出错了：{e}")).into_response(),

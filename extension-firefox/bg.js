@@ -31,7 +31,7 @@ async function clipPage(info, tab) {
   const cfg = await api.storage.local.get(["baseUrl", "token"]);
   const base = normalizeBase(cfg.baseUrl);
   if (!base || !cfg.token) {
-    notify("鹿蕊未配置", "打开已登录的 Litmus 页面可一键自动授权；或点击扩展图标手动填写");
+    notify("Litmus 未配置", "打开已登录的 Litmus 页面可一键自动授权；或点击扩展图标手动填写");
     return;
   }
   let html = "";
@@ -63,7 +63,7 @@ async function clipPage(info, tab) {
     });
     if (resp.status === 401) { notify("采集失败", "Token 无效，请在扩展里更新"); return; }
     const data = await resp.json().catch(() => ({}));
-    if (resp.ok && data.rel) notify("✓ 已采集到鹿蕊", data.title || tab.title);
+    if (resp.ok && data.rel) notify("✓ 已采集到 Litmus", data.title || tab.title);
     else notify("采集失败", `HTTP ${resp.status} ${data.error || ""}`);
   } catch (e) {
     notify("网络错误", `${base} 不可达：${e.message}`);
@@ -71,7 +71,7 @@ async function clipPage(info, tab) {
 }
 
 api.runtime.onInstalled.addListener(() => {
-  api.contextMenus.create({ id: "litmus-clip", title: "采集到鹿蕊", contexts: ["page", "selection"] });
+  api.contextMenus.create({ id: "litmus-clip", title: "采集到 Litmus", contexts: ["page", "selection"] });
 });
 
 // content.js 自动授权成功 → 气泡告知一次

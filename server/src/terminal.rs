@@ -154,7 +154,7 @@ pub async fn ws(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<H
         return e.into_response();
     }
     if !origin_ok(&h) {
-        return err(StatusCode::FORBIDDEN, "只有本机的鹿蕊能开终端").into_response();
+        return err(StatusCode::FORBIDDEN, "只有本机的 Litmus 能开终端").into_response();
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {

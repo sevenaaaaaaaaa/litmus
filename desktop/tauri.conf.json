@@ -36,8 +36,8 @@
       "minimumSystemVersion": "12.0"
     },
     "category": "Productivity",
-    "shortDescription": "林下出品 · AI 时代知识 OS",
-    "longDescription": "鹿蕊 Litmus —— 林下 Understory 出品的知识 OS。本地优先，文件真相，人与 agent 共用同一份真相。",
+    "shortDescription": "透过信息噪声，还原知识真相",
+    "longDescription": "Litmus —— Understory 出品的本地优先知识 OS。文件是真相，人和 agent 共用同一份可读、可改、可迁移的知识。",
     "copyright": "AGPL-3.0-or-later"
   }
 }

@@ -270,7 +270,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/assets/xterm.js", get(|| async { ([("content-type", "text/javascript; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.js")) }))
         .route("/assets/xterm.css", get(|| async { ([("content-type", "text/css; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.css")) }))
         .route("/icon48.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon48.png").as_slice()) }))
-        .route("/manifest-pwa.json", get(|| async { axum::response::Json(serde_json::json!({"name":"鹿蕊 Litmus","short_name":"鹿蕊","start_url":"/","display":"standalone","background_color":"#22252d","theme_color":"#22252d"})) }))
+        .route("/manifest-pwa.json", get(|| async { ([("content-type","application/manifest+json; charset=utf-8"),("cache-control","public, max-age=86400")], include_str!("../web/manifest-pwa.json")) }))
         .route("/sw.js", get(|| async {
     // 壳版本 = 壳内容哈希（构建期自动）：改前端必出新缓存键，忘 bump 也不再吃旧壳。
     let body = SW_SRC.replace("__SHELL_VERSION__", shell_version());
@@ -4912,12 +4912,12 @@ fn site_out_ok(root: &std::path::Path, out: &std::path::Path) -> Result<(), Stri
     Ok(())
 }
 
-/// 发出去的地方不能是鹿蕊自己的代码仓库（公开仓库里一篇真实笔记都不能有）
+/// 发出去的地方不能是 Litmus 自己的代码仓库（公开仓库里一篇真实笔记都不能有）
 fn publish_guard(t: &kernel_core::PublishTarget) -> Option<String> {
     let r = t.remote.as_deref().unwrap_or("").trim().to_ascii_lowercase();
     let r = r.trim_end_matches('/').trim_end_matches(".git");
     if r.ends_with("github.com/sevenaaaaaaaaa/litmus") || r.ends_with("github.com:sevenaaaaaaaaa/litmus") {
-        return Some("不能发到鹿蕊的代码仓库：给站点另建一个仓库（比如 你的名字.github.io）".into());
+        return Some("不能发到 Litmus 的代码仓库：给站点另建一个仓库（比如 你的名字.github.io）".into());
     }
     None
 }
@@ -5795,7 +5795,7 @@ transform:scale(min(calc(100vw/1320),calc(100vh/880)));transform-origin:center}}
 .hint{{position:fixed;left:18px;bottom:14px;font-size:12px;color:oklch(60% .01 80)}}
 </style></head><body>
 <div class="stage">
-  <section class="slide on cover"><div><div class="mark">3C</div><h1>{vault_name}</h1><div class="sub">{count} 篇知识 · {today} · 鹿蕊 Litmus</div></div></section>
+  <section class="slide on cover"><div><div class="mark">L</div><h1>{vault_name}</h1><div class="sub">{count} 篇知识 · {today} · Litmus</div></div></section>
   <section class="slide"><div class="toc"><h2 style="margin:0 0 18px">目录</h2><ul style="padding:0;margin:0">{toc_items}</ul></div></section>
   {slides}
 </div>

@@ -441,10 +441,10 @@ pub fn to_docx_model(doc: &DocModel, opts: &ExportOpts) -> Result<Vec<u8>, Strin
     let t = escape(title.as_deref().unwrap_or(""));
     z.add(
         "docProps/core.xml",
-        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><dc:title>{t}</dc:title><dc:creator>鹿蕊 Litmus</dc:creator></cp:coreProperties>").as_bytes(),
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><dc:title>{t}</dc:title><dc:creator>Litmus</dc:creator></cp:coreProperties>").as_bytes(),
         false,
     );
-    z.add("docProps/app.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>鹿蕊 Litmus</Application></Properties>".as_bytes(), false);
+    z.add("docProps/app.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>Litmus</Application></Properties>".as_bytes(), false);
     Ok(z.finish())
 }
 
@@ -829,7 +829,7 @@ pub fn to_odt(md: &str, opts: &ExportOpts) -> Result<Vec<u8>, String> {
         manifest.push_str(&format!("<manifest:file-entry manifest:full-path=\"Pictures/{name}\" manifest:media-type=\"image/{}\"/>", image_ext(b)));
     }
     manifest.push_str("</manifest:manifest>");
-    let meta = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-meta {ODF_NS} office:version=\"1.3\"><office:meta><dc:title>{}</dc:title><meta:generator>鹿蕊 Litmus</meta:generator></office:meta></office:document-meta>", escape(title.as_deref().unwrap_or("")));
+    let meta = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-meta {ODF_NS} office:version=\"1.3\"><office:meta><dc:title>{}</dc:title><meta:generator>Litmus</meta:generator></office:meta></office:document-meta>", escape(title.as_deref().unwrap_or("")));
 
     let mut z = ZipWriter::new();
     z.add("mimetype", b"application/vnd.oasis.opendocument.text", true);

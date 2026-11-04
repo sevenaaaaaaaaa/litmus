@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Litmus Clipper",
   "version": "0.3.0",
-  "description": "一键采集网页到鹿蕊知识库（林下出品 · 登录页自动授权）",
+  "description": "一键采集网页到 Litmus 知识库（林下出品 · 登录页自动授权）",
   "permissions": [
     "activeTab",
     "scripting",

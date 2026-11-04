@@ -108,7 +108,7 @@ impl Src {
                 let name = e.file_name().to_string_lossy().to_string();
                 let Ok(ft) = e.file_type() else { continue };
                 if ft.is_dir() {
-                    // 嵌着的另一个鹿蕊库不搬
+                    // 嵌着的另一个 Litmus 库不搬
                     if !junk_dir(&name) && !e.path().join("litmus.toml").exists() {
                         stack.push(e.path());
                     }
@@ -503,7 +503,7 @@ impl Plan {
         let hits = self.by_stem.get(name)?;
         let to = &hits[0];
         let new_stem = to.rsplit('/').next().unwrap_or(to).trim_end_matches(".md");
-        // 名字没变、也不重名：原样留着（鹿蕊同样按名字找）；否则写成完整路径
+        // 名字没变、也不重名：原样留着（Litmus 同样按名字找）；否则写成完整路径
         if hits.len() == 1 && new_stem.to_lowercase() == name && !t.contains('/') {
             Some(t.to_string())
         } else {
@@ -584,7 +584,7 @@ fn rewrite_line(line: &str, dir: &str, plan: &Plan, fixed: &mut usize, broken: &
                         // 改成了完整路径又没有别名：显示原来写的最后一段，不把 Notes/导入/… 整串露出来
                         let alias = alias.clone().or_else(|| (w != path.trim()).then(|| path.trim().rsplit('/').next().unwrap_or(path.trim()).trim_end_matches(".md").to_string()));
                         if let Some(a) = &alias { s2.push('|'); s2.push_str(a); }
-                        // 嵌入整篇笔记：鹿蕊不做嵌入，留成一个链接
+                        // 嵌入整篇笔记：Litmus 不做嵌入，留成一个链接
                         out.push_str(&format!("[[{s2}]]"));
                         if w != path.trim() { *fixed += 1; }
                         i = e + 2;

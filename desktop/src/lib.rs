@@ -352,7 +352,7 @@ fn error_page(vault: &Path, reason: &str) -> Option<String> {
             .replace('>', "&gt;")
     };
     let html = format!(
-        r#"<!doctype html><meta charset="utf-8"><title>鹿蕊 Litmus</title>
+        r#"<!doctype html><meta charset="utf-8"><title>Litmus</title>
 <style>
 :root{{color-scheme:light dark;--bg:oklch(97.4% .012 85);--fg:oklch(24% .022 70);--muted:oklch(47% .018 72);
   --card:oklch(100% 0 0/.8);--border:oklch(88% .012 82);--danger:oklch(55% .2 25)}}
@@ -584,9 +584,9 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
 
     let about = PredefinedMenuItem::about(
         app,
-        Some("关于鹿蕊 Litmus"),
+        Some("关于 Litmus"),
         Some(AboutMetadata {
-            name: Some("鹿蕊 Litmus".into()),
+            name: Some("Litmus".into()),
             version: Some(pkg.version.to_string()),
             short_version: Some(pkg.version.to_string()),
             copyright: Some("AGPL-3.0-or-later · 林下 Understory".into()),
@@ -599,11 +599,11 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
     let services = PredefinedMenuItem::services(app, Some("服务"))?;
-    let hide = PredefinedMenuItem::hide(app, Some("隐藏鹿蕊 Litmus"))?;
+    let hide = PredefinedMenuItem::hide(app, Some("隐藏 Litmus"))?;
     let hide_others = PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?;
     let show_all = PredefinedMenuItem::show_all(app, Some("显示全部"))?;
-    let quit = PredefinedMenuItem::quit(app, Some("退出鹿蕊 Litmus"))?;
-    let app_menu = SubmenuBuilder::new(app, "鹿蕊 Litmus")
+    let quit = PredefinedMenuItem::quit(app, Some("退出 Litmus"))?;
+    let app_menu = SubmenuBuilder::new(app, "Litmus")
         .item(&about)
         .separator()
         .item(&check_update)
@@ -710,7 +710,7 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
         .item(&front)
         .build()?;
 
-    let help = MenuItemBuilder::with_id("m-help", "鹿蕊 Litmus 帮助").build(app)?;
+    let help = MenuItemBuilder::with_id("m-help", "Litmus 帮助").build(app)?;
     let notes = MenuItemBuilder::with_id("m-release-notes", "发布说明").build(app)?;
     let issue = MenuItemBuilder::with_id("m-report-issue", "报告问题").build(app)?;
     let help_menu = SubmenuBuilder::new(app, "帮助")
@@ -746,7 +746,7 @@ fn open_sticky(app: &AppHandle) {
         }
     };
     if let Err(e) = WebviewWindowBuilder::new(app, "sticky", WebviewUrl::External(parsed))
-        .title("便利贴 · 鹿蕊 Litmus")
+        .title("便利贴 · Litmus")
         .inner_size(300.0, 380.0)
         .min_inner_size(220.0, 240.0)
         .always_on_top(true)
@@ -823,7 +823,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let mut tray = TrayIconBuilder::with_id("litmus-tray")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .tooltip("鹿蕊 Litmus")
+        .tooltip("Litmus")
         .on_menu_event(|app, event| {
             let id = event.id().0.clone();
             match id.as_str() {
@@ -1247,7 +1247,7 @@ pub fn run() {
         // 页面 HTML 在 boot 失败时写入 BOOT_ERROR_HTML，见 error_page()。
         .register_uri_scheme_protocol("litmuserror", |_ctx, _req| {
             let html = BOOT_ERROR_HTML.get().cloned().unwrap_or_else(|| {
-                "<!doctype html><meta charset=\"utf-8\"><title>鹿蕊 Litmus</title><p>内核没能启动".into()
+                "<!doctype html><meta charset=\"utf-8\"><title>Litmus</title><p>内核没能启动".into()
             });
             tauri::http::Response::builder()
                 .status(200)
@@ -1413,7 +1413,7 @@ pub fn run() {
             #[allow(unused_mut)]
             let mut builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse()?))
-                    .title("鹿蕊 Litmus")
+                    .title("Litmus")
                     .resizable(true)
                     /* 同 sticky：关掉系统拖放拦截，还网页原生 HTML5 拖拽 */
                     .disable_drag_drop_handler();

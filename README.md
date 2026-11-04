@@ -1,14 +1,14 @@
 <div align="center">
 
-# 鹿蕊 Litmus
+# Litmus
 
-**林下 Understory 出品 · AI 时代的知识操作系统——浏览器、MCP、CLI、远端 AI 与本地小模型，共享同一份文件真相。**
+**透过信息噪声，还原知识真相**
 
-> **命名体系**：**林下 Understory** 是品牌与产品矩阵之名——地衣本就长在林下；**鹿蕊 Litmus** 是这款知识 OS 之名——人类最早的"真相指示剂"（石蕊试纸）提取自鹿蕊这种共生地衣，寓意人与 AI 共生、显色见真；**松萝 Liana** 对应输入法 **InputFlow**——垂丝连接万物的林间之藤，字与字之间那根青丝。开发代号 `litmus` 保留为内部 codename。
+**林下 Understory 出品。** Litmus 一名源自古诺斯语 *litmosi*（color moss），后来指从多种地衣提取、接触后显色的指示剂。Litmus 把这个过程带进知识工作：不同来源的信息在同一处接触、判断、显色，最终留下可验证的文件真相。
 
-不是又一个笔记软件：鹿蕊按**操作系统**的思路生长——内核（Rust crates）管存储与索引，`litmus serve` 是守护进程，五模式 UI 是它的桌面，HTTP API + MCP 是系统调用 ABI，插件生态是它的 App 世界。0 门槛、自然组织的知识库，是它最先做好的那件事。
+不是又一个笔记软件：Litmus 按**操作系统**的思路生长——内核（Rust crates）管存储与索引，`litmus serve` 是守护进程，五模式 UI 是它的桌面，HTTP API + MCP 是系统调用 ABI，插件生态是它的 App 世界。0 门槛、自然组织的知识库，是它最先做好的那件事。
 
-不做 Obsidian、Notion 的替代品——它们为你组织知识，鹿蕊让知识自己长成样子：**人随手记、AI 帮你建，一切落在磁盘上一堆普通的 Markdown 上，人和 agent 共享同一个真相。**
+不做 Obsidian、Notion 的替代品——它们为你组织知识，Litmus 让知识自己长成样子：**人随手记、AI 帮你建，一切落在磁盘上一堆普通的 Markdown 上，人和 agent 共享同一个真相。**
 
 [![Release](https://img.shields.io/github/v/release/sevenaaaaaaaaa/litmus?style=flat-square&color=4a6cf7)](https://github.com/sevenaaaaaaaaa/litmus/releases)
 [![License](https://img.shields.io/github/license/sevenaaaaaaaaa/litmus?style=flat-square)](LICENSE)
@@ -20,7 +20,7 @@
 
 [下载桌面客户端](https://github.com/sevenaaaaaaaaa/litmus/releases) · [快速开始](#-快速开始) · [设计规范](docs/spec/) · [超详细功能附录](#附录超详细功能清单每图必讲)
 
-<img src="docs/img/hero.png" alt="鹿蕊 Litmus — Flow 画布 + Feynman 阅读 + 50 款设计风格" width="100%">
+<img src="docs/img/hero.png" alt="Litmus — Flow 画布 + Feynman 阅读 + 50 款设计风格" width="100%">
 
 *Flow 画布（PARA 结构自动成图）· Feynman 阅读抽屉（50 款设计史经典风格实时换肤）· 一切皆普通文件*
 
@@ -35,7 +35,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 - **笔记软件**（Obsidian / Notion）：功能强大，但门槛高——你得先学会它的方法论，再花几百个小时手工搭建；
 - **Agent 框架**（各类 RAG 方案）：把知识锁进向量库和私有格式，人反而看不见、改不了自己的知识。
 
-鹿蕊反过来：**知识库是磁盘上一堆普通的 Markdown**，人用画布和阅读器看它，agent 用同一套本地 API 读写它——双方共享一个真相，谁也不锁定谁。0 门槛体现在：打开就能用，说一句话就能建库，知识自然组织（文件夹即结构、画布即视图），不需要先学一套方法论。
+Litmus 反过来：**知识库是磁盘上一堆普通的 Markdown**，人用画布和阅读器看它，agent 用同一套本地 API 读写它——双方共享一个真相，谁也不锁定谁。0 门槛体现在：打开就能用，说一句话就能建库，知识自然组织（文件夹即结构、画布即视图），不需要先学一套方法论。
 
 这套「知识操作系统」的分层与纪律——哪些接口是稳定 ABI、能力如何分级、插件如何准入、凭据如何对待——写在[设计宪法](docs/spec/os.md)里，新功能按宪法评审。
 
@@ -86,7 +86,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 ## 📖 开源开放
 
 - **核心功能永久开源**（AGPL-3.0）：画布、编辑器、检索、发布、MCP，全部在这仓库里
-- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 双向互通**——鹿蕊作为 MCP server 被其他 agent 调用（14 个工具），一条命令让 Cursor / Claude / Codex / OpenCode 等接上：`litmus mcp-install <库> --client cursor --write`；反之鹿蕊也是 MCP 客户端，能接设计工具与流程图工具（见 [MCP 互通说明](docs/spec/mcp-clients.md)）
+- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 双向互通**——Litmus作为 MCP server 被其他 agent 调用（14 个工具），一条命令让 Cursor / Claude / Codex / OpenCode 等接上：`litmus mcp-install <库> --client cursor --write`；反之Litmus也是 MCP 客户端，能接设计工具与流程图工具（见 [MCP 互通说明](docs/spec/mcp-clients.md)）
 - **插件友好**：浏览器扩展（Chrome / Firefox / Safari）源码在库；文件真相 = Open Knowledge Format（Markdown 语义 + YAML 元数据 + 块锚点 + JSON-LD），开发者可按[规范](docs/spec/okf.md)直接读写
 
 ## 快速上手
@@ -122,11 +122,11 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 
 ## 🏗 架构
 
-鹿蕊属于**林下 Understory** 生态——林下是背书父品牌（house of brands：每款产品打「林下出品」，不追求名字同构）。产品是林下的居民，中文名与英文 Flow 名并行：
+Litmus 属于**林下 Understory** 生态——林下是背书父品牌（house of brands：每款产品打「林下出品」，不追求名字同构）。
 
 | 英文名 | 中文名 | 定位 |
 |---|---|---|
-| 鹿蕊 Litmus | （本产品） | 知识 OS——文件真相，人与 agent 共享同一份真相 |
+| Litmus | （本产品） | 知识 OS——文件真相，人与 agent 共享同一份真相 |
 | OpenFlow | **开务** | 入口层：OPC/DRI 的增长操作系统（开物成务） |
 | inFlow | **洞澜** | Insight Flow 增长情报 OS——观水有术，必观其澜 |
 | UserLoop | **触级** | 全域运营中枢——个性化触达，数据变动作、动作变收入 |
@@ -138,9 +138,9 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 | V2HTML | **成章** | 视频内容引擎——看完一条视频，出口成章 |
 | ZeroZen | **零真** | 广告与弹窗净化——零广告，见真话 |
 
-分层：**OpenFlow = 入口层**（TIPS all-in-one，让一人团队 OPC 与中小团队低门槛完成数字化 + AI 化）；**Flow 家族 = 进阶层**（按需进阶，各自深耕一个业务场景）；**本地工具层**（鹿蕊 / 松萝 / 成章 / 零真）；**林下学院**为教育线品牌（LearnFlow 归属）。
+分层：**OpenFlow = 入口层**（TIPS all-in-one，让一人团队 OPC 与中小团队低门槛完成数字化 + AI 化）；**Flow 家族 = 进阶层**（按需进阶，各自深耕一个业务场景）；**本地工具层**（Litmus / 松萝 / 成章 / 零真）；**林下学院**为教育线品牌（LearnFlow 归属）。
 
-与 OpenFlow 矩阵是**松耦合**:鹿蕊不依赖 OpenFlow 即可完整使用;共享同一套设计契约(全 oklch · 零 hex · 弹簧缓动 · 玻璃拟态 · 圆角三档),未来通过 MCP / 本地 API 成为矩阵的知识与文档工作台——Flow 产品产生的报告、素材、文档,都可以落进鹿蕊的文件真相里被人和 agent 共同使用。
+与 OpenFlow 矩阵是**松耦合**：Litmus 不依赖 OpenFlow 即可完整使用；共享同一套设计契约（全 oklch · 零 hex · 弹簧缓动 · 玻璃拟态 · 圆角三档），未来通过 MCP / 本地 API 成为矩阵的知识与文档工作台——Flow 产品产生的报告、素材、文档，都可以落进 Litmus 的文件真相里被人和 agent 共同使用。
 
 ## 使用指南
 
@@ -163,7 +163,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 
 ## 附录：超详细功能清单（每图必讲）
 
-> 以下 31 张截图全部来自真实运行的鹿蕊（本地 serve，1.2 万+ 篇文档的真实库），截图环境 1600×1000，暗色主题。
+> 以下 31 张截图全部来自真实运行的 Litmus（本地 serve，1.2 万+ 篇文档的真实库），截图环境 1600×1000，暗色主题。
 > 每个功能都给出：**是什么 → 怎么用**。快捷键总表见[文末](#快捷键速查)。
 
 ---
@@ -350,7 +350,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 ![连接器](docs/img/appendix/connectors.png)
 
 **是什么**：外部 MCP server 的管理面板——每个连接可**探测**（列出 tools / resources）与**采集**（把资源拉入库）；面板徽章显示 AI 配置状态。
-**怎么用**：`litmus.toml` 里加 `[[connections]]`（name + command + args）→ `⌘K` → `连接器管理`（`c`）→ 逐个探测 / 采集。反向：`litmus mcp` 把鹿蕊自己作为 MCP server 给别的 agent 用。
+**怎么用**：`litmus.toml` 里加 `[[connections]]`（name + command + args）→ `⌘K` → `连接器管理`（`c`）→ 逐个探测 / 采集。反向：`litmus mcp` 把 Litmus 自己作为 MCP server 给别的 agent 用。
 
 ---
 
@@ -384,7 +384,7 @@ Obsidian 库直接导入(设置面板 → 导入);PDF / DOCX / 网页 / Wikipedi
 ![账号面板](docs/img/appendix/account.png)
 
 **是什么**：登录 / 同步账号（登录后把远端知识库拉到本地）；下半区是给**浏览器插件 / 第三方 API** 用的凭证中心——打码显示 Token，一键复制 Token 与插件地址。
-**怎么用**：扩展 ≥0.3.0 **自动授权**——打开已登录的鹿蕊页面，扩展会发起握手，应用内确认一次（设置 → 账号与同步 可随时撤销），地址与令牌自动流入扩展，右键任意网页即可离线直采（桌面端固定监听 `127.0.0.1:7717`）；老办法（复制 Token 手动粘贴）依然可用。
+**怎么用**：扩展 ≥0.3.0 **自动授权**——打开已登录的 Litmus 页面，扩展会发起握手，应用内确认一次（设置 → 账号与同步 可随时撤销），地址与令牌自动流入扩展，右键任意网页即可离线直采（桌面端固定监听 `127.0.0.1:7717`）；老办法（复制 Token 手动粘贴）依然可用。
 
 #### E5 · 回收站：可恢复的删除
 

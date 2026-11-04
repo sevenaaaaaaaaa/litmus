@@ -88,7 +88,7 @@ fn keychain_get(kid: &str) -> Option<[u8; 32]> {
 
 fn keychain_put(kid: &str, key: &[u8; 32]) -> bool {
     std::process::Command::new("/usr/bin/security")
-        .args(["add-generic-password", "-U", "-s", SERVICE, "-a", kid, "-l", "鹿蕊 Litmus 凭证库", "-w", &hex::encode(key)])
+        .args(["add-generic-password", "-U", "-s", SERVICE, "-a", kid, "-l", "Litmus 凭证库", "-w", &hex::encode(key)])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)

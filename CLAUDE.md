@@ -1,8 +1,8 @@
-# CLAUDE.md — Litmus（鹿蕊 Litmus）
+# CLAUDE.md — Litmus
 
 ## 项目简介
 
-鹿蕊 Litmus（开发代号 `litmus`，林下 Understory 出品）：本地优先的「知识操作系统」。数据是磁盘上的普通 Markdown/HTML/附件，Rust 内核负责存储与索引，`litmus serve` 为守护进程，提供 Web UI（知识场 `server/web/field.html`：整库按意思铺开，一行输入问 / 找 / 记 / 令 / 办）、HTTP API + MCP、CLI、Tauri 桌面/移动客户端、浏览器扩展。远端 `github.com/sevenaaaaaaaaa/litmus`，许可 AGPL-3.0。
+Litmus（林下 Understory 出品）：本地优先的「知识操作系统」，品牌承诺是“透过信息噪声，还原知识真相”。数据是磁盘上的普通 Markdown/HTML/附件，Rust 内核负责存储与索引，`litmus serve` 为守护进程，提供 Web UI（知识场 `server/web/field.html`：整库按意思铺开，一行输入问 / 找 / 记 / 令 / 办）、HTTP API + MCP、CLI、Tauri 桌面/移动客户端、浏览器扩展。远端 `github.com/sevenaaaaaaaaa/litmus`，许可 AGPL-3.0。
 
 ## 技术栈
 

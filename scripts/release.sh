@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 鹿蕊 Litmus 正式发版（只发主版本 X.Y.0；X.Y.Z 仅用于正式版的紧急修复）
+# Litmus 正式发版（只发主版本 X.Y.0；X.Y.Z 仅用于正式版的紧急修复）
 #
 # 用法:
 #   scripts/release.sh 0.2.0                 # 正式发版
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 APP_NAME="Litmus"
-TITLE_PREFIX="鹿蕊 Litmus"
+TITLE_PREFIX="Litmus"
 REPO_SLUG="sevenaaaaaaaaa/litmus"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL_PATH="/Applications/${APP_NAME}.app"
@@ -67,7 +67,7 @@ import json, sys, pathlib
 ver, pub, sig, out, slug, app = sys.argv[1:7]
 latest = {
     "version": ver,
-    "notes": f"鹿蕊 Litmus v{ver}",
+    "notes": f"Litmus v{ver}",
     "pub_date": pub,
     "platforms": {"darwin-aarch64": {
         "signature": pathlib.Path(sig).read_text().strip(),
