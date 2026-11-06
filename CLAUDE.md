@@ -36,6 +36,7 @@ cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-
 cargo check -p kernel-md -p kernel-a2ui --target wasm32-unknown-unknown
 cargo test -p litmus-server --test craft --test palette --test field   # 前端壳工艺/配色纪律（改 server/web 必跑）
 node --test server/tests/field.mjs        # 壳里的纯函数
+node --test server/tests/sticky.mjs       # 便利贴的纯函数
 bash scripts/perf-check.sh                 # 性能预算门禁
 
 # 桌面 / 移动

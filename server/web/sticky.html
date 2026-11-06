@@ -4,61 +4,661 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>便利贴 · Litmus</title>
+<link rel="stylesheet" href="assets/tokens.css">
 <style>
-:root{color-scheme:dark light}
+:root{color-scheme:light dark}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{display:flex;flex-direction:column;background:oklch(19% .012 260);color:oklch(88% .01 260);
-  font:13px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-@media (prefers-color-scheme: light){body{background:oklch(98.1% .0045 250);color:oklch(22% .02 260)}}
-header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid oklch(30% .015 260)}
-@media (prefers-color-scheme: light){header{border-color:oklch(22% .02 260/.12)}}
-header .dot{width:8px;height:8px;border-radius:99px;background:oklch(72% .14 130);flex:none}
-header b{font-size:12px;font-weight:600;flex:1}
-header button{border:none;cursor:pointer;font:600 12px/1 system-ui;padding:7px 12px;border-radius:9px;
-  background:oklch(54% .17 258);color:white}
-header button:disabled{opacity:.45;cursor:default}
-textarea{flex:1;resize:none;border:none;outline:none;background:transparent;color:inherit;
-  padding:12px 14px;font:13px/1.7 inherit}
-footer{padding:6px 12px 10px;font-size:11px;color:oklch(62% .015 260);display:flex;justify-content:space-between;gap:8px}
-footer a{color:inherit}
+body{display:flex;flex-direction:column;overflow:hidden;background:var(--bg-1);color:var(--text-1);
+  font:400 var(--fs-3)/var(--lh-3) var(--font-body);-webkit-font-smoothing:antialiased}
+header{flex:none;display:flex;align-items:center;gap:8px;padding:9px 12px 8px;border-bottom:1px solid var(--border-2)}
+.dot{flex:none;width:7px;height:7px;border-radius:var(--r-pill);background:var(--ok);
+  transition:background var(--dur-2) ease}
+.dot.dirty{background:var(--warn)}
+.dot.bad{background:var(--danger)}
+.dot.idle{background:var(--text-4)}
+h1{margin:0;font:600 var(--fs-2)/1 var(--font-body);letter-spacing:.04em}
+.n{font:400 var(--fs-1)/1 var(--font-mono);color:var(--text-4)}
+.grow{flex:1}
+.ico{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--r-sm);
+  background:none;color:var(--text-3);cursor:pointer;transition:background var(--dur-2) ease,color var(--dur-2) ease}
+.ico:hover{background:var(--hover);color:var(--text-1)}
+.ico svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round}
+.rail{flex:none;display:flex;gap:6px;padding:7px 10px 8px;overflow-x:auto;border-bottom:1px solid var(--border-1);
+  scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.chip{flex:none;max-width:140px;padding:5px 10px;overflow:hidden;border:1px solid var(--border-1);
+  border-radius:var(--r-pill);background:var(--surface-2);color:var(--text-2);white-space:nowrap;
+  text-overflow:ellipsis;font:400 var(--fs-1)/1.4 var(--font-body);cursor:pointer;
+  transition:background var(--dur-2) ease,color var(--dur-2) ease,border-color var(--dur-2) ease}
+.chip:hover{background:var(--surface-3);color:var(--text-1)}
+.chip.on{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink);font-weight:600}
+.chip[data-daily="1"]::before{content:"";display:inline-block;width:4px;height:4px;margin-right:5px;
+  border-radius:var(--r-pill);background:var(--accent);vertical-align:2px}
+.chip.add{border-style:dashed;color:var(--text-3)}
+.chip.edit{padding:0}
+.chip input{width:116px;padding:5px 10px;border:0;outline:0;background:none;color:var(--text-1);
+  font:inherit}
+textarea{flex:1;min-height:0;padding:14px 16px 8px;border:0;outline:0;background:transparent;color:inherit;
+  font:400 var(--fs-3)/1.78 var(--font-body);resize:none;tab-size:2}
+textarea::placeholder{color:var(--text-4)}
+.alert{flex:none;display:none;align-items:center;gap:8px;padding:7px 12px;background:var(--warn-soft);
+  color:var(--warn-ink);font:400 var(--fs-1)/1.45 var(--font-body)}
+.alert.on{display:flex}
+.alert button{padding:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer}
+footer{flex:none;display:flex;align-items:center;gap:10px;padding:7px 16px 9px 12px;border-top:1px solid var(--border-1);
+  color:var(--text-4);font:400 var(--fs-1)/1.4 var(--font-body)}
+footer button{padding:0;border:0;background:none;color:var(--text-4);font:inherit;cursor:pointer;
+  transition:color var(--dur-2) ease}
+footer button:hover{color:var(--text-1)}
+footer #daily.on{color:var(--accent-ink);font-weight:600}
+footer #del.armed{color:var(--danger);font-weight:600}
 </style>
 </head>
 <body>
-<header><span class="dot"></span><b>便利贴 — 落库即真相</b><button id="save">存入库 ⌘↩</button></header>
-<textarea id="pad" placeholder="随手记。⌘/Ctrl+Enter 存入 Notes/便利贴/，之后在库里可检索、可协作、可发布。"></textarea>
-<footer><span id="hint"></span><a href="#" id="open-app">打开主窗口</a></footer>
+<header>
+  <span class="dot idle" id="dot"></span>
+  <h1>便利贴</h1><span class="n" id="count"></span>
+  <span class="grow"></span>
+  <button class="ico" id="newnote" title="新建一张（⌘N）" aria-label="新建一张">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6"/></svg>
+  </button>
+</header>
+<div class="rail" id="rail"></div>
+<textarea id="pad" spellcheck="false" placeholder="随手记，自动保存。⌘↩ 存好并开新的一张。"></textarea>
+<div class="alert" id="alert"><span id="alertmsg"></span><span class="grow"></span><button id="take">载入最新</button><button id="keep">保留我的</button></div>
+<footer>
+  <button id="daily" title="每天自动另起一页（不删旧内容）">每日</button>
+  <button id="del">删除</button>
+  <span class="grow"></span>
+  <span id="hint"></span>
+  <button id="open-app">主窗口</button>
+</footer>
 <script>
-const q=new URLSearchParams(location.search);
-const TOKEN=q.get('token')||localStorage.getItem('litmus_token')||localStorage.getItem('thirdc_token')||'';
-const BASE=location.origin;
-async function api(path,opts={}){
-  const headers=Object.assign({},opts.headers||{});
-  if(TOKEN)headers['authorization']='Bearer '+TOKEN;
-  if(opts.json!==undefined){headers['content-type']='application/json';opts.body=JSON.stringify(opts.json);}
-  const res=await fetch(BASE+path,Object.assign({},opts,{headers,cache:'no-store'}));
-  const text=await res.text();let data;try{data=text?JSON.parse(text):{}}catch{data={raw:text}}
-  if(!res.ok)throw new Error(data.error||res.status);
-  return data;
+/* 便利贴：贴着的一组便签。内容就是库里的 Notes/便利贴/*.md——
+   落库即同步（Litmus 账号/自建服务器，或库放在 iCloud Drive 时由系统同步），这张窗口只负责贴着写。 */
+const DIR = 'Notes/便利贴/';
+const STAMP_RE = /^\d{4}-\d{2}-\d{2}[-_ ]?\d{0,6}(-\d{1,2})?$/;
+const LS_RECENT = 'litmus.sticky.recent';
+const LS_ACTIVE = 'litmus.sticky.active';
+
+const q = new URLSearchParams(location.search);
+const TOKEN = q.get('token') || localStorage.getItem('litmus_token') || localStorage.getItem('thirdc_token') || '';
+const BASE = location.origin;
+const $ = id => document.getElementById(id);
+const pad = $('pad'), rail = $('rail'), dot = $('dot'), hintEl = $('hint');
+const countEl = $('count'), alertEl = $('alert'), alertMsg = $('alertmsg');
+const dailyBtn = $('daily'), delBtn = $('del');
+
+/* ───────── 纯函数（server/tests/sticky.mjs 逐个抠出来测） ───────── */
+
+function today() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
-const pad=document.getElementById('pad'),btn=document.getElementById('save'),hint=document.getElementById('hint');
-function ts(){const d=new Date(),p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`}
-async function save(){
-  const body=pad.value.trim();
-  if(!body){hint.textContent='空笔记不入库';return}
-  btn.disabled=true;hint.textContent='存入中…';
-  try{
-    const path=`Notes/便利贴/${ts()}.md`;
-    await api('/doc?path='+encodeURIComponent(path),{method:'PUT',body:body+'\n',headers:{'content-type':'text/markdown'}});
-    pad.value='';hint.textContent='已入库 '+path.split('/').pop();
-  }catch(e){hint.textContent='失败：'+e.message}
-  btn.disabled=false;pad.focus();
+
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return today() + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
-btn.onclick=save;
-pad.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();save()}});
-document.getElementById('open-app').onclick=e=>{e.preventDefault();try{window.__TAURI_INTERNALS__.invoke('desktop_focus_main')}catch(_){}};
-pad.focus();
+
+/** 正文进编辑区前掐掉开头空行（frontmatter 与正文之间那一个）。 */
+function bodyText(b) { return String(b || '').replace(/^\n+/, ''); }
+
+function splitFm(md) {
+  const s = String(md == null ? '' : md);
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(s);
+  if (!m) return ['', s];
+  return [m[0], s.slice(m[0].length)];
+}
+
+function fmGet(md, key) {
+  const fm = splitFm(md)[0];
+  if (!fm) return null;
+  const m = new RegExp('^' + key + ':[ \\t]*(.*)$', 'm').exec(fm);
+  if (!m) return null;
+  const v = m[1].trim().replace(/^["']|["']$/g, '');
+  return v === '' ? null : v;
+}
+
+function fmSet(md, key, val) {
+  const parts = splitFm(md);
+  let head = parts[0], body = parts[1];
+  let inner = head ? head.replace(/^---\r?\n/, '').replace(/\r?\n---\r?\n?$/, '') : '';
+  const re = new RegExp('^' + key + ':[ \\t]*.*$', 'm');
+  if (val == null) {
+    inner = inner.replace(re, '');
+  } else if (re.test(inner)) {
+    inner = inner.replace(re, key + ': ' + val);
+  } else {
+    inner = inner ? inner + '\n' + key + ': ' + val : key + ': ' + val;
+  }
+  inner = inner.split('\n').filter(l => l.trim() !== '').join('\n');
+  if (!inner) return body;
+  return '---\n' + inner + '\n---\n' + body.replace(/^\r?\n+/, '');
+}
+
+/* 每日便签：新的一天在最上面开一页，昨天的内容原样留在下面（不删、不改）。 */
+function ensureDaily(md, day) {
+  const d = day || today();
+  const parts = splitFm(md);
+  const fm = parts[0], body = parts[1].replace(/^\r?\n+/, '');
+  const head = '## ' + d;
+  if (body.indexOf(head) === 0) return md;
+  const m = /^#\s[^\n]*\n+##\s(\d{4}-\d{2}-\d{2})/.exec(body);
+  if (m && m[1] === d) return md;
+  return fm + head + '\n\n' + body;
+}
+
+function noteLabel(path) {
+  const name = String(path == null ? '' : path).split('/').pop() || '';
+  return name.replace(/\.(md|markdown)$/i, '');
+}
+
+function isStampStem(path) {
+  return STAMP_RE.test(noteLabel(path));
+}
+
+/* 便签标题：正文第一行像话的文字（跳过日期分隔与空行），没有就空着。 */
+function noteTitle(md) {
+  const body = splitFm(md)[1];
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^#{1,6}\s/.test(line)) {
+      const h = line.replace(/^#{1,6}\s+/, '').trim();
+      if (!h || /^\d{4}-\d{2}-\d{2}$/.test(h)) continue;
+      return h.slice(0, 28);
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(line)) continue;
+    return line.replace(/^[-*+>]\s?/, '').slice(0, 28);
+  }
+  return '';
+}
+
+function fileStem(title) {
+  return String(title == null ? '' : title)
+    .replace(/[\/\\:*?"<>|#^\[\]]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[-. ]+|[-. ]+$/g, '')
+    .slice(0, 40)
+    .trim();
+}
+
+function sortNotes(list, recent) {
+  const rank = new Map();
+  (recent || []).forEach((p, i) => { if (!rank.has(p)) rank.set(p, i); });
+  return list.slice().sort((a, b) => {
+    const ra = rank.has(a.path) ? rank.get(a.path) : 1e9;
+    const rb = rank.has(b.path) ? rank.get(b.path) : 1e9;
+    if (ra !== rb) return ra - rb;
+    return (b.mtime || 0) - (a.mtime || 0);
+  });
+}
+
+function hhmm() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/* ───────── 网络 ───────── */
+
+async function api(path, opts) {
+  const o = Object.assign({}, opts || {});
+  const headers = Object.assign({}, o.headers || {});
+  if (TOKEN) headers.authorization = 'Bearer ' + TOKEN;
+  if (o.json !== undefined) {
+    headers['content-type'] = 'application/json';
+    o.body = JSON.stringify(o.json);
+    delete o.json;
+  }
+  const res = await fetch(BASE + path, Object.assign(o, { headers, cache: 'no-store' }));
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function readNote(path) {
+  const res = await fetch(BASE + '/doc/raw?path=' + encodeURIComponent(path), {
+    headers: TOKEN ? { authorization: 'Bearer ' + TOKEN } : {},
+    cache: 'no-store'
+  });
+  if (!res.ok) throw new Error('这张便签读不到');
+  return res.text();
+}
+
+async function hashOf(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* ───────── 状态 ───────── */
+
+let notes = [];
+let dailyMap = {};
+let cur = null;
+let curFm = '';
+let base = '';
+let dirty = false;
+let paused = false;
+let timer = 0;
+let saveSeq = 0;
+
+function recent() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_RECENT) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+  } catch (_) { return []; }
+}
+
+function touchRecent(path) {
+  const list = recent().filter(p => p !== path);
+  list.unshift(path);
+  try {
+    localStorage.setItem(LS_RECENT, JSON.stringify(list.slice(0, 40)));
+    localStorage.setItem(LS_ACTIVE, path);
+  } catch (_) {}
+}
+
+/* 改名换了路径：最近列表与上次激活跟着挪，别留死链（否则下次开机认不出这张）。 */
+function retargetRecent(from, to) {
+  try {
+    localStorage.setItem(LS_RECENT, JSON.stringify(recent().map(p => (p === from ? to : p)).slice(0, 40)));
+    if (localStorage.getItem(LS_ACTIVE) === from) localStorage.setItem(LS_ACTIVE, to);
+  } catch (_) {}
+}
+
+function setHint(text) { hintEl.textContent = text; }
+
+function markDirty() {
+  dirty = true;
+  dot.className = 'dot dirty';
+  setHint('待存');
+}
+
+/* ───────── 列表与切换 ───────── */
+
+async function loadList() {
+  const r = await api('/docs');
+  if (!r.ok) throw new Error('列不出便签');
+  const rows = (r.data.docs || [])
+    .filter(d => String(d.path || '').indexOf(DIR) === 0 && /\.(md|markdown)$/i.test(d.path))
+    .map(d => ({ path: d.path, title: d.title || noteLabel(d.path), mtime: d.mtime || 0 }));
+  notes = sortNotes(rows, recent());
+  renderRail();
+}
+
+function renderRail() {
+  rail.textContent = '';
+  notes.forEach(n => {
+    const chip = document.createElement('button');
+    chip.className = 'chip' + (n.path === cur ? ' on' : '');
+    chip.dataset.path = n.path;
+    if (dailyMap[n.path]) chip.dataset.daily = '1';
+    chip.textContent = n.title || noteLabel(n.path);
+    chip.title = (dailyMap[n.path] ? '每日 · ' : '') + noteLabel(n.path) + '（双击改名）';
+    chip.addEventListener('click', () => open(n.path));
+    chip.addEventListener('dblclick', ev => { ev.preventDefault(); renameInline(chip, n); });
+    rail.appendChild(chip);
+  });
+  const add = document.createElement('button');
+  add.className = 'chip add';
+  add.textContent = '新便签';
+  add.addEventListener('click', () => create());
+  rail.appendChild(add);
+  countEl.textContent = notes.length ? notes.length + ' 张' : '';
+  requestAnimationFrame(() => {
+    const on = rail.querySelector('.chip.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+}
+
+function hideAlert() {
+  alertEl.classList.remove('on');
+  paused = false;
+}
+
+function showAlert(msg) {
+  alertMsg.textContent = msg;
+  alertEl.classList.add('on');
+}
+
+async function open(path, opts) {
+  const o = opts || {};
+  if (paused) { setHint('先处理这篇的冲突'); return; }
+  if (dirty) await flush();
+  if (dirty) return;                      // 没存上就别切走
+  try {
+    const text = await readNote(path);
+    const parts = splitFm(text);
+    cur = path;
+    curFm = parts[0];
+    base = await hashOf(text);
+    pad.value = bodyText(parts[1]);
+    pad.scrollTop = 0;
+    dirty = false;
+    hideAlert();
+    setHint('已存');
+    dot.className = 'dot';
+    const daily = fmGet(text, 'daily') === 'true';
+    dailyMap[path] = daily;
+    dailyBtn.classList.toggle('on', daily);
+    delBtn.classList.remove('armed');
+    delBtn.textContent = '删除';
+    touchRecent(path);
+    renderRail();
+    if (o.caret === 'top') pad.setSelectionRange(0, 0);
+    pad.focus();
+    if (daily) {
+      const next = ensureDaily(pad.value);
+      if (next !== pad.value) {
+        pad.value = next;
+        markDirty();
+        setHint('新的一天，已另起一页');
+        const at = next.indexOf('\n\n') + 2;
+        pad.setSelectionRange(at, at);
+        scheduleSave(0);
+      }
+    }
+  } catch (e) {
+    setHint(String((e && e.message) || e));
+  }
+}
+
+async function create() {
+  if (paused) { setHint('先处理这篇的冲突'); return; }
+  if (dirty) await flush();
+  if (dirty) return;
+  let path = DIR + stamp() + '.md', n = 2;
+  while (notes.some(x => x.path === path)) { path = DIR + stamp() + '-' + n + '.md'; n += 1; }
+  const r = await api('/doc?path=' + encodeURIComponent(path), {
+    method: 'PUT',
+    headers: { 'content-type': 'text/markdown' },
+    body: '\n'
+  });
+  if (!r.ok) { setHint('新建失败'); return; }
+  await loadList();
+  await open(path, { caret: 'top' });
+}
+
+/* ───────── 保存 ───────── */
+
+function scheduleSave(ms) {
+  clearTimeout(timer);
+  timer = setTimeout(() => { flush(); }, typeof ms === 'number' ? ms : 700);
+}
+
+async function flush() {
+  if (!cur || !dirty || paused) return;
+  clearTimeout(timer);
+  const path = cur, text = curFm + pad.value, seq = ++saveSeq;
+  setHint('保存中…');
+  try {
+    const r = await api('/doc?path=' + encodeURIComponent(path), {
+      method: 'PUT',
+      headers: { 'content-type': 'text/markdown', 'x-base-hash': base || '' },
+      body: text
+    });
+    if (seq !== saveSeq) return;
+    if (r.status === 409) { conflict(r.data); return; }
+    if (!r.ok) { dot.className = 'dot bad'; setHint('没存上'); return; }
+    base = r.data.hash || await hashOf(typeof r.data.source === 'string' ? r.data.source : text);
+    dirty = false;
+    dot.className = 'dot';
+    setHint('已存 ' + hhmm());
+    const row = notes.find(x => x.path === path);
+    if (row) row.mtime = Math.floor(Date.now() / 1000);
+    if (isStampStem(path)) renameByContent(path);
+  } catch (e) {
+    dot.className = 'dot bad';
+    setHint('没存上');
+  }
+}
+
+function conflict(data) {
+  paused = true;
+  dot.className = 'dot bad';
+  setHint('这篇刚在别处改过');
+  alertEl.dataset.source = typeof data.source === 'string' ? data.source : '';
+  alertEl.dataset.hash = data.hash || '';
+  showAlert('这篇刚在别处改过');
+}
+
+async function forceSave() {
+  const path = cur;
+  if (!path) return;
+  paused = false;
+  hideAlert();
+  const text = curFm + pad.value;
+  const r = await api('/doc?path=' + encodeURIComponent(path), {
+    method: 'PUT',
+    headers: { 'content-type': 'text/markdown' },
+    body: text
+  });
+  if (!r.ok) { setHint('没存上'); paused = true; showAlert('这篇刚在别处改过'); return; }
+  base = r.data.hash || await hashOf(text);
+  dirty = false;
+  dot.className = 'dot';
+  setHint('已存 ' + hhmm());
+}
+
+async function takeRemote() {
+  const src = alertEl.dataset.source || '';
+  const parts = splitFm(src);
+  curFm = parts[0];
+  pad.value = bodyText(parts[1]);
+  base = alertEl.dataset.hash || await hashOf(src);
+  dirty = false;
+  hideAlert();
+  dot.className = 'dot';
+  setHint('已换成最新');
+  dailyBtn.classList.toggle('on', fmGet(src, 'daily') === 'true');
+}
+
+/* 时间戳名的便签，存下第一版后按正文首行改成看得懂的名字。 */
+async function renameByContent(path) {
+  const title = fileStem(noteTitle(pad.value));
+  if (!title || title === noteLabel(path)) return;
+  let to = DIR + title + '.md', n = 2;
+  while (notes.some(x => x.path === to)) { to = DIR + title + ' ' + n + '.md'; n += 1; }
+  paused = true;                                   // 改名期间别让旧路径的自动保存插进来
+  const r = await api('/doc/move', { method: 'POST', json: { from: path, to } });
+  paused = false;
+  if (!r.ok) return;
+  if (cur === path) cur = to;
+  retargetRecent(path, to);
+  await loadList();
+}
+
+/* ───────── 改名与删除 ───────── */
+
+function renameInline(chip, note) {
+  const input = document.createElement('input');
+  input.value = noteLabel(note.path);
+  chip.classList.add('edit');
+  chip.textContent = '';
+  chip.appendChild(input);
+  input.focus();
+  input.select();
+  let settled = false;
+  const finish = async ok => {
+    if (settled) return;
+    settled = true;
+    const name = ok ? input.value.trim() : '';
+    chip.classList.remove('edit');
+    if (!name || name === noteLabel(note.path)) { renderRail(); return; }
+    const stem = fileStem(name);
+    const to = DIR + stem + '.md';
+    if (notes.some(x => x.path === to)) { setHint('已经有同名便签'); renderRail(); return; }
+    const r = await api('/doc/move', { method: 'POST', json: { from: note.path, to } });
+    if (!r.ok) { setHint('改名失败'); renderRail(); return; }
+    if (cur === note.path) cur = to;
+    retargetRecent(note.path, to);
+    await loadList();
+  };
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+    if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+async function removeNote() {
+  if (!cur) return;
+  if (!delBtn.classList.contains('armed')) {
+    delBtn.classList.add('armed');
+    delBtn.textContent = '确认删除';
+    setTimeout(() => {
+      if (delBtn.classList.contains('armed')) {
+        delBtn.classList.remove('armed');
+        delBtn.textContent = '删除';
+      }
+    }, 3200);
+    return;
+  }
+  delBtn.classList.remove('armed');
+  delBtn.textContent = '删除';
+  const path = cur;
+  const r = await api('/doc?path=' + encodeURIComponent(path), { method: 'DELETE' });
+  if (!r.ok) { setHint('删除失败'); return; }
+  cur = null;
+  pad.value = '';
+  dirty = false;
+  await loadList();
+  if (notes.length) await open(notes[0].path);
+  else await create();
+}
+
+/* ───────── 每日 ───────── */
+
+async function toggleDaily() {
+  if (!cur) return;
+  const on = fmGet(curFm, 'daily') === 'true';
+  curFm = fmSet(curFm, 'daily', on ? null : 'true');
+  if (!on) pad.value = ensureDaily(pad.value);
+  dailyMap[cur] = !on;
+  dailyBtn.classList.toggle('on', !on);
+  markDirty();
+  renderRail();
+  scheduleSave(0);
+}
+
+/* ───────── 主题与启动 ───────── */
+
+function applyTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('litmus_theme'); } catch (_) {}
+  if (saved === 'dark' || saved === 'light') {
+    document.documentElement.dataset.theme = saved;
+    return;
+  }
+  if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+}
+
+async function hydrateDaily() {
+  let changed = false;
+  for (const n of notes.slice(0, 24)) {
+    if (n.path in dailyMap) continue;
+    try {
+      const text = await readNote(n.path);
+      const v = fmGet(text, 'daily') === 'true';
+      dailyMap[n.path] = v;
+      if (v) changed = true;
+    } catch (_) { break; }
+  }
+  if (changed) renderRail();
+}
+
+pad.addEventListener('input', () => {
+  if (paused) return;
+  markDirty();
+  scheduleSave(700);
+});
+
+pad.addEventListener('blur', () => { if (dirty && !paused) flush(); });
+
+pad.addEventListener('keydown', ev => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+    ev.preventDefault();
+    flush().then(() => create());
+  }
+});
+
+dailyBtn.addEventListener('click', toggleDaily);
+delBtn.addEventListener('click', removeNote);
+$('newnote').addEventListener('click', () => create());
+$('take').addEventListener('click', takeRemote);
+$('keep').addEventListener('click', forceSave);
+$('open-app').addEventListener('click', ev => {
+  ev.preventDefault();
+  const t = window.__TAURI__;
+  if (t && t.core && t.core.invoke) t.core.invoke('desktop_focus_main').catch(() => {});
+});
+
+window.addEventListener('focus', async () => {
+  if (!cur || dirty || paused) return;
+  try {
+    const text = await readNote(cur);
+    const h = await hashOf(text);
+    if (h !== base) {
+      const parts = splitFm(text);
+      base = h;
+      curFm = parts[0];
+      pad.value = bodyText(parts[1]);
+      const daily = fmGet(text, 'daily') === 'true';
+      dailyMap[cur] = daily;
+      dailyBtn.classList.toggle('on', daily);
+      renderRail();
+      setHint('已同步别处的改动');
+      dot.className = 'dot';
+    }
+  } catch (_) {}
+});
+
+setInterval(() => { if (dirty && !paused) flush(); }, 5000);
+
+window.addEventListener('pagehide', () => {
+  if (!cur || !dirty || paused) return;
+  try {
+    fetch(BASE + '/doc?path=' + encodeURIComponent(cur), {
+      method: 'PUT',
+      keepalive: true,
+      headers: { 'content-type': 'text/markdown', 'x-base-hash': base || '', ...(TOKEN ? { authorization: 'Bearer ' + TOKEN } : {}) },
+      body: curFm + pad.value
+    });
+  } catch (_) {}
+});
+
+document.addEventListener('keydown', ev => {
+  if ((ev.metaKey || ev.ctrlKey) && !ev.shiftKey && ev.key === 'n') {
+    ev.preventDefault();
+    create();
+  }
+});
+
+try {
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    window.__TAURI__.event.listen('sticky:new', () => { create(); });
+  }
+} catch (_) {}
+
+(async function boot() {
+  applyTheme();
+  try { await loadList(); } catch (e) { setHint('连不上库'); }
+  if (q.get('new') === '1' || !notes.length) {
+    await create();
+  } else {
+    const last = (function () { try { return localStorage.getItem(LS_ACTIVE); } catch (_) { return null; } })();
+    const target = notes.find(n => n.path === last) || notes[0];
+    await open(target.path);
+  }
+  hydrateDaily();
+})();
 </script>
 </body>
 </html>

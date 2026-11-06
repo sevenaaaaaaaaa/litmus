@@ -625,6 +625,7 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     let new_folder = MenuItemBuilder::with_id("m-new-folder", "新建文件夹")
         .accelerator("CmdOrCtrl+Shift+N")
         .build(app)?;
+    let sticky_open = MenuItemBuilder::with_id("m-open-sticky", "便利贴").build(app)?;
     let sticky = MenuItemBuilder::with_id("m-sticky", "新建便利贴").build(app)?;
     let reveal = MenuItemBuilder::with_id("m-reveal-vault", "在访达中显示知识库").build(app)?;
     let close = PredefinedMenuItem::close_window(app, Some("关闭窗口"))?;
@@ -656,6 +657,7 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
     let file_menu = SubmenuBuilder::new(app, "文件")
         .item(&new_doc)
         .item(&new_folder)
+        .item(&sticky_open)
         .item(&sticky)
         .separator()
         .item(&recent)
@@ -730,14 +732,23 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry
 }
 
 #[cfg(desktop)]
-fn open_sticky(app: &AppHandle) {
+fn open_sticky(app: &AppHandle, new_note: bool) {
+    /* 便利贴是一个常驻窗口，里面自己管「多张便签」；再次点「新建」只是让页里再加一张，
+       不重复开窗（那样会出现两份同时自动保存同一篇的窗口）。 */
     if let Some(w) = app.get_webview_window("sticky") {
         let _ = w.show();
         let _ = w.set_focus();
+        if new_note {
+            let _ = app.emit_to("sticky", "sticky:new", ());
+        }
         return;
     }
     let ctx = app.state::<TrayCtx>();
-    let url = format!("{}/sticky.html?token={}", ctx.origin, ctx.token);
+    let url = if new_note {
+        format!("{}/sticky.html?token={}&new=1", ctx.origin, ctx.token)
+    } else {
+        format!("{}/sticky.html?token={}", ctx.origin, ctx.token)
+    };
     let parsed: tauri::Url = match url.parse() {
         Ok(u) => u,
         Err(e) => {
@@ -747,8 +758,8 @@ fn open_sticky(app: &AppHandle) {
     };
     if let Err(e) = WebviewWindowBuilder::new(app, "sticky", WebviewUrl::External(parsed))
         .title("便利贴 · Litmus")
-        .inner_size(300.0, 380.0)
-        .min_inner_size(220.0, 240.0)
+        .inner_size(360.0, 480.0)
+        .min_inner_size(240.0, 280.0)
         .always_on_top(true)
         .skip_taskbar(true)
         /* 关闭 Tauri 的系统文件拖放拦截：不拦截才能让页内 HTML5 拖拽
@@ -777,6 +788,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
     let show = MenuItem::with_id(app, "t-show", "显示主窗口", true, None::<&str>)?;
     let capture = MenuItem::with_id(app, "t-capture", "⚡ 捕捉剪贴板到库（Alt+Space）", true, None::<&str>)?;
     let new_doc = MenuItem::with_id(app, "t-new", "新建文档", true, None::<&str>)?;
+    let sticky_open = MenuItem::with_id(app, "t-sticky-open", "便利贴", true, None::<&str>)?;
     let sticky = MenuItem::with_id(app, "t-sticky", "新建便利贴", true, None::<&str>)?;
     let secrets = MenuItem::with_id(app, "t-secrets", "凭证库", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "t-quit", "退出 Litmus", true, None::<&str>)?;
@@ -807,6 +819,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wr
         .item(&capture)
         .separator()
         .item(&new_doc)
+        .item(&sticky_open)
         .item(&sticky)
         .item(&recent_sub)
         .item(&secrets)
@@ -833,7 +846,8 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
                     show_main(app);
                     dispatch_main(app, "tray-new-doc", "{}");
                 }
-                "t-sticky" => open_sticky(app),
+                "t-sticky-open" => open_sticky(app, false),
+                "t-sticky" => open_sticky(app, true),
                 "t-secrets" => {
                     show_main(app);
                     dispatch_main(app, "tray-secrets", "{}");
@@ -1296,7 +1310,8 @@ pub fn run() {
                 return;
             }
             match id.as_str() {
-                "m-sticky" => open_sticky(app),
+                "m-open-sticky" => open_sticky(app, false),
+                "m-sticky" => open_sticky(app, true),
                 other if other.starts_with("m-vault:") => {
                     let idx: usize = other["m-vault:".len()..].parse().unwrap_or(usize::MAX);
                     let reg = load_registry(app);

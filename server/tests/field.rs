@@ -142,3 +142,53 @@ fn share_page_follows_the_same_discipline() {
     assert!(!s.chars().any(|c| ('\u{1F300}'..='\u{1FAFF}').contains(&c)), "分享页直出 emoji");
     assert!(SHARE.contains("__SHARE_DATA__"));
 }
+
+/// 便利贴窗（server/web/sticky.html）同一套纪律：零 hex / rgb / hsl，字号与圆角走 token，
+/// 不直出 emoji，静态资源用相对路径（部署挂在 /litmus/ 子路径下时绝对 /assets/ 会 404，
+/// 整页 token 失效退化成裸样式）。脚本里的纯函数另有 `node --test server/tests/sticky.mjs` 覆盖。
+#[test]
+fn sticky_page_follows_the_same_discipline() {
+    const STICKY: &str = include_str!("../web/sticky.html");
+    let end = STICKY.find("<script>").expect("主脚本");
+    let s = &STICKY[..end];
+    for f in ["rgb(", "rgba(", "hsl(", "hsla("] {
+        assert!(!s.contains(f), "便利贴页出现 {f}");
+    }
+    let b = s.as_bytes();
+    for (i, &c) in b.iter().enumerate() {
+        if c == b'#' && i > 0 && matches!(b[i - 1], b':' | b'(' | b',' | b' ') {
+            let n = b[i + 1..].iter().take_while(|x| x.is_ascii_hexdigit()).count();
+            assert!(!matches!(n, 3 | 4 | 6 | 8), "便利贴页出现 hex 色值：{}", &s[i..i + 1 + n]);
+        }
+    }
+    for (i, line) in s.lines().enumerate() {
+        for pat in ["font-size:", "font:"] {
+            let mut rest = line;
+            while let Some(j) = rest.find(pat) {
+                let tail = &rest[j + pat.len()..];
+                let decl: String = tail.chars().take_while(|&c| c != ';' && c != '}').collect();
+                assert!(!decl.contains("px"), "便利贴页 L{} 裸 px 字号：{pat}{decl}", i + 1);
+                if decl.is_empty() {
+                    break;
+                }
+                rest = &tail[decl.len()..];
+            }
+        }
+        if let Some(j) = line.find("border-radius:") {
+            let decl: String = line[j + "border-radius:".len()..]
+                .trim_start()
+                .chars()
+                .take_while(|&c| c != ';' && c != '}')
+                .collect();
+            assert!(
+                !decl.chars().next().map_or(false, |c| c.is_ascii_digit()),
+                "便利贴页 L{} 圆角没走 token：{decl}",
+                i + 1
+            );
+        }
+    }
+    assert!(!s.chars().any(|c| ('\u{1F300}'..='\u{1FAFF}').contains(&c)), "便利贴页直出 emoji");
+    // 资源相对引用：知识场与分享页都这样写，便利贴没理由走绝对 /assets/。
+    assert!(STICKY.contains("href=\"assets/tokens.css\""), "便利贴页应相对引用 tokens.css");
+    assert!(!STICKY.contains("href=\"/assets/"), "便利贴页不要用绝对 /assets/ 路径");
+}
