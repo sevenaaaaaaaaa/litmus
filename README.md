@@ -72,6 +72,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 - **一键建库**：输入一个主题，自动从 Wikipedia / Hacker News / arXiv 采集成库（引导卡第一步就是它）
 - **零星积累**：Memo 入口随手记（支持语音转文字）+ 浏览器插件整页 / 选区采集（桌面端离线直采）
 - **万物入袋**：网页本地化、PDF / DOCX 解析、Obsidian 库直接导入、MCP 连接器拉取外部系统
+- **设计 / 流程图 / 笔记工具接进来**：litmus 也是 MCP 客户端——`litmus conn presets` 给样板，`litmus conn add` 把 Notion、Obsidian、Canva、Open Design、Lovart 等外部 MCP（远程 url 或本机 command）接成连接器，资源一键拉进库里（见 [MCP 互通说明](docs/spec/mcp-clients.md)）
 
 **输出侧——让知识随时能上台：**
 
@@ -85,7 +86,7 @@ AI Agent 时代，知识库有两个失灵的旧答案：
 ## 📖 开源开放
 
 - **核心功能永久开源**（AGPL-3.0）：画布、编辑器、检索、发布、MCP，全部在这仓库里
-- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 连接器**接入，鹿蕊也可作为 MCP server 被其他 agent 调用（`litmus mcp`）
+- **生态开放**：矩阵产品（OpenFlow / Conflow / WebsFlow / PayFlow / InFlow）与第三方工具统一经 **MCP 双向互通**——鹿蕊作为 MCP server 被其他 agent 调用（14 个工具），一条命令让 Cursor / Claude / Codex / OpenCode 等接上：`litmus mcp-install <库> --client cursor --write`；反之鹿蕊也是 MCP 客户端，能接设计工具与流程图工具（见 [MCP 互通说明](docs/spec/mcp-clients.md)）
 - **插件友好**：浏览器扩展（Chrome / Firefox / Safari）源码在库；文件真相 = Open Knowledge Format（Markdown 语义 + YAML 元数据 + 块锚点 + JSON-LD），开发者可按[规范](docs/spec/okf.md)直接读写
 
 ## 快速上手

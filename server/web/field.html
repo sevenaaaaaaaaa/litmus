@@ -669,6 +669,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
   <button class="ib" id="b-fit" title="看全（F）" aria-label="看全"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
   <button class="ib" id="b-theme" title="明暗" aria-label="切换明暗"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
   <button class="ib" id="b-trash" title="回收站：删掉的、筛掉的都在这里，能找回" aria-label="回收站"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v4M9 7v4"/></svg></button>
+  <button class="ib" id="b-flow" title="ConFlow 加工（/加工）：把网址、文档加工成文章、幻灯片、短视频脚本" aria-label="ConFlow 加工"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.6 5.2v4.2L6.6 14V8.2z"/></svg></button>
   <button class="ib" id="b-help" title="用法与旧功能位置（?）" aria-label="帮助"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6.2a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3V10"/><circle cx="8" cy="12.4" r=".6" fill="currentColor"/></svg></button>
 </div>
 
@@ -2321,6 +2322,62 @@ function openPop(anchor, items){
 }
 document.addEventListener('mousedown', e => { if (popEl && !popEl.contains(e.target) && !e.target.closest('#s-more,#s-toc')) closePop(); });
 
+/* 右键菜单（0.30）：画布空白处是整场动作，单个文档上是文档动作——桌面端优先弹原生 NSMenu，
+   弹不了或浏览器端回落到网页菜单，两边动作是同一份实现（docs/spec/desktop.md 的约定）。 */
+let ctxPending = null;
+const ctxAnchor = (x, y) => ({getBoundingClientRect: () => ({left: x, right: x, top: y, bottom: y})});
+function ctxMenuItems(n){
+  return n ? [
+    {label:'打开「' + shortLabel(n.full || n.p) + '」', run:() => openDoc(n)},
+    {label:'重命名或移动…', run:() => moveDoc(n)},
+    {label:'复制一份', run:() => duplicateDoc(n)},
+    {label:'复制文件路径', run:() => copyText(n.p)},
+    '-',
+    {label:'加工成…（ConFlow）', run:() => openProcessing({source_kind:'doc', source:n.p, title:n.full || n.title})},
+    {label:'学这一篇（费曼复述）', run:() => startLearn(n)},
+    '-',
+    {label:'删除（移到回收站）', cls:'danger', run:() => deleteDoc(n)}
+  ] : [
+    {label:'新建文档…', run:() => newDoc('')},
+    {label:'采集一批资料…', run:() => collectTopic('')},
+    {label:'导入 / 搬家…', run:() => openImport()},
+    {label:'加工成…（ConFlow）', run:() => openProcessing(processingEntry('', reading && reading.p, picks.map(x => x.p)))},
+    '-',
+    {label:'全库整理…', run:() => openOrganize()},
+    {label:'视角…', run:() => openViews()},
+    {label:'展示整库', run:() => presentAll()},
+    '-',
+    {label:'按意义排布', run:() => setLayout('sem')},
+    {label:'按时间排布', run:() => setLayout('time')},
+    {label:'看全（F）', run:() => fit()},
+    '-',
+    {label:'文件栏', run:() => openFilesAt('Notes')},
+    {label:'设置模型…', run:() => openSettings()}
+  ];
+}
+async function showCtxMenu(x, y, n){
+  const items = ctxMenuItems(n);
+  if (DESK && window.__TAURI_INTERNALS__){
+    try {
+      const ser = items.map(it => it === '-' ? {sep:true} : {label:it.label, enabled:true});
+      ctxPending = items;
+      await window.__TAURI_INTERNALS__.invoke('desktop_context_menu', {items:ser});
+      return;
+    } catch(e){ ctxPending = null; }
+  }
+  openPop(ctxAnchor(x, y), items);
+}
+$('field').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const nel = e.target && e.target.closest ? e.target.closest('#nodes .n') : null;
+  showCtxMenu(e.clientX, e.clientY, (nel && nel._n) || null);
+});
+if (DESK) window.addEventListener('ctx-pick', e => {
+  const it = ctxPending && ctxPending[+e.detail.index];
+  ctxPending = null;
+  if (it && it !== '-' && it.run) it.run();
+});
+
 /* 最近打开（本机记忆，最多 30 条） */
 function recentList(){ try { return JSON.parse(localStorage.getItem('litmus_recent') || '[]'); } catch(e){ return []; } }
 function pushRecent(p){ try { const l = recentList().filter(x => x !== p); l.unshift(p); localStorage.setItem('litmus_recent', JSON.stringify(l.slice(0, 30))); } catch(e){} }
@@ -3434,7 +3491,7 @@ async function openPrivate(){
 async function openSettings(){
   const box = openPanel('模型设置', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
   let a = {}; try { a = await api('/field/ai'); } catch(e){}
-  const presets = [['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], ['通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'], ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'], ['本机 Ollama', 'http://localhost:11434/v1', 'qwen2.5']];
+  const presets = [['DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat'], ['Z.ai 智谱', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4.6'], ['Kimi 月之暗面', 'https://api.moonshot.cn/v1', 'kimi-k2'], ['通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'], ['硅基流动', 'https://api.siliconflow.cn/v1', 'Qwen/Qwen2.5-72B-Instruct'], ['OpenCode 本机', 'http://localhost:4096/v1', ''], ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'], ['OpenRouter', 'https://openrouter.ai/api/v1', ''], ['本机 Ollama', 'http://localhost:11434/v1', 'qwen2.5']];
   box.innerHTML = '<p class="hint" style="margin-top:0">问答结晶、解释、考考我都用这里的模型。任何兼容 OpenAI 接口的服务都可以。<button class="btn" id="ai-priv">' + (a.local_only ? '私密模式开着 · 本机模型…' : '用本机模型、私密模式…') + '</button></p>' + (a.blocked ? '<p class="hint bad">' + esc(a.blocked) + '</p>' : '') +
     '<div class="chips">' + presets.map((p, i) => '<button class="chip" data-pre="' + i + '"><span>' + esc(p[0]) + '</span></button>').join('') + '</div>' +
     '<label for="ai-url">接口地址</label><input type="text" id="ai-url" value="' + esc(a.base_url || '') + '" placeholder="https://api.deepseek.com/v1">' +
@@ -3450,7 +3507,7 @@ async function openSettings(){
   });
   $('ai-priv').onclick = openPrivate;
   if ($('ai-mv')) $('ai-mv').onclick = async () => { try { await api('/field/ai/move-key', {method:'POST'}); toast('密钥挪进凭证库了：litmus.toml 里已经不再有它。别的设备上要各自在 /设置 填一次'); openSettings(); } catch(e){ toast(esc(e.message || e), true); } };
-  box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; $('ai-key').focus(); });
+  box.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => { const p = presets[+b.dataset.pre]; $('ai-url').value = p[1]; $('ai-model').value = p[2]; if (!p[2]) $('ai-model').placeholder = b.textContent.includes('OpenCode') ? '按 OpenCode 里配置的模型名填' : '按服务商的模型列表填'; $('ai-key').focus(); });
   $('ai-save').onclick = async () => {
     const msg = $('ai-msg'); msg.className = ''; msg.textContent = '正在保存…'; $('ai-save').disabled = true;
     try {
@@ -5510,6 +5567,8 @@ function toggleTheme(){
 $('b-theme').onclick = toggleTheme;
 function openHelp(){ $('help').classList.add('on'); $('help').scrollTop = 0; }
 $('b-help').onclick = openHelp; $('b-trash').onclick = () => openTrash(); $('help-x').onclick = () => $('help').classList.remove('on');
+/* ConFlow 加工：场上常驻入口（0.30 强化旧行动）：有选中的加工多选，在读的加工这篇，否则开全新任务 */
+$('b-flow').onclick = () => openProcessing(processingEntry('', reading && reading.p, picks.map(n => n.p)));
 async function rebuild(){
   $('help').classList.remove('on'); toast('正在整体重排…');
   try { await loadField({rebuild:true}); fit(); toast('重排好了'); } catch(e){ toast('<b>重排失败</b>：' + esc(e.message || e), true); }

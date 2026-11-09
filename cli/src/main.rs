@@ -76,6 +76,17 @@ enum Cmd {
     },
     /// 以 MCP server 运行（stdio），供 Claude/Cursor 等 agent 使用
     Mcp { path: PathBuf },
+    /// 把这个库的 MCP 一键写进外部 agent：cursor / claude / claude-code / codex / opencode / dsh / hermes / generic（默认只打印，--write 才落盘写配置）
+    McpInstall {
+        /// 库根路径
+        path: PathBuf,
+        /// 目标 agent：cursor | claude | claude-code | codex | opencode | dsh | hermes | obsidian | generic
+        #[arg(long, default_value = "cursor")]
+        client: String,
+        /// 真正写进该 agent 的配置文件（会先备份成 *.bak-litmus-mcp）
+        #[arg(long)]
+        write: bool,
+    },
     /// 从 Obsidian 库导入（保留目录结构，附件内容寻址）
     ImportObsidian {
         vault_path: PathBuf,
@@ -157,6 +168,30 @@ enum DesignCmd {
 enum ConnCmd {
     /// 列出库中配置的连接
     List { path: PathBuf },
+    /// 打印主流设计 / 流程图 / 笔记工具接进来的 TOML 样板（先确认端点与密钥再启用）
+    Presets { path: PathBuf },
+    /// 把一条连接写进库根 litmus.toml 的 [[connections]]
+    Add {
+        path: PathBuf,
+        /// 连接名（如 canva / notion / obsidian）
+        #[arg(long)]
+        name: String,
+        /// 本地子进程命令（填了 url 就不用）
+        #[arg(long)]
+        command: Option<String>,
+        /// 子进程参数（空格分隔）
+        #[arg(long)]
+        args: Option<String>,
+        /// 远程 MCP（Streamable HTTP）地址
+        #[arg(long)]
+        url: Option<String>,
+        /// 请求头，KEY=VALUE（值可写 {{secret:名字}}），逗号分隔多条
+        #[arg(long)]
+        header: Option<String>,
+        /// 环境变量，KEY=VALUE，逗号分隔多条
+        #[arg(long)]
+        env: Option<String>,
+    },
     /// 探测连接：握手 + 列出 tools/resources
     Probe { path: PathBuf, name: String },
     /// 采集该连接的全部 resources 入库
@@ -362,6 +397,9 @@ fn main() -> Result<()> {
                     out.flush()?;
                 }
             }
+        }
+        Cmd::McpInstall { path, client, write } => {
+            mcp_install(&path, &client, write)?;
         }
         Cmd::ImportObsidian { vault_path, obsidian, attachments_dir } => {
     use std::path::Path;
@@ -656,6 +694,12 @@ fn main() -> Result<()> {
                     println!("  skipped: {s}");
                 }
             }
+            ConnCmd::Presets { path } => {
+                conn_presets(&path)?;
+            }
+            ConnCmd::Add { path, name, command, args, url, header, env } => {
+                conn_add(&path, &name, command.as_deref(), args.as_deref(), url.as_deref(), header.as_deref(), env.as_deref())?;
+            }
             ConnCmd::Call {
                 path,
                 name,
@@ -703,3 +747,188 @@ fn now_hms() -> String {
     format!("{:02}:{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60, secs % 60)
 }
 
+
+// ═══════════ MCP 客户端一键接入（0.30：设计工具、流程图、笔记与各 agent 双向都要接） ═══════════
+
+fn json_mcp_write(file: &PathBuf, outer: &str, inner: Option<&str>, name: &str, entry: serde_json::Value) -> Result<()> {
+    if !file.exists() {
+        if let Some(dir) = file.parent() { std::fs::create_dir_all(dir)?; }
+    }
+    let raw = std::fs::read_to_string(file).unwrap_or_else(|_| "{}".to_string());
+    let mut cfg: serde_json::Value = serde_json::from_str(&raw).context("该 agent 的配置文件不是合法 JSON")?;
+    if cfg.get(outer).map(|v| !v.is_object()).unwrap_or(false) { anyhow::bail!("配置里 {outer} 不是对象：{}", file.display()); }
+    let slot = cfg.as_object_mut().unwrap().entry(outer.to_string()).or_insert_with(|| serde_json::json!({}));
+    let slot2 = if let Some(inner) = inner {
+        let s = slot.as_object_mut().unwrap().entry(inner.to_string()).or_insert_with(|| serde_json::json!({}));
+        s
+    } else { slot };
+    slot2.as_object_mut().unwrap().insert(name.to_string(), entry);
+    let expect = format!("{}.bak-litmus-mcp", file.display());
+    let bak = std::path::PathBuf::from(&expect);
+    if file.exists() { let _ = std::fs::copy(file, &bak); }
+    std::fs::write(file, serde_json::to_string_pretty(&cfg)? + "\n")?;
+    println!("已写入 {}（原文件备份为 {}）", file.display(), bak.display());
+    Ok(())
+}
+
+fn mcp_install(path: &PathBuf, client: &str, write: bool) -> Result<()> {
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("litmus"));
+    let vault = path.canonicalize().unwrap_or_else(|_| path.clone());
+    let args = vec!["mcp".to_string(), vault.display().to_string()];
+    println!("库：{}", vault.display());
+    println!("入口：{} mcp {}", exe.display(), vault.display());
+    println!();
+    let write_hint = || println!("确认无误后，加 **--write** 才会真的写进去。");
+    match client {
+        "cursor" | "claude" => {
+            let file = if client == "cursor" {
+                PathBuf::from(std::env::var("HOME")?).join(".cursor/mcp.json")
+            } else {
+                PathBuf::from(std::env::var("HOME")?).join("Library/Application Support/Claude/claude_desktop_config.json")
+            };
+            println!("目标文件：{}", file.display());
+            let entry = serde_json::json!({ "command": exe, "args": args });
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "mcpServers": { "litmus": entry.clone() }}))?);
+            if write { json_mcp_write(&file, "mcpServers", None, "litmus", entry)?; } else { write_hint(); }
+        }
+        "claude-code" => {
+            println!("在终端跑一次（避免改坏 ~/.claude.json，交给官方 CLI）：");
+            println!("  claude mcp add litmus -- {} mcp {} ", exe.display(), vault.display());
+            println!("想全局可用时加 --scope user。");
+        }
+        "codex" => {
+            let file = PathBuf::from(std::env::var("HOME")?).join(".codex/config.toml");
+            let block = format!(
+                "\n[mcp_servers.litmus]\ncommand = \"{}\"\nargs = [\"mcp\", \"{}\"]\n",
+                exe.display(), vault.display()
+            );
+            println!("目标文件：{}", file.display());
+            println!("追加坡段：{block}");
+            if write {
+                let raw = std::fs::read_to_string(&file)?;
+                if raw.contains("[mcp_servers.litmus]") { println!("已有 [mcp_servers.litmus]，跳过（不重复加）。"); }
+                else {
+                    let bak = PathBuf::from(format!("{}.bak-litmus-mcp", file.display()));
+                    let _ = std::fs::copy(&file, &bak);
+                    std::fs::write(&file, raw + &block)?;
+                    println!("已写入 {}（原文件备份为 {}）", file.display(), bak.display());
+                }
+            } else { write_hint(); }
+        }
+        "opencode" => {
+            let file = PathBuf::from(std::env::var("HOME")?).join(".config/opencode/opencode.json");
+            println!("目标文件：{}", file.display());
+            let entry = serde_json::json!({ "type": "local", "command": [exe, "mcp", vault], "enabled": true });
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "mcp": { "servers": { "litmus": entry.clone() } } }))?);
+            if write { json_mcp_write(&file, "mcp", Some("servers"), "litmus", entry)?; } else { write_hint(); }
+        }
+        "dsh" => {
+            println!("DSH（DeepSeek Harness）的 MCP 挂载在它自己的设置里（设置 → MCP，配置存在 DSH 的分区配置中，由 App 保管）：");
+            println!("  server 名：litmus");
+            println!("  方式：stdio 命令  {}", exe.display());
+            println!("  参数：mcp {}", vault.display());
+            println!(" DSFH? 不改 App 内部状态，往外写请走 DSH 的设置界面或它的配置导入。");
+        }
+        "hermes" => {
+            println!("hermes 本机在 PATH 上（~/.local/bin/hermes）。看它的 MCP 配置方式：");
+            println!("  hermes mcp --help   # 有 mcp 子命令则按它的 mcp add 加：");
+            println!("  hermes mcp add litmus -- {} mcp {}", exe.display(), vault.display());
+            println!("若 hermes 只认通用 mcpServers JSON，用 --client generic 的输出贴进它的配置。");
+        }
+        "obsidian" => {
+            println!("Obsidian 侧作为调用方：装 MCP 插件（如 Local REST API / mcp-obsidian）后，");
+            println!("把 litmus 的 stdio 入口填进它：");
+            println!("  {} mcp {}", exe.display(), vault.display());
+            println!("反过来（Litmus 读 Obsidian 库）：litmus import-obsidian，或 /搬家；");
+            println!("走 MCP 的话用 litmus conn add --name obsidian 参照 conn presets 的样板。");
+        }
+        "generic" => {
+            let entry = serde_json::json!({ "command": exe, "args": args });
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "mcpServers": { "litmus": entry } }))?);
+            println!("（HTTP 版先起本地 HTTP：另开终端跑 litmus serve {} --addr 127.0.0.1:7700；HTTP MCP 端点在 roadmap 上）", vault.display());
+        }
+        other => anyhow::bail!("不认识的客户端：{other}。支持：cursor | claude | claude-code | codex | opencode | dsh | hermes | obsidian | generic"),
+    }
+    Ok(())
+}
+
+fn conn_presets(path: &PathBuf) -> Result<()> {
+    let vault = Vault::open(path)?;
+    let root = vault.root.display().to_string();
+    println!("把下面任一段贴进库根 litmus.toml（改动后 litmus conn list 探测）。全部先确认端点/密钥再启用。");
+    println!();
+    println!("# ── Notion（官方 MCP，两种接法二选一）────────────────────────");
+    println!("# 远程托管版（推荐，要 node 的不用）：");
+    println!("[[connections]]");
+    println!("name = \"notion\"");
+    println!("url = \"https://mcp.notion.com/mcp\"");
+    println!("headers = {{ Authorization = \"Bearer {{{{secret:notion_token}}}}\" }}");
+    println!();
+    println!("# 本机 npx 版：");
+    println!("[[connections]]");
+    println!("name = \"notion\"");
+    println!("command = \"npx\"");
+    println!("args = [\"-y\", \"@notionhq/notion-mcp-server\", \"--transport=stdio\"]");
+    println!("env = {{ NOTION_TOKEN = \"{{{{secret:notion_token}}}}\" }}");
+    println!();
+    println!("# ── Obsidian（库 ↔ 库；对方要装 Local REST 类社区插件）──────");
+    println!("[[connections]]");
+    println!("name = \"obsidian\"");
+    println!("command = \"uvx\"");
+    println!("args = [\"mcp-obsidian\"]");
+    println!("env = {{ OBSIDIAN_API_KEY = \"{{{{secret:obsidian_token}}}}\" }}");
+    println!();
+    println!("# ── Canva（官方 MCP，Beta；先在 Canva 开通）─────────────────");
+    println!("[[connections]]");
+    println!("name = \"canva\"");
+    println!("url = \"https://mcp.canva.com/mcp\"");
+    println!("headers = {{ Authorization = \"Bearer {{{{secret:canva_token}}}}\" }}");
+    println!();
+    println!("# ── Open Design（本机 App 自带 MCP；照 Cursor 里的同款配置）──");
+    println!("[[connections]]");
+    println!("name = \"open-design\"");
+    println!("command = \"/Applications/Open Design.app/Contents/Resources/open-design/bin/node\"");
+    println!("args = [\"/Applications/Open Design.app/Contents/Resources/app/prebundled/daemon/daemon-cli.mjs\", \"mcp\"]");
+    println!();
+    println!("# ── Lovart（占位：等你的 Lovart 开通 MCP / API 后把 url 换成它的端点）──");
+    println!("[[connections]]");
+    println!("name = \"lovart\"");
+    println!("url = \"https://LOVART_MCP_ENDPOINT/mcp\"");
+    println!("headers = {{ Authorization = \"Bearer {{{{secret:lovart_token}}}}\" }}");
+    println!();
+    println!("# 流程图：Mermaid / draw.io / Excalidraw 暂没有公认的标准 MCP server；");
+    println!("# 这类文件（.mermaid / .drawio / .excalidraw）直接拖进库，Litmus 已把它们");
+    println!("# 当附件收进 Assets/ 并可被引用；等社区 server 成熟后照上面的样板接。");
+    let _ = root;
+    Ok(())
+}
+
+fn conn_add(path: &PathBuf, name: &str, command: Option<&str>, args: Option<&str>, url: Option<&str>, header: Option<&str>, env: Option<&str>) -> Result<()> {
+    if name.is_empty() { anyhow::bail!("连接名不能为空"); }
+    let vault = Vault::open(path)?;
+    if vault.config.connections.iter().any(|c| c.name == name) { anyhow::bail!("已有同名连接：{name}。改名或先在 litmus.toml 里删掉再加"); }
+    let toml_path = vault.root.join("litmus.toml");
+    let mut text = std::fs::read_to_string(&toml_path).unwrap_or_default();
+    let mut block = format!("\n[[connections]]\nname = \"{name}\"\n");
+    if let Some(u) = url { block += &format!("url = \"{u}\"\n"); }
+    else if let Some(c) = command {
+        block += &format!("command = \"{c}\"\n");
+        if let Some(a) = args {
+            let items: Vec<String> = a.split_whitespace().map(|x| format!("\"{x}\"")).collect();
+            block += &format!("args = [{}]\n", items.join(", "));
+        }
+    } else { anyhow::bail!("url 和 command 至少给一个"); }
+    let kv = |v: &str| v.split(',').filter(|x| x.contains('=')).map(|x| {
+        let (k, val) = x.split_once('=').unwrap();
+        format!("\"{}\" = \"{}\"", k.trim(), val.trim())
+    }).collect::<Vec<_>>().join(", ");
+    if let Some(h) = header { block += &format!("headers = {{{}}}\n", kv(h)); }
+    if let Some(e) = env { block += &format!("env = {{{}}}\n", kv(e)); }
+    let bak = PathBuf::from(format!("{}.bak-litmus-conn", toml_path.display()));
+    if toml_path.exists() { let _ = std::fs::copy(&toml_path, &bak); }
+    text += &block;
+    std::fs::write(&toml_path, &text)?;
+    println!("已加 [[connections]] {name} 进 {}（备份 {}）", toml_path.display(), bak.display());
+    println!("下一步：litmus conn probe {} {name}  →  litmus conn pull {} {name}", path.display(), path.display());
+    Ok(())
+}

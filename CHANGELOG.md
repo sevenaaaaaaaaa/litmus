@@ -2,7 +2,28 @@
 
 鹿蕊 Litmus 的用户可见变化，新版本在上。正式版本只发 `X.Y.0`（紧急修复才发 `X.Y.Z`）；每日构建见 GitHub Releases 里的 **Nightly** 预发布，不在此逐条记录。
 
-## Unreleased
+## 0.30.0 — 2026-11-09 · 画布右键回归、国内模型与 MCP 双向互通
+
+这一版一次接上三件事：画布右键动作找回、国内主流模型一键配置，与设计 / 流程图 / 笔记工具及各 agent 的 MCP 双向互通。
+
+### MCP 生态互通：双向接进接出
+
+- **外部 agent 一键接入**（`litmus mcp-install <库> --client <x>`）：cursor、Claude Desktop、codex、opencode 四家真写（写前备份 `*.bak-litmus-mcp`，默认 `--write` 才落盘）；claude-code 给官方命令；DSH / Hermes / Obsidian / generic 打印对应配置与入口（stdio：`litmus mcp <库>`，14 个工具：搜、读写、记忆、附件、设计规范）。
+- **Litmus 反向接外部工具**（`litmus conn presets` / `litmus conn add`）：Notion（官方 MCP 托管 / npx 两式）、Obsidian（本机 uvx mcp-obsidian）、Canva（官方 MCP Beta）、Open Design（本机 App 自带 MCP）、Lovart（占位样板，等端点开通）打印 + 一键写进 litmus.toml 的 [[connections]]；远程 HTTP MCP 用 `url` + `headers`，命令型用 `command` + `args` + `env`。
+- 流程图文件（.mermaid / .drawio / .excalidraw）继续按附件进 Assets/，拖库即收；等社区 MCP server 成熟后照样板接。
+
+### 模型设置：更多国内模型一键填
+
+- /设置 的快捷填法扩到 9 家：新增 **Z.ai 智谱（GLM）**、**Kimi（月之暗面）**、**硅基流动**、**OpenRouter** 与 **OpenCode 本机网关**（`http://localhost:4096/v1`）。后两家的模型名留空，点完按服务商 / OpenCode 里配置的名字填。
+
+### 画布右键菜单回归
+
+- 画布上右击不再只有系统菜单。空白处右键是整场动作：新建、采集、导入/搬家、加工成…（ConFlow）、全库整理、视角、展示、意义/时间排布、看全、文件栏、设置模型；单个文档上右键是文档动作：打开、重命名或移动、复制一份、复制文件路径、加工、学习这一篇、删除。
+- 桌面端优先弹原生 NSMenu（复用 `desktop_context_menu`，选择经 `ctx-pick` 事件发回来）；浏览器端和网络菜单失败时用同一份网页菜单实现。
+
+### ConFlow 加工有了常驻入口
+
+- 右上角工具条新增「加工」按钮（漏斗图标）：有勾选的加工勾选的几篇，正在读的加工这一篇，否则开一个全新加工任务；和 `/加工` 走同一条路。
 
 ## 0.29.0 — 2026-11-03 · 文件工作流与 ConFlow 加工
 
