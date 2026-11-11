@@ -12,7 +12,10 @@
   /* 0.14 及以前的本地设置键叫 thirdc_*：改名成 litmus_*（只搬一次，新键已有就不覆盖） */
   try{for(var i=localStorage.length-1;i>=0;i--){var k=localStorage.key(i);if(k&&k.indexOf('thirdc_')===0){var n='litmus_'+k.slice(7);if(localStorage.getItem(n)===null)localStorage.setItem(n,localStorage.getItem(k));localStorage.removeItem(k);}}}catch(e){}
   try{var p=localStorage.getItem('litmus_theme')||'auto';if(p==='dark'||p==='light')document.documentElement.dataset.theme=p;}catch(e){}
-  if(window.__TAURI_INTERNALS__||window.__TAURI__)document.documentElement.classList.add('desktop');
+  var app=!!(window.__TAURI_INTERNALS__||window.__TAURI__);
+  var mobile=!!window.__LITMUS_MOBILE__||(app&&(/iPhone|iPad|iPod|Android/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)));
+  document.documentElement.classList.toggle('mobile',mobile);
+  document.documentElement.classList.toggle('desktop',app&&!mobile);
   /* 主题预设（/主题，旧界面选过的也认）：只换纸、墨、线、石蕊蓝这几种颜色，版式不变 */
   window.__presetCss=function(p){
     function tri(v,bg){var m=/oklch\(\s*([\d.]+)(%?)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+)(%?))?\s*\)/.exec(v||'');if(!m)return null;
@@ -524,6 +527,41 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
   #hints{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
   .chip{flex:none}
 }
+/* 手机上的顶栏分两行，触控与软键盘使用独立的空间。 */
+@media (pointer:coarse){
+  :root{--fs-q:1rem}
+  body{-webkit-text-size-adjust:100%;overscroll-behavior:none}
+  button,.btn,.chip,.g{min-width:44px;min-height:44px;box-sizing:border-box;touch-action:manipulation}
+  .ib,#watch-card .ib{min-width:44px;width:44px;height:44px;flex-shrink:0}
+  input:not([type=checkbox]):not([type=radio]),textarea,select{font-size:max(1rem,var(--fs-4))!important}
+  button:active{opacity:.65}
+  #sheet,#files{box-sizing:border-box;padding-bottom:env(safe-area-inset-bottom,0px)}
+  #sheet header{flex-wrap:wrap}
+  #sheet header .path{flex-basis:calc(100% - 60px)}
+  #doc,#flist{min-height:0;overscroll-behavior:contain;overflow-wrap:anywhere}
+  #sheet,#files,#help{bottom:var(--keyboard-inset,0px)}
+  #intent{bottom:calc(52px + env(safe-area-inset-bottom,0px) + var(--keyboard-inset,0px))}
+  #panel{box-sizing:border-box;bottom:var(--keyboard-inset,0px);padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+  #panel .pbox{max-height:100%}
+  #cmds{max-height:min(300px,calc(var(--visual-height,100dvh) - 180px));overflow:auto}
+  html.keyboard #intent{bottom:calc(12px + var(--keyboard-inset,0px))}
+  html.keyboard #hints,html.keyboard #coach,html.keyboard #tour,html.keyboard #sed{display:none}
+}
+@media (pointer:coarse) and (max-width:720px){
+  #brand{top:calc(10px + env(safe-area-inset-top,0px));height:44px;left:max(16px,env(safe-area-inset-left,0px))}
+  #lens{top:calc(58px + env(safe-area-inset-top,0px));left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));gap:4px;justify-content:flex-end}
+  #lens .seg{margin-right:auto}
+  #lens .seg button{min-width:44px;padding:6px 8px}
+  #sheet{height:min(86%,calc(var(--visual-height,100dvh) - env(safe-area-inset-top,0px)));padding-top:0}
+  #sheet header{padding:8px 12px;gap:4px;flex-wrap:wrap}
+  #sheet header .path{flex-basis:calc(100% - 60px)}
+  #doc{padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
+  .agent{top:calc(110px + env(safe-area-inset-top,0px));max-height:calc(var(--visual-height,100dvh) - 220px)}
+}
+@media (pointer:coarse) and (max-width:360px){
+  #lens{flex-wrap:wrap}
+  #lens .seg{margin-right:calc(100% - 100px)}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* H 上手与后台 */
 #jobs{display:flex;align-items:center;gap:7px;border:0;cursor:pointer;margin-left:4px;padding:4px 10px 4px 6px;border-radius:var(--r-pill);background:var(--veil);box-shadow:inset 0 0 0 1px var(--rule);color:var(--ink-2);--p:0}
@@ -702,7 +740,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 
   <div id="bar">
     <div id="verb" data-v="找" title="系统判断的意图">找</div>
-    <input id="q" autocomplete="off" spellcheck="false" placeholder="问一句、找一篇、记一笔，或输入 / 下指令" aria-label="问、找、记、令">
+    <input id="q" autocomplete="off" spellcheck="false" enterkeyhint="send" placeholder="问一句、找一篇、记一笔，或输入 / 下指令" aria-label="问、找、记、令">
     <button id="go"><span id="go-t">显色</span><kbd>↵</kbd></button>
   </div>
   <div id="reading" aria-live="polite"></div>
@@ -868,7 +906,25 @@ function showLogin(){
     } catch(x){ er.textContent = x.message || String(x); }
   };
 }
-const DESK = !!window.__TAURI_INTERNALS__;
+const APP = !!window.__TAURI_INTERNALS__;
+const MOBILE = document.documentElement.classList.contains('mobile');
+const DESK = APP && !MOBILE;
+/* WKWebView 的键盘缩小 visualViewport，固定的输入栏需要同步抬起；捏合时保持原布局。 */
+if (window.visualViewport && matchMedia('(pointer:coarse)').matches){
+  const viewport = window.visualViewport;
+  const syncViewport = () => {
+    if (Math.abs(viewport.scale - 1) > .05) return;
+    const inset = Math.max(0, innerHeight - viewport.height - viewport.offsetTop);
+    const keyboard = inset > 120;
+    const root = document.documentElement;
+    root.style.setProperty('--keyboard-inset', (keyboard ? inset : 0) + 'px');
+    root.style.setProperty('--visual-height', viewport.height + 'px');
+    root.classList.toggle('keyboard', keyboard);
+  };
+  viewport.addEventListener('resize', syncViewport);
+  viewport.addEventListener('scroll', syncViewport);
+  syncViewport();
+}
 
 async function api(path, opts){
   opts = opts || {};
@@ -881,7 +937,7 @@ async function api(path, opts){
     res = await fetch(BASE + path, {method, headers, body, cache:'no-store', signal:opts.signal});
   } catch(e){
     if (e && e.name === 'AbortError') throw e;
-    if (DESK){ /* 桌面兜底：HTTP 不通时走进程内 IPC 桥 */
+    if (APP){ /* App 兜底：HTTP 不通时走进程内 IPC 桥 */
       const r = await window.__TAURI_INTERNALS__.invoke('desktop_kernel_api', {method, uri:path, body:body != null ? String(body) : null, token});
       const t = String(r.text || ''); let d; try { d = t ? JSON.parse(t) : {}; } catch(_){ d = {raw:t}; }
       if (r.status >= 400) throw Object.assign(new Error(d.error || ('HTTP ' + r.status)), {status:r.status});
@@ -4604,6 +4660,7 @@ addEventListener('menu:check-update', () => openUpdate());
 addEventListener('tray-new-doc', () => newDoc(''));
 addEventListener('tray-open-doc', e => { const p = e.detail && e.detail.path; const n = p && byPath.get(p); if (n) openDoc(n); else if (p) refreshNow().then(() => { const m = byPath.get(p); if (m) openDoc(m); }); });
 async function openUpdate(){
+  if (MOBILE){ openPanel('更新', '<p>安装新版 IPA 即可更新。请使用同一应用标识和签名身份覆盖安装，以保留本机知识库。</p>'); return; }
   if (!DESK){ openPanel('更新', '<p>浏览器里用的是服务器上的 Litmus，服务器更新后刷新页面就是新版。桌面 App 支持一键自更新。</p>'); return; }
   const box = openPanel('更新', '<p id="up-st"><span class="thinking"><i></i><i></i><i></i> 正在检查</span></p><div class="acts" id="up-acts" hidden><button class="btn pri" id="up-go">下载并安装</button></div>');
   try {
@@ -4654,13 +4711,13 @@ addEventListener('tray-secrets', () => openSecrets());
 /* ═══════════ F4 知识库：切换、新建、连接远程库；退出登录 ═══════════ */
 function webSpaces(){ try { return JSON.parse(localStorage.getItem('litmus_workspaces') || '[]'); } catch(e){ return []; } }
 async function openVaults(){
-  if (DESK){
+  if (APP){
     const box = openPanel('知识库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
     let r; try { r = await window.__TAURI_INTERNALS__.invoke('desktop_vaults'); } catch(e){ box.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; return; }
     const cur = (r.current || {}).path || '';
     box.innerHTML = '<p class="hint" style="margin-top:0">每个库是磁盘上的一个文件夹。切换后窗口会重新载入；各库的知识场互不相干。</p>' +
       (r.vaults || []).map((v, i) => '<div class="row"><div class="grow"><span>' + esc(v.name) + (v.path === cur ? ' · 当前' : '') + '</span><small>' + esc(v.path) + '</small></div>' + (v.path === cur ? '' : '<button class="btn" data-sw="' + i + '">切过去</button>') + '</div>').join('') +
-      '<label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="名字，会建在「文稿」文件夹里"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
+      '<label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="' + (MOBILE ? '库名，保存在此设备上' : '名字，会建在「文稿」文件夹里') + '"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
     box.querySelectorAll('[data-sw]').forEach(b => b.onclick = async () => {
       const v = r.vaults[+b.dataset.sw]; if (editing) await flushSave();
       b.disabled = true; b.textContent = '正在切换…';
@@ -4693,7 +4750,7 @@ async function openVaults(){
 }
 async function logout(){
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还有没存上的改动</b>，等它存好再退出', true); return; } }
-  if (DESK){ toast('桌面 App 不需要登录：它直接打开本机的库'); return; }
+  if (APP){ toast('App 直接打开本机知识库，无需退出登录'); return; }
   try { localStorage.removeItem('litmus_token'); localStorage.removeItem('litmus_user'); } catch(e){}
   location.href = BASE + '/';
 }

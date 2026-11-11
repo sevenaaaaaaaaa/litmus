@@ -2,7 +2,7 @@ name: litmus-desktop
 options:
   bundleIdPrefix: com.nownexts.litmus
   deploymentTarget:
-    iOS: 15.0  # Xcode 27 最低支持 15.0
+    iOS: 15.4  # 知识场需要 WKWebView 的 OKLCH / 动态视口支持
 fileGroups: [../../src]
 configs:
   debug: debug
@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Litmus Studio
+      PRODUCT_NAME: Litmus
       PRODUCT_BUNDLE_IDENTIFIER: com.nownexts.litmus
 targetTemplates:
   app:
@@ -59,8 +59,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.2
-        CFBundleVersion: "0.1.2"
+        CFBundleShortVersionString: 0.29.0
+        CFBundleVersion: "0.29.0"
     entitlements:
       path: litmus-desktop_iOS/litmus-desktop_iOS.entitlements
     scheme:

@@ -557,7 +557,8 @@ fn globalize_cdecl_symbols(archive: &std::path::Path, package_name: &str) {
         cmd.arg(format!("--globalize-symbol={s}"));
     }
     cmd.arg(archive);
-    let _ = cmd.status();
+    let status = cmd.status().expect("failed to run llvm-objcopy for Swift C exports");
+    assert!(status.success(), "failed to restore Swift C exports in {}", archive.display());
 }
 
 /// llvm-objcopy shipped with rustup's llvm-tools component.
@@ -572,5 +573,14 @@ fn rustup_llvm_objcopy() -> Option<std::path::PathBuf> {
         .join("lib/rustlib")
         .join(&host)
         .join("bin/llvm-objcopy");
-    p.exists().then_some(p)
+    if p.exists() {
+        return Some(p);
+    }
+    // Standalone Rust installations may use an existing LLVM toolchain instead
+    // of rustup's optional llvm-tools component.
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join("llvm-objcopy"))
+            .find(|candidate| candidate.is_file())
+    })
 }

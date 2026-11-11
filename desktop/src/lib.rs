@@ -134,6 +134,7 @@ fn ego_render_result(state: tauri::State<RenderSlot>, html: String) -> Result<()
 
 /// 内置 ego-lite：隐藏 webview 打开页面（跑完 JS），抓取渲染后的完整 DOM。
 /// 页面 load 完成 + 1.8s 缓冲后自动回传；总超时 40s。
+#[cfg(desktop)]
 #[tauri::command]
 async fn desktop_render_page(
     app: AppHandle,
@@ -204,7 +205,11 @@ fn desktop_vaults(app: AppHandle) -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn desktop_create_vault(app: AppHandle, name: String) -> Result<String, String> {
     let name = sanitize_vault_name(&name)?;
-    let dir = default_vault()
+    #[cfg(desktop)]
+    let base = default_vault();
+    #[cfg(mobile)]
+    let base = app.path().app_data_dir().map_err(|e| e.to_string())?.join("vault");
+    let dir = base
         .parent()
         .unwrap_or(Path::new("."))
         .join(&name);
@@ -386,8 +391,10 @@ ol{{margin:0;padding-left:20px;color:var(--muted)}} li{{margin:6px 0}}
     std::fs::write(&path, html.clone()).ok()?;
     let _ = BOOT_ERROR_HTML.set(html);
     // 移动端：Android WebView 禁 file://，走注册好的自定义协议（http://<scheme>.localhost）
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
     return Some("http://litmuserror.localhost/".into());
+    #[cfg(target_os = "ios")]
+    return Some("litmuserror://localhost/".into());
     #[cfg(desktop)]
     tauri::Url::from_file_path(&path).ok().map(|u| u.to_string())
 }
@@ -487,6 +494,7 @@ fn desktop_set_title(app: AppHandle, title: String) {
 
 /// 原生材质跟随应用明暗：壳切 data-theme 时同步 NSWindow appearance，
 /// NSVisualEffectView（sidebar 磨砂）随之换色——是应用带着系统走，不是反过来（LinKTo 学习批）。
+#[cfg(desktop)]
 #[tauri::command]
 async fn desktop_set_native_theme(
     window: tauri::WebviewWindow,
@@ -1060,7 +1068,6 @@ async fn desktop_pick_folder(app: AppHandle, title: String) -> Result<Option<Str
 
 /// 内核 IPC 桥：webview 经 Tauri invoke 直达进程内 axum router（不经 TCP socket）。
 /// 前端 fetch 失败时自动回退到这里——daemon 挂掉/端口被占，桌面端照样能读写文件。
-#[cfg(desktop)]
 #[tauri::command]
 async fn desktop_kernel_api(
     method: String,
@@ -1139,6 +1146,7 @@ fn quick_capture(app: &AppHandle) {
 /// 「文件即真相」的原生出口：库里任何文件都要能跳回它的物理位置。
 /// 导出文件落「下载」文件夹（重名自动加序号），返回完整路径；前端随后可 reveal。
 /// WKWebView 对 blob 下载的支持因系统版本而异，桌面端统一走这里更可靠。
+#[cfg(desktop)]
 #[tauri::command]
 fn desktop_save_download(app: AppHandle, name: String, data_b64: String) -> Result<String, String> {
     use base64::Engine;
@@ -1162,6 +1170,7 @@ fn desktop_save_download(app: AppHandle, name: String, data_b64: String) -> Resu
 
 /// 打印 / 存为 PDF：开一个窗口载入打印版页面，加载完成后调起系统打印面板
 /// （macOS 面板左下角「PDF → 存储为 PDF」）。
+#[cfg(desktop)]
 #[tauri::command]
 fn desktop_print_url(app: AppHandle, url: String) -> Result<(), String> {
     let parsed: tauri::Url = url.parse().map_err(|e| format!("URL 解析失败：{e}"))?;
@@ -1368,10 +1377,10 @@ pub fn run() {
         desktop_vaults,
         desktop_create_vault,
         desktop_switch_vault,
-        desktop_render_page,
         ego_render_result,
         desktop_prefs_save,
         desktop_app_version,
+        desktop_kernel_api,
         native_haptic,
         native_notify,
         native_share
@@ -1384,10 +1393,16 @@ pub fn run() {
             let vault_path = vault_override.unwrap_or_else(|| {
                 #[cfg(mobile)]
                 {
-                    app.path()
-                        .app_data_dir()
-                        .map(|d| d.join("vault"))
-                        .expect("app 数据目录不可用")
+                    let reg = load_registry(app.handle());
+                    reg.current
+                        .map(|c| PathBuf::from(c.path))
+                        .filter(|p| p.is_dir())
+                        .unwrap_or_else(|| {
+                            app.path()
+                                .app_data_dir()
+                                .map(|d| d.join("vault"))
+                                .expect("app 数据目录不可用")
+                        })
                 }
                 #[cfg(desktop)]
                 {
@@ -1402,6 +1417,19 @@ pub fn run() {
             let url = match boot_kernel(vault_path.clone()) {
         Ok((port, token)) => {
             wait_ready(port);
+            #[cfg(mobile)]
+            {
+                let mut reg = load_registry(app.handle());
+                let name = reg.vaults.iter().find(|v| v.path == vault_path.display().to_string())
+                    .map(|v| v.name.clone()).unwrap_or_else(|| "Litmus".into());
+                let entry = VaultEntry { name, path: vault_path.display().to_string(), origin: format!("http://127.0.0.1:{port}") };
+                reg.vaults.retain(|v| v.path != entry.path);
+                reg.vaults.insert(0, entry.clone());
+                reg.current = Some(entry);
+                if let Err(e) = save_registry(app.handle(), &reg) {
+                    eprintln!("[vault] 保存知识库列表失败：{e}");
+                }
+            }
             /* 全局快捷键：Alt+Space 剪贴板 → 3 秒落库（内核就绪后注册，失败不阻塞启动） */
             #[cfg(desktop)]
             {
@@ -1441,10 +1469,14 @@ pub fn run() {
                         .background_color(tauri::window::Color(0, 0, 0, 0));
                 }
 
+            #[cfg(mobile)]
+            {
+                builder = builder.initialization_script("window.__LITMUS_MOBILE__ = true;");
+            }
+
             /* 偏好初始化脚本：每次页面加载（含换库导航）把 prefs.json 灌进 localStorage，
                主题/昵称/树状态等跨库保留。token 除外——每个 origin 的内核 token 不同，
                页面首帧会从 URL 写入正确值。 */
-            #[cfg(desktop)]
             {
                 let prefs_txt = prefs_path(app.handle())
                     .ok()
@@ -1542,6 +1574,9 @@ pub fn run() {
         // 菜单栏应用语义：主窗口点关闭 → 隐藏到菜单栏（tray「退出」才真正退出）；
         // 主窗口被真正销毁时退出进程。macOS Dock 点击（Reopen）恢复主窗口。
         .on_window_event(|window, event| {
+            #[cfg(mobile)]
+            let _ = (window, event);
+            #[cfg(desktop)]
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
                     api.prevent_close();
