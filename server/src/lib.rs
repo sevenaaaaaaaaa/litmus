@@ -40,6 +40,7 @@ mod share;
 mod disk;
 mod watch;
 mod terminal;
+mod remote;
 
 pub struct AppState {
     pub kernel: Arc<Mutex<Kernel>>,
@@ -90,6 +91,7 @@ pub struct PullJob {
     pulled: usize,
     skipped: usize,
     failed: usize,
+    conflicts: usize,
     bytes: u64,
     error: String,
     started: u64,
@@ -108,12 +110,25 @@ fn pull_json(j: &PullJob) -> Value {
         "pulled": j.pulled,
         "skipped": j.skipped,
         "failed": j.failed,
+        "conflicts": j.conflicts,
         "bytes": j.bytes,
         "error": j.error,
         "started": j.started,
         "finished": j.finished,
         "pct": if j.total == 0 { 100 } else { (j.done * 100 / j.total).min(100) },
     })
+}
+
+/// Release the connecting reservation on every early return (including cancellation).
+struct PullReservation(Arc<Mutex<PullJob>>, bool);
+impl Drop for PullReservation {
+    fn drop(&mut self) {
+        if self.1 {
+            let mut job = self.0.lock().unwrap();
+            job.active = false;
+            job.phase = "idle".into();
+        }
+    }
 }
 
 fn err(code: StatusCode, msg: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
@@ -327,6 +342,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/watch/import", post(watch::import))
         .route("/desktop/scan", get(desktop_scan))
         .route("/desktop/quarantine", post(desktop_quarantine))
+        .route("/desktop/account", get(remote::status).delete(remote::disconnect))
         .route("/desktop/pull", post(desktop_pull))
         .route("/desktop/pull/status", get(desktop_pull_status))
         .route("/organize/plan", post(organize_plan))
@@ -8227,7 +8243,10 @@ async fn read_docs_list(resp: reqwest::Response) -> Result<Vec<String>, String> 
     // ① 标准 JSON
     if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
         let docs = docs_from_value(&v);
-        if !docs.is_empty() { return Ok(docs); }
+        if !docs.is_empty() || v.as_array().is_some_and(|a| a.is_empty())
+            || ["docs", "paths", "documents"].iter().any(|k| v.get(k).and_then(Value::as_array).is_some_and(|a| a.is_empty())) {
+            return Ok(docs);
+        }
     }
     // ② NDJSON / 纯路径行（兼容旧版或代理改造过的响应）
     let mut out = Vec::new();
@@ -8263,23 +8282,35 @@ async fn read_docs_list(resp: reqwest::Response) -> Result<Vec<String>, String> 
 async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
+    if let Err(e) = offline_guard(&st, "同步远端知识库") { return e.into_response(); }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let saved = remote::account(&root);
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let server = req.get("server").and_then(|v| v.as_str()).unwrap_or("").trim_end_matches('/').to_string();
+    let server = req.get("server").and_then(|v| v.as_str()).or_else(|| saved.get("server").and_then(|v| v.as_str())).unwrap_or("").trim().trim_end_matches('/').trim_end_matches("/field").to_string();
     let mut rtoken = req.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let mut user = req.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    if !server.starts_with("http") {
+    if rtoken.is_empty() && req.get("pass").and_then(|v| v.as_str()).unwrap_or("").is_empty()
+        && saved.get("server").and_then(|v| v.as_str()) == Some(server.as_str()) {
+        rtoken = remote::token(&root).unwrap_or_default();
+        user = saved.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    }
+    let valid_server = reqwest::Url::parse(&server).is_ok_and(|u|
+        matches!(u.scheme(), "http" | "https") && u.host_str().is_some()
+        && u.username().is_empty() && u.password().is_none() && u.query().is_none() && u.fragment().is_none());
+    if !valid_server {
         return err(StatusCode::BAD_REQUEST, "服务器地址需以 http(s):// 开头").into_response();
     }
     // 已有任务在跑：回报当前进度，避免并发重复写文件
     {
-        let j = st.pull.lock().unwrap();
+        let mut j = st.pull.lock().unwrap();
         if j.active {
             let snap = pull_json(&j);
             let total = j.total;
             return Json(json!({"ok": true, "already": true, "server": j.server, "user": j.user, "total": total, "job": snap})).into_response();
         }
+        *j = PullJob { active: true, phase: "connecting".into(), server: server.clone(), user: user.clone(), ..Default::default() };
     }
-    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let mut reservation = PullReservation(st.pull.clone(), true);
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         // 带 UA/Accept：部分 WAF（宝塔等）会拦截无 UA 的请求并返回 HTML 挑战页
@@ -8308,7 +8339,7 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
             Some(t) if !t.is_empty() => rtoken = t.to_string(),
             _ => {
                 let msg = j.get("error").and_then(|e| e.as_str()).unwrap_or("账号或密码错误");
-                return err(StatusCode::UNAUTHORIZED, format!("登录失败：{msg}")).into_response();
+                return err(StatusCode::BAD_REQUEST, format!("登录失败：{msg}")).into_response();
             }
         }
     }
@@ -8319,6 +8350,7 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         .header(reqwest::header::ACCEPT, "application/json")
         .header("x-litmus-token", &rtoken).send().await
     {
+        Ok(r) if r.status() == StatusCode::UNAUTHORIZED => return err(StatusCode::BAD_REQUEST, "远端登录已失效，请退出登录后重新登录").into_response(),
         Ok(r) => match r.error_for_status() { Ok(r) => r, Err(e) => return err(StatusCode::BAD_GATEWAY, format!("远端拒绝：{e}")).into_response() },
         Err(e) => return err(StatusCode::BAD_GATEWAY, format!("连接失败：{e}")).into_response(),
     };
@@ -8326,26 +8358,20 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         Ok(v) => v,
         Err(e) => return err(StatusCode::BAD_GATEWAY, e).into_response(),
     };
-    // 只有 Notes/ 下的文档会被拉取，进度分母与之一致
-    let total = docs.iter().filter(|p| p.starts_with("Notes/")).count();
-    // ② 结构落地：先把目录骨架建好，前端拿到就能渲染整棵树
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for p in &docs {
-        if let Some(parent) = std::path::Path::new(p).parent() {
-            let key = parent.to_string_lossy().into_owned();
-            if !parent.as_os_str().is_empty() && seen.insert(key) {
-                let _ = std::fs::create_dir_all(root.join(parent));
-            }
+    // Validate all remote paths before any filesystem operation.
+    let mut docs: Vec<String> = docs.into_iter().filter(|p| remote::valid_path(p)).collect();
+    docs.sort(); docs.dedup();
+    let total = docs.len();
+    // Directories are created only when a validated document is written.
+    let dirs = docs.iter().filter_map(|p| std::path::Path::new(p).parent())
+        .collect::<std::collections::HashSet<_>>().len();
+    if user.is_empty() { user = "token".into(); }
+    {
+        let _k = st.kernel.lock().unwrap();
+        if let Err(e) = remote::remember(&root, &server, &user, &rtoken) {
+            return err(StatusCode::INTERNAL_SERVER_ERROR, format!("保存登录失败：{e}")).into_response();
         }
     }
-    let dirs = seen.len();
-    // 记住账号/服务器，重开可续、设置面板可显示
-    let _ = std::fs::create_dir_all(root.join(".litmus/local"));
-    if user.is_empty() { user = "token".into(); }
-    let _ = std::fs::write(
-        root.join(".litmus/local/remote.json"),
-        serde_json::to_vec_pretty(&json!({"server": server, "user": user})).unwrap_or_default(),
-    );
     // ③ 初始化任务并后台流式拉正文
     {
         let mut j = st.pull.lock().unwrap();
@@ -8364,6 +8390,7 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let server2 = server.clone();
     let rtoken2 = rtoken.clone();
     let root2 = root.clone();
+    reservation.1 = false;
     tokio::spawn(async move { run_pull(st2, root2, client, server2, rtoken2, docs).await; });
 
     let snap = pull_json(&st.pull.lock().unwrap());
@@ -8392,7 +8419,7 @@ async fn run_pull(
     docs: Vec<String>,
 ) {
     // 只处理 Notes/ 下的文档；浅层（根目录）优先，让编辑区先有内容
-    let mut ordered: Vec<String> = docs.into_iter().filter(|p| p.starts_with("Notes/")).collect();
+    let mut ordered: Vec<String> = docs.into_iter().filter(|p| remote::valid_path(p)).collect();
     ordered.sort_by(|a, b| {
         a.matches('/').count().cmp(&b.matches('/').count()).then_with(|| a.cmp(b))
     });
@@ -8402,7 +8429,8 @@ async fn run_pull(
         let server = server.clone();
         let rtoken = rtoken.clone();
         let root = root.clone();
-        async move { pull_one(&client, &server, &rtoken, &root, &path).await }
+        let st = st.clone();
+        async move { pull_one(&st, &client, &server, &rtoken, &root, &path).await }
     }))
     .buffer_unordered(8);
 
@@ -8414,6 +8442,7 @@ async fn run_pull(
             match code {
                 1 => { j.pulled += 1; j.bytes += bytes; }
                 2 => j.failed += 1,
+                3 => { j.pulled += 1; j.conflicts += 1; j.bytes += bytes; }
                 _ => j.skipped += 1,
             }
         }
@@ -8439,6 +8468,7 @@ async fn run_pull(
 
 /// 单篇拉取：0=跳过(相同/非 Notes)，1=已写入，2=失败。失败重试一次。
 async fn pull_one(
+    st: &Arc<AppState>,
     client: &reqwest::Client,
     server: &str,
     rtoken: &str,
@@ -8452,14 +8482,11 @@ async fn pull_one(
         if let Ok(resp) = resp {
             if let Ok(j) = read_json(resp, path).await {
                 if let Some(src) = j.get("source").and_then(|s| s.as_str()) {
-                    let dest = root.join(path);
-                    if let Ok(existing) = std::fs::read_to_string(&dest) {
-                        if existing == src { return (0, 0); }
-                    }
-                    if let Some(parent) = dest.parent() { let _ = std::fs::create_dir_all(parent); }
-                    if std::fs::write(&dest, src).is_ok() {
-                        return (1, src.len() as u64);
-                    }
+                    let _k = st.kernel.lock().unwrap();
+                    return match remote::store(root, server, path, src) {
+                        Ok(code) => (code, if code == 0 { 0 } else { src.len() as u64 }),
+                        Err(_) => (2, 0),
+                    };
                 }
             }
         }

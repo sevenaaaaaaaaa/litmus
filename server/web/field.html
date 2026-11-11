@@ -125,6 +125,8 @@ button{font:inherit;color:inherit}
 html.desktop #drag{display:block;-webkit-app-region:drag}
 #brand{top:calc(14px + env(safe-area-inset-top,0px));left:max(var(--tl),env(safe-area-inset-left,0px));-webkit-app-region:no-drag}
 #brand svg{width:22px;height:22px;color:var(--ink)}
+#brand .account-entry{border:0;background:var(--sheet);color:var(--ink);border-radius:var(--r-pill);padding:8px 12px;min-height:44px;font:500 var(--fs-2)/1 var(--f-ui);cursor:pointer;box-shadow:inset 0 0 0 1px var(--rule)}
+#brand .account-entry[hidden]{display:none}
 #brand b{font:700 var(--fs-5)/1 var(--f-display);letter-spacing:.16em}
 #brand span{font:400 var(--fs-1)/1 var(--f-mono);color:var(--ink-2);letter-spacing:.04em;white-space:nowrap}
 #lens{top:calc(10px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));-webkit-app-region:no-drag}
@@ -385,7 +387,8 @@ body.files-open #files{transform:none}
 #p-body .row small{font:400 var(--fs-1) var(--f-mono);color:var(--ink-2)}
 #p-body .empty{color:var(--ink-2);padding:18px 0}
 #p-body label{display:block;font:500 var(--fs-1) var(--f-mono);color:var(--ink-2);margin:12px 0 6px;letter-spacing:.04em}
-#p-body input[type=text],#p-body input[type=password]{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);padding:9px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule);outline:none}
+#p-body input[type=text],#p-body input[type=url],#p-body input[type=password]{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-md);padding:9px 12px;background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.4 var(--f-ui);box-shadow:inset 0 0 0 1px var(--rule);outline:none}
+#ac-form input{min-height:44px}
 #p-body input:focus{box-shadow:inset 0 0 0 1.5px oklch(var(--litmus-c) / .6)}
 #p-body .acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;align-items:center}
 #p-body .hint{color:var(--ink-2);font-size:var(--fs-2);margin:8px 0 0}
@@ -692,6 +695,7 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 <div class="chrome" id="brand">
   <svg viewBox="182 182 664 664" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="62" stroke-linecap="round" stroke-linejoin="round"><path d="M500 812V532M500 572C500 472 418 442 378 372M500 532C500 442 588 412 628 332M378 372L318 272M378 372L418 262M628 332L588 232M628 332L708 262"/></g><g fill="currentColor"><circle id="m1" cx="318" cy="272" r="48"/><circle id="m2" cx="418" cy="262" r="48"/><circle id="m3" cx="588" cy="232" r="48"/><circle id="m4" cx="708" cy="262" r="48"/></g></svg>
   <b>Litmus</b><span id="vault"></span>
+  <button class="account-entry" id="b-account" hidden title="登录与同步" aria-label="登录与同步">登录</button>
   <button id="jobs" hidden aria-haspopup="true"><i class="jr" aria-hidden="true"></i><span id="jobs-t"></span></button>
 </div>
 
@@ -2193,7 +2197,9 @@ const CMDS = [
   ['/文件夹', '所有文件夹：新建、改名或移动、复制，把一个文件夹的文档在场上亮起', () => openFolders()],
   ['/评论', '正在读的这篇的评论（划选正文就能评论）', () => openComments()],
   ['/回收站', '找回删掉的文档和筛掉的库外条目（右上角也有入口）', openTrash],
-  ['/同步', '把外部编辑器里的改动合进来', syncNow],
+  ['/同步', APP && MOBILE ? '登录远端知识库，获取最新内容' : '把外部编辑器里的改动合进来', syncNow],
+  ['/登录', '登录远端知识库并下载最新内容', openAccount],
+  ['/账户', '登录与同步、查看下载进度', openAccount],
   ['/采集', '按主题从网上采一批资料（/采集 向量数据库）', () => collectTopic('')],
   ['/加工', '用 ConFlow 把网址、文档或选中的多篇内容加工成文章、幻灯片、短视频脚本、分镜或 HTML 动画', () => openProcessing(processingEntry('', reading && reading.p, picks.map(n => n.p)))],
   ['/导入', '导入文件，或从 Obsidian、Notion、飞书搬家（也可以直接把文件、zip 拖进窗口）', () => openImport()],
@@ -2836,6 +2842,7 @@ async function openTrash(){
 
 /* 同步外部改动 */
 async function syncNow(){
+  if (APP && MOBILE){ await openAccount(); return; }
   toast('正在合入外部改动…');
   try { let total = 0, r; do { r = await api('/sync', {method:'POST'}); total += r.changed || 0; } while (r.more); await refreshNow(); toast(total ? '合入了 <b>' + total + '</b> 篇改动' : '库和磁盘上的文件一致，没有新改动'); }
   catch(e){ toast('<b>同步失败</b>：' + esc(e.message || e), true); }
@@ -4704,6 +4711,73 @@ async function openSecrets(){
 }
 addEventListener('tray-secrets', () => openSecrets());
 
+/* App 远端账户：本机 HTTP 代为登录，避免 WKWebView 跨域；密码不落盘。 */
+let remoteAccount = null, remotePullTimer = 0;
+function remotePullText(job){
+  if (job.active && job.phase === 'connecting') return '正在登录并读取远端目录…';
+  if (job.active) return '正在下载 ' + (job.done || 0) + ' / ' + (job.total || 0) + ' 篇';
+  if (job.error) return '同步未完成：' + job.error;
+  if (job.finished) return '已获取最新内容 · 下载 ' + (job.pulled || 0) + ' 篇 · 未变 ' + (job.skipped || 0) + ' 篇' + (job.conflicts ? ' · ' + job.conflicts + ' 篇冲突已另存远端副本' : '');
+  return '登录后会下载远端笔记，保存在此设备上，离线也能阅读。';
+}
+function renderRemotePull(job){
+  if ((!remoteAccount || !remoteAccount.connected) && !job.active) job = {};
+  const line = $('ac-status'); if (line) line.textContent = remotePullText(job);
+  const go = $('ac-go'); if (go) go.disabled = !!job.active;
+  const out = $('ac-out'); if (out) out.disabled = !!job.active;
+  const entry = $('b-account');
+  entry.textContent = job.active ? '同步中' : remoteAccount && remoteAccount.connected ? '账户' : '登录';
+  entry.setAttribute('aria-label', job.active ? remotePullText(job) : '登录与同步');
+}
+async function pollRemotePull(){
+  clearTimeout(remotePullTimer);
+  try {
+    const job = await api('/desktop/pull/status'); renderRemotePull(job);
+    if (job.active){ remotePullTimer = setTimeout(pollRemotePull, 1000); return; }
+    await refreshNow();
+  } catch(e){
+    const line = $('ac-status'); if (line) line.textContent = '暂时无法读取同步进度：' + (e.message || e);
+    remotePullTimer = setTimeout(pollRemotePull, 4000);
+  }
+}
+async function openAccount(){
+  if (!APP){ await openVaults(); return; }
+  const box = openPanel('登录与同步', '<p class="hint">正在读取账户…</p>');
+  try {
+    const [account, job] = await Promise.all([api('/desktop/account'), api('/desktop/pull/status')]);
+    if ($('p-title').textContent !== '登录与同步' || $('panel').hidden) return;
+    remoteAccount = account;
+    box.innerHTML = '<p class="hint" style="margin-top:0">连接你的 Litmus 服务器，获取最新笔记。本机改过的同名笔记会保留；冲突时另存远端副本。</p>' +
+      '<form id="ac-form" autocomplete="on"><label for="ac-server">服务器地址</label><input id="ac-server" name="server" type="url" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/litmus" required value="' + esc(account.server || 'https://nownexts.com/litmus') + '"' + (account.connected ? ' disabled' : '') + '>' +
+      '<label for="ac-user">用户名</label><input id="ac-user" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value="' + esc(account.user || '') + '"' + (account.connected ? ' disabled' : '') + '>' +
+      (account.connected ? '' : '<label for="ac-pass">密码</label><input id="ac-pass" name="password" type="password" autocomplete="current-password" required>') +
+      '<div class="acts"><button type="submit" class="btn pri" id="ac-go">' + (account.connected ? '获取最新内容' : '登录并同步') + '</button>' + (account.connected ? '<button type="button" class="btn" id="ac-out">退出登录</button>' : '') + '</div><p class="bad" id="ac-error" role="alert"></p></form>' +
+      '<p class="hint" id="ac-status" role="status" aria-live="polite"></p><p class="hint">这里只下载远端内容；本机编辑不会上传到服务器。退出登录会保留已下载的笔记。</p>';
+    renderRemotePull(job);
+    if (job.active) pollRemotePull();
+    $('ac-form').onsubmit = async e => {
+      e.preventDefault(); const go = $('ac-go'), error = $('ac-error');
+      if (go.disabled) return;
+      go.disabled = true; error.textContent = '';
+      try {
+        if (editing){ await flushSave(); if (save.state === 'failed') throw new Error('还有没保存的改动，请存好后再同步'); }
+        const json = account.connected ? {} : {server:$('ac-server').value.trim(), user:$('ac-user').value.trim(), pass:$('ac-pass').value};
+        const result = await api('/desktop/pull', {method:'POST', json});
+        if ($('ac-pass')) $('ac-pass').value = '';
+        remoteAccount = {connected:true, server:result.server, user:result.user};
+        await openAccount(); pollRemotePull();
+      } catch(x){
+        if (error.isConnected){ error.textContent = x.message || String(x); go.disabled = false; }
+      }
+    };
+    if ($('ac-out')) $('ac-out').onclick = async () => {
+      const out = $('ac-out'); out.disabled = true;
+      try { await api('/desktop/account', {method:'DELETE'}); remoteAccount = null; await openAccount(); }
+      catch(e){ if ($('ac-error')) $('ac-error').textContent = e.message || String(e); out.disabled = false; }
+    };
+  } catch(e){ if ($('p-title').textContent === '登录与同步') box.innerHTML = '<p class="bad" role="alert">' + esc(e.message || e) + '</p>'; }
+}
+
 /* ═══════════ F4 知识库：切换、新建、连接远程库；退出登录 ═══════════ */
 function webSpaces(){ try { return JSON.parse(localStorage.getItem('litmus_workspaces') || '[]'); } catch(e){ return []; } }
 async function openVaults(){
@@ -4713,12 +4787,13 @@ async function openVaults(){
     const cur = (r.current || {}).path || '';
     box.innerHTML = '<p class="hint" style="margin-top:0">每个库是磁盘上的一个文件夹。切换后窗口会重新载入；各库的知识场互不相干。</p>' +
       (r.vaults || []).map((v, i) => '<div class="row"><div class="grow"><span>' + esc(v.name) + (v.path === cur ? ' · 当前' : '') + '</span><small>' + esc(v.path) + '</small></div>' + (v.path === cur ? '' : '<button class="btn" data-sw="' + i + '">切过去</button>') + '</div>').join('') +
-      '<label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="' + (MOBILE ? '库名，保存在此设备上' : '名字，会建在「文稿」文件夹里') + '"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
+      '<div class="acts"><button class="btn pri" id="vl-account">登录与同步</button></div><label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="' + (MOBILE ? '库名，保存在此设备上' : '名字，会建在「文稿」文件夹里') + '"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
     box.querySelectorAll('[data-sw]').forEach(b => b.onclick = async () => {
       const v = r.vaults[+b.dataset.sw]; if (editing) await flushSave();
       b.disabled = true; b.textContent = '正在切换…';
       try { await window.__TAURI_INTERNALS__.invoke('desktop_switch_vault', {path:v.path}); } catch(e){ toast('<b>切换失败</b>：' + esc(e.message || e), true); b.disabled = false; b.textContent = '切过去'; }
     });
+    $('vl-account').onclick = openAccount;
     $('vl-go').onclick = async () => {
       const name = $('vl-new').value.trim(), m = $('vl-msg'); if (!name) return;
       if (editing) await flushSave();
@@ -4746,7 +4821,7 @@ async function openVaults(){
 }
 async function logout(){
   if (editing){ await flushSave(); if (save.state === 'failed'){ toast('<b>还有没存上的改动</b>，等它存好再退出', true); return; } }
-  if (APP){ toast('App 直接打开本机知识库，无需退出登录'); return; }
+  if (APP){ await openAccount(); return; }
   try { localStorage.removeItem('litmus_token'); localStorage.removeItem('litmus_user'); } catch(e){}
   location.href = BASE + '/';
 }
@@ -5619,6 +5694,11 @@ function toggleTheme(){
   if (DESK) window.__TAURI_INTERNALS__.invoke('desktop_set_native_theme', {theme:r.dataset.theme}).catch(() => {});
 }
 $('b-theme').onclick = toggleTheme;
+$('b-account').hidden = !APP; $('b-account').onclick = openAccount;
+if (APP) api('/desktop/account').then(account => {
+  remoteAccount = account;
+  return api('/desktop/pull/status');
+}).then(job => { renderRemotePull(job); if (job.active) pollRemotePull(); }).catch(() => {});
 function openHelp(){ $('help').classList.add('on'); $('help').scrollTop = 0; }
 $('b-help').onclick = openHelp; $('b-trash').onclick = () => openTrash(); $('help-x').onclick = () => $('help').classList.remove('on');
 /* ConFlow 加工：场上常驻入口（0.30 强化旧行动）：有选中的加工多选，在读的加工这篇，否则开全新任务 */
