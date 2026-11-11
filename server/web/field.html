@@ -550,17 +550,13 @@ iframe.styled{width:100%;min-height:60vh;border:0;display:block;background:var(-
 @media (pointer:coarse) and (max-width:720px){
   #brand{top:calc(10px + env(safe-area-inset-top,0px));height:44px;left:max(16px,env(safe-area-inset-left,0px))}
   #lens{top:calc(58px + env(safe-area-inset-top,0px));left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));gap:4px;justify-content:flex-end}
-  #lens .seg{margin-right:auto}
+  #lens .seg{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:max(12px,env(safe-area-inset-right,0px))}
   #lens .seg button{min-width:44px;padding:6px 8px}
   #sheet{height:min(86%,calc(var(--visual-height,100dvh) - env(safe-area-inset-top,0px)));padding-top:0}
   #sheet header{padding:8px 12px;gap:4px;flex-wrap:wrap}
   #sheet header .path{flex-basis:calc(100% - 60px)}
   #doc{padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
   .agent{top:calc(110px + env(safe-area-inset-top,0px));max-height:calc(var(--visual-height,100dvh) - 220px)}
-}
-@media (pointer:coarse) and (max-width:360px){
-  #lens{flex-wrap:wrap}
-  #lens .seg{margin-right:calc(100% - 100px)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* H 上手与后台 */

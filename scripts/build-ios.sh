@@ -35,5 +35,5 @@ IPA="$OUT/Litmus-${VER}-ios-arm64-unsigned.ipa"
 (cd "$STAGE" && /usr/bin/zip -qry "$STAGE/Litmus.ipa" Payload)
 /usr/bin/unzip -tq "$STAGE/Litmus.ipa"
 mv -f "$STAGE/Litmus.ipa" "$IPA"
-shasum -a 256 "$IPA" > "$IPA.sha256"
+(cd "$OUT" && shasum -a 256 "$(basename "$IPA")") > "$IPA.sha256"
 echo "IPA: $IPA"
