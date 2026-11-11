@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""生成桌面端图标（desktop/icons/*）。
+"""生成桌面和 iOS 图标，共用同一套品牌几何与颜色。
 
 契约：颜色用 oklch 声明（与 tokens.css 同源），脚本里换算到 sRGB——
 仓库里不出现 hex 字面量。图形语义：石蕊显色渐变（酸红 → 中性紫 → 碱蓝）上的一枝鹿蕊——
 分叉如鹿角，也是知识的分叉。几何与 docs/brand/litmus-icon.svg 同源。
 
 用法：python3 scripts/gen_icons.py
+      python3 scripts/gen_icons.py --ios-only（仅更新 iOS 图标）
 产物：icon.png(1024) / 32x32.png / 64x64.png / 128x128.png / 128x128@2x.png
       / icon-512.png / icon.icns / icon.ico，以及 server/web/icon48.png（favicon）
 """
 from __future__ import annotations
 
 import math
+import json
 import struct
 from pathlib import Path
 
@@ -125,12 +127,24 @@ def draw_mark(img: Image.Image) -> None:
         d.ellipse([cx * s - r, cy * s - r, cx * s + r, cy * s + r], fill=INK)
 
 
-def master(size: int) -> Image.Image:
+def master(size: int, rounded: bool = True) -> Image.Image:
     big = size * SS
     base = gradient(big).convert("RGBA")
     draw_mark(base)
-    base.putalpha(squircle_mask(big))
+    if rounded:
+        base.putalpha(squircle_mask(big))
     return base.resize((size, size), Image.LANCZOS)
+
+
+def write_ios_icons() -> None:
+    """iOS 与桌面共用鹿蕊字形和渐变；方形无透明通道，由系统裁切圆角。"""
+    catalog = OUT.parent / "gen/apple/Assets.xcassets/AppIcon.appiconset"
+    manifest = json.loads((catalog / "Contents.json").read_text())
+    source = master(1024, rounded=False).convert("RGB")
+    for item in manifest["images"]:
+        size = round(float(item["size"].split("x")[0]) * float(item["scale"].removesuffix("x")))
+        source.resize((size, size), Image.LANCZOS).save(catalog / item["filename"])
+    print("iOS icons ->", catalog)
 
 
 def mac_padded(m1024: Image.Image) -> Image.Image:
@@ -198,7 +212,15 @@ def main() -> None:
     m1024.save(OUT / "icon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     m1024.resize((48, 48), Image.LANCZOS).save(OUT.parent.parent / "server" / "web" / "icon48.png")
     print("icons ->", OUT)
+    write_ios_icons()
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ios-only", action="store_true", help="只更新 iOS 图标，保留桌面与 Android 资源")
+    args = parser.parse_args()
+    if args.ios_only:
+        write_ios_icons()
+    else:
+        main()
