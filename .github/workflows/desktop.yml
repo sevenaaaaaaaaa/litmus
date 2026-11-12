@@ -38,10 +38,15 @@ jobs:
       fail-fast: false
       matrix:
         # 手动补发可只跑一个平台（inputs.only），避免与 Release 上已有的同名资产撞车
-        # windows-latest → .msi + setup.exe；ubuntu-22.04 → .deb + .AppImage + .rpm；
-        # macos-14 → .app + updater .app.tar.gz（DMG 由下方步骤用 packaging/macos/make-dmg.sh 打，内置打开助手）
+        # windows-latest → .msi + setup.exe；ubuntu-22.04 → .deb + .AppImage + .rpm
+        # （Nightly 版本号带连字符，RPM 打包器不接受，故预发布只出 deb/AppImage）。
+        # macOS 不再进默认矩阵：GitHub 对本账号的 macOS runner 一律秒取消
+        # （configuration 'macos-14-arm64-us-default' is not supported，2026-11-09 起），
+        # macOS 的 .app / DMG / updater 归档与 latest.json 的 darwin 条目改由本地
+        # scripts/release.sh（--updater-only）和 scripts/daily-release.sh 产出。
+        # 需要时仍可手动指定：workflow_dispatch 的 only=macos-14。
         # 不用 include 挂 macOS 参数：include 匹配不到组合时会新增任务，单平台补发会被它带回 macOS
-        os: ${{ fromJSON(inputs.only && format('["{0}"]', inputs.only) || '["windows-latest","ubuntu-22.04","macos-14"]') }}
+        os: ${{ fromJSON(inputs.only && format('["{0}"]', inputs.only) || '["windows-latest","ubuntu-22.04"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -87,10 +92,18 @@ jobs:
           b.setdefault("windows", {}).setdefault("wix", {})["version"] = wix
           json.dump(c, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
           PYEOF
+          # BUNDLES：macOS 只打 .app（DMG 由本地/下方步骤）；Nightly 跳过 RPM（版本号含 '-' 会被 rpm 拒绝）
+          BUNDLES=""
+          if [[ "${{ matrix.os }}" == "macos-14" ]]; then
+            BUNDLES="--bundles app"
+          elif [[ "${{ matrix.os }}" == "ubuntu-22.04" && "$PRERELEASE" == "true" ]]; then
+            BUNDLES="--bundles deb,appimage"
+          fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "版本 $VER（prerelease=$PRERELEASE）"
+          echo "bundles=$BUNDLES" >> "$GITHUB_OUTPUT"
+          echo "版本 $VER（prerelease=$PRERELEASE，bundles=${BUNDLES:-默认}）"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -116,7 +129,7 @@ jobs:
           releaseDraft: false
           prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
           includeUpdaterJson: true
-          args: ${{ matrix.os == 'macos-14' && '--bundles app' || '' }}
+          args: ${{ steps.ver.outputs.bundles }}
 
       # macOS DMG 未公证：统一用 packaging/macos/make-dmg.sh 打包，内置「打不开？双击我.command」+ 安装说明。
       # scripts/daily-release.sh / release.sh 会先上传本地打好的同名 DMG；已存在则跳过，不覆盖。

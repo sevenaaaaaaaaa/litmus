@@ -62,18 +62,27 @@ if [[ "$UPDATER_ONLY" == 1 ]]; then
   SIG="${ARCHIVE}.sig"
   [[ -f "$ARCHIVE" && -f "$SIG" ]] || { echo "✗ 归档/签名未产出"; exit 1; }
   LATEST_JSON="$(mktemp -d)/latest.json"
-  python3 - "$VER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SIG" "$LATEST_JSON" "$REPO_SLUG" "$APP_NAME" <<'PY'
+  EXISTING="$(mktemp -d)/latest.json"
+  # 合并已发布 latest.json 的其它平台条目：CI（Win/Linux）在 macOS runner 不可用的时期
+  # 仍会生成这两条，整份覆盖会让它们的 App 内更新失效。
+  gh release download "$TAG" -R "$REPO_SLUG" -p latest.json -O "$EXISTING" --clobber >/dev/null 2>&1 || true
+  python3 - "$VER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SIG" "$LATEST_JSON" "$REPO_SLUG" "$APP_NAME" "$EXISTING" <<'PY'
 import json, sys, pathlib
-ver, pub, sig, out, slug, app = sys.argv[1:7]
-latest = {
-    "version": ver,
-    "notes": f"Litmus v{ver}",
-    "pub_date": pub,
-    "platforms": {"darwin-aarch64": {
-        "signature": pathlib.Path(sig).read_text().strip(),
-        "url": f"https://github.com/{slug}/releases/download/v{ver}/{app}.app.tar.gz",
-    }},
+ver, pub, sig, out, slug, app, existing = sys.argv[1:8]
+platforms = {}
+try:
+    platforms = json.loads(pathlib.Path(existing).read_text()).get("platforms", {}) or {}
+except Exception:
+    platforms = {}
+platforms.pop("darwin-aarch64", None)
+platforms.pop("darwin-aarch64-app", None)
+darwin = {
+    "signature": pathlib.Path(sig).read_text().strip(),
+    "url": f"https://github.com/{slug}/releases/download/v{ver}/{app}.app.tar.gz",
 }
+platforms["darwin-aarch64"] = darwin
+platforms["darwin-aarch64-app"] = darwin
+latest = {"version": ver, "notes": f"Litmus v{ver}", "pub_date": pub, "platforms": platforms}
 pathlib.Path(out).write_text(json.dumps(latest, ensure_ascii=False, indent=2))
 PY
   gh_upload_asset "$TAG" "$LATEST_JSON" --clobber
@@ -191,5 +200,6 @@ echo "  Release:  https://github.com/$REPO_SLUG/releases/tag/$TAG"
 echo "  DMG:      $DMG_OUT"
 echo "  本机应用: $INSTALLED_NOTE"
 echo "  CI:       gh run list -R $REPO_SLUG --workflow=desktop.yml --limit 1（Win/Linux 包 + latest.json）"
+echo "  macOS 更新: CI 无 macOS runner，等 CI 跑完后补一次：scripts/release.sh $VER --updater-only"
 echo "  移动端（CI 不含 Android）: source .android-env.sh && cd desktop && cargo tauri android build --apk --target aarch64"
 echo "            然后 gh release upload $TAG <apk>（重命名 Litmus-mobile-$VER-arm64.apk）"

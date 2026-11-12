@@ -59,7 +59,7 @@ lint：无专门配置（可用 `cargo clippy`）。
   - Android 签名口令：环境变量 `TAURI_KEYSTORE_PASSWORD` / `TAURI_KEY_PASSWORD`，或 gitignored 的 `desktop/android-signing.properties`；keystore `desktop/litmus-release.keystore` 仅本地保存（已移出 git 跟踪）
   - 服务器上自更新：`/www/wwwroot/litmus/update.sh`（从 GitHub `main` 拉取 → 构建 → 重启）
   - 备选：`deploy/native.sh`；推荐用 CI `server.yml` 产出的 musl 静态二进制替换 `bin/litmus`，避免生产机 cargo OOM。
-- **桌面发版**：每日构建用 `scripts/daily-release.sh`（Nightly，见下文）；正式版用 `scripts/release.sh X.Y.0`。推 `v*` / `nightly` tag 触发 `.github/workflows/desktop.yml`（三平台产物 + `latest.json` → GitHub Release，可选同步 R2）。Android 需手动构建上传。详见 `.cursor/rules/release.mds`。
+- **桌面发版**：每日构建用 `scripts/daily-release.sh`（Nightly，见下文）；正式版用 `scripts/release.sh X.Y.0`。推 `v*` / `nightly` tag 触发 `.github/workflows/desktop.yml`（Windows/Linux 产物 + `latest.json` → GitHub Release，可选同步 R2）；macOS 因 runner 不可用改由本地构建（DMG 由 `release.sh`/`daily-release.sh` 上传，更新归档与 darwin 条目用 `release.sh --updater-only` 补）。Android 需手动构建上传。详见 `.cursor/rules/release.mds`。
 - CI：`kernel.yml`、`server.yml` 在 push `main` 时触发（server 限相关路径），`desktop.yml` 由 tag 或手动触发。
 
 ## 版本与发版
@@ -82,7 +82,7 @@ scripts/daily-release.sh --force      # 自上次 Nightly 无新提交也重建
 - 流程：必须在 `main`、工作区干净、与 `origin/main` 同步（脏或本地领先则打印原因并以 skipped 退出 0，绝不替你提交/推送）→ 自 `nightly` tag 所在提交以来无新提交则跳过 → 内核测试（同 `kernel.yml`）→ 以注入版本本地 `cargo tauri build --bundles app`（`-ld_classic`，CFBundleVersion 取纯数字 `X.Y.Z`）+ `packaging/macos/make-dmg.sh` 打 DMG → 附注 tag `nightly`（首行 `nightly <version>`，CI 据此取版本）强制移到 HEAD 并推送 → 更新唯一预发布「Nightly · YYYY-MM-DD」（说明 = 上个正式 `vX` 以来的提交标题 + 安装说明，删除旧日期资产，DMG `--clobber`）→ 优雅退出本机 Litmus、`ditto` 替换 `/Applications/Litmus.app`、去隔离、原来在运行则重启。
 - 不改版本号、不提交、不打 `vX` tag。中途失败可直接重跑（HEAD 已是 `nightly` 时续跑未完成步骤）；单实例锁；日志 `~/Library/Logs/litmus-daily-release.log`。
 - 最后一行输出结果标记：`RESULT: built nightly <version> <sha>` / `RESULT: skipped <原因>` / `RESULT: dry-run …` / `RESULT: failed <step>`，全局调度据此判定。
-- CI 分工：`nightly` tag 推送后 `desktop.yml` 以 prerelease 模式构建 Windows/Linux 包、签名 macOS 更新包与 `latest.json`，附到 Nightly 预发布；macOS DMG 若本地已上传同名文件则跳过。
+- CI 分工：`nightly` tag 推送后 `desktop.yml` 以 prerelease 模式构建 Windows/Linux 包与 `latest.json`，附到 Nightly 预发布（Linux 跳过 RPM；macOS 不在矩阵内，DMG 由本地脚本上传）。
 
 ### 正式版
 
@@ -92,7 +92,7 @@ scripts/release.sh 0.2.0 --no-install
 scripts/release.sh 0.2.0 --updater-only  # CI 挂掉时本地补 macOS 更新归档 + latest.json
 ```
 
-- 流程：main + 干净 + 同步 → 读取 CHANGELOG 对应一节（缺失即中止）→ 内核测试 → 写 `Cargo.toml`/`Cargo.lock` → 提交 `chore(release): vX.Y.Z` + 附注 tag → 本地 app + DMG → push main + tag（CI 出三平台 + `latest.json`，tag 必须等于版本源，否则 CI 报错）→ `gh release create vX.Y.Z --latest`（说明 = CHANGELOG 该节 + 安装说明）并上传 DMG → 更新本机应用。可重跑续跑。
+- 流程：main + 干净 + 同步 → 读取 CHANGELOG 对应一节（缺失即中止）→ 内核测试 → 写 `Cargo.toml`/`Cargo.lock` → 提交 `chore(release): vX.Y.Z` + 附注 tag → 本地 app + DMG → push main + tag（CI 出 Windows/Linux + `latest.json`，tag 必须等于版本源，否则 CI 报错）→ `gh release create vX.Y.Z --latest`（说明 = CHANGELOG 该节 + 安装说明）并上传 DMG → 更新本机应用 → 等 CI 跑完后 `scripts/release.sh X.Y.Z --updater-only` 补 macOS 更新归档与 darwin 条目。可重跑续跑。
 
 ### 通用
 
