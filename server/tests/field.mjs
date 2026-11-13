@@ -136,3 +136,12 @@ test('merge3：不重叠的改动都留下，撞在一处的两边都留并标�
   assert.ok(x.text.includes('X') && x.text.includes('Y') && x.text.includes('小明的'), x.text);
   assert.deepEqual(m(base, base + '\nsame', base + '\nsame'), { text: base + '\nsame', conflicts: 0 });
 });
+
+test('autoTags：写下的 #标签优先，否则匹配库里用过的标签词', () => {
+  const c = ctx(['tagHit', 'autoTags'], "const order=[{g:['AI','知识管理']},{g:['写作']}];");
+  const v = t => JSON.parse(vm.runInContext('JSON.stringify(autoTags(' + JSON.stringify(t) + '))', c));
+  assert.deepEqual(v('随手记：今天用 #读书 的方法'), ['读书']);
+  assert.deepEqual(v('AI 帮我整理知识管理'), ['AI', '知识管理']);
+  assert.deepEqual(v('wait for it'), []);
+  assert.deepEqual(v('完全无关的一句话'), []);
+});

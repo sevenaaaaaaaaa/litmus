@@ -6,6 +6,11 @@
 <title>Litmus · 知识场</title>
 <link rel="icon" href="icon48.png">
 <link rel="manifest" href="manifest-pwa.json">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="鹿蕊">
 <script>
 /* 主题与桌面标记必须早于首帧 */
 (function(){
@@ -2116,10 +2121,33 @@ async function previewMemo(body){
   }, 220);
 }
 function memoPath(){ const d = new Date(); return 'Notes/Memos/' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '.md'; }
+/* 自动标签：正文里写下的 #标签优先；一个都没写时，匹配库里已经用过的标签词。
+   ASCII 标签按词边界匹配（AI 不该命中 wait），中文按包含匹配。最多 3 个，避免噪声。 */
+function tagHit(text, tag){
+  const t = String(tag).trim(), low = text.toLowerCase(), tl = t.toLowerCase();
+  if (!t) return false;
+  if (/^[\x00-\x7F]+$/.test(t)){
+    const re = new RegExp('(^|[^a-z0-9])' + t.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&') + '([^a-z0-9]|$)', 'i');
+    return re.test(text);
+  }
+  return low.includes(tl);
+}
+function autoTags(text){
+  const explicit = [...new Set((text.match(/(^|\s)#([\p{L}\p{N}_\-/]+)/gu) || []).map(t => t.trim().slice(1)))];
+  if (explicit.length) return explicit;
+  const out = [];
+  for (const n of (order || [])) for (const g of (n.g || [])){
+    const tag = String(g).trim();
+    if (tag.length < 2 || tag.length > 24) continue;
+    if (out.some(x => x.toLowerCase() === tag.toLowerCase())) continue;
+    if (tagHit(text, tag)){ out.push(tag); if (out.length >= 3) return out; }
+  }
+  return out;
+}
 async function capture(text){
   text = text.trim(); if (!text) return;
   const d = new Date(), path = memoPath();
-  const tags = [...new Set((text.match(/(^|\s)#([\p{L}\p{N}_\-/]+)/gu) || []).map(t => t.trim().slice(1)))];
+  const tags = autoTags(text);
   const fm = '---\n' + (tags.length ? 'tags: [' + tags.map(t => '"' + t.replace(/"/g, '\\"') + '"').join(', ') + ']\n' : '') +
     'created: ' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '\n---\n';
   /* 落位预告在写入前取：库还没变，内核直接用缓存的场，毫秒级 */
@@ -5773,6 +5801,15 @@ loadField().then(() => {
   }
   /* 深链：/?doc=Notes/… （浏览器扩展、托盘、旧书签）直接打开那篇 */
   const deep = params.get('doc'); if (deep && byPath.get(deep)) setTimeout(() => openDoc(byPath.get(deep)), 400);
+  /* 快速记一条：/?compose=1&text=…（主屏图标、快捷指令、Back Tap 都走这里） */
+  const compose = params.get('compose') || params.get('memo');
+  if (compose){
+    const body = params.get('text') || '';
+    params.delete('compose'); params.delete('memo'); params.delete('text');
+    const rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    setTimeout(() => { q.value = '+ ' + body; onInput(); q.focus(); }, 350);
+  }
   /* 引导等场铺开、开场动画走完再出来 */
   setTimeout(initOnboarding, nodes.length ? 1800 : 600);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); nodes.forEach(n => { n.sx = n.sx0 * SX; n.sy = n.sy0 * SY; }); relax(); regionSem(); timeLayout(); setLayout(layout); });

@@ -285,6 +285,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/assets/xterm.js", get(|| async { ([("content-type", "text/javascript; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.js")) }))
         .route("/assets/xterm.css", get(|| async { ([("content-type", "text/css; charset=utf-8"), ("cache-control", "public, max-age=86400")], include_str!("../web/vendor/xterm.css")) }))
         .route("/icon48.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon48.png").as_slice()) }))
+        .route("/icon192.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon192.png").as_slice()) }))
+        .route("/icon512.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/icon512.png").as_slice()) }))
+        .route("/apple-touch-icon.png", get(|| async { ([("content-type","image/png"),("cache-control","public, max-age=86400")], include_bytes!("../web/apple-touch-icon.png").as_slice()) }))
         .route("/manifest-pwa.json", get(|| async { ([("content-type","application/manifest+json; charset=utf-8"),("cache-control","public, max-age=86400")], include_str!("../web/manifest-pwa.json")) }))
         .route("/sw.js", get(|| async {
     // 壳版本 = 壳内容哈希（构建期自动）：改前端必出新缓存键，忘 bump 也不再吃旧壳。
