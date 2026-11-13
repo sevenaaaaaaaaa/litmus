@@ -13,10 +13,13 @@ pub(super) fn token(root: &Path) -> Option<String> {
     kernel_core::secrets::get(root, SECRET)
 }
 
-pub(super) fn remember(root: &Path, server: &str, user: &str, token: &str) -> Result<(), String> {
-    kernel_core::secrets::put(root, SECRET, token, "Litmus 远端登录，仅保存在此设备")?;
-    std::fs::write(root.join(".litmus/local/remote.json"), serde_json::to_vec(&json!({"server":server, "user":user})).unwrap())
-        .map_err(|e| e.to_string())
+pub(super) fn remember(root: &Path, server: &str, user: &str, token: &str) -> Result<bool, String> {
+    // 凭证库可能是在另一台设备上加密的：存不进去时不要挡住这次登录，
+    // 这次同步照常跑（token 只在内存里），账号/服务器照旧记下，下次再登录。
+    let saved = kernel_core::secrets::put(root, SECRET, token, "Litmus 远端登录，仅保存在此设备").is_ok();
+    std::fs::write(root.join(".litmus/local/remote.json"), serde_json::to_vec(&json!({"server":server, "user":user, "token_saved": saved})).unwrap())
+        .map_err(|e| e.to_string())?;
+    Ok(saved)
 }
 
 pub(super) async fn status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
@@ -24,7 +27,10 @@ pub(super) async fn status(State(st): State<Arc<AppState>>, h: HeaderMap) -> imp
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
     let k = st.kernel.lock().unwrap();
     let mut a = account(&k.vault.root);
-    a["connected"] = json!(token(&k.vault.root).is_some());
+    let has_token = token(&k.vault.root).is_some();
+    a["connected"] = json!(has_token);
+    // token_saved=false：这次登录成功但凭证库锁着，token 只在内存，重开要再登录一次。
+    if a.get("token_saved").is_none() { a["token_saved"] = json!(has_token); }
     Json(a).into_response()
 }
 

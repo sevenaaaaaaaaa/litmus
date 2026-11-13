@@ -350,6 +350,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/desktop/scan", get(desktop_scan))
         .route("/desktop/quarantine", post(desktop_quarantine))
         .route("/desktop/account", get(remote::status).delete(remote::disconnect))
+        .route("/desktop/account/unlock", post(desktop_account_unlock))
         .route("/desktop/pull", post(desktop_pull))
         .route("/desktop/pull/cancel", post(desktop_pull_cancel))
         .route("/desktop/pull/status", get(desktop_pull_status))
@@ -8414,12 +8415,15 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let dirs = pending.iter().filter_map(|p| std::path::Path::new(p).parent())
         .collect::<std::collections::HashSet<_>>().len();
     if user.is_empty() { user = "token".into(); }
-    {
+    // 凭证库存不进去（锁在另一台设备上）也继续：这次用内存里的 token 同步，
+    // 账号与服务器照旧记下，UI 会提示下次重登 / 输入恢复码解锁。
+    let token_saved = {
         let _k = st.kernel.lock().unwrap();
-        if let Err(e) = remote::remember(&root, &server, &user, &rtoken) {
-            return err(StatusCode::INTERNAL_SERVER_ERROR, format!("保存登录失败：{e}")).into_response();
+        match remote::remember(&root, &server, &user, &rtoken) {
+            Ok(saved) => saved,
+            Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, format!("保存登录失败：{e}")).into_response(),
         }
-    }
+    };
     // ③ 初始化任务并后台流式拉正文
     {
         let mut j = st.pull.lock().unwrap();
@@ -8443,10 +8447,24 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
 
     let snap = pull_json(&st.pull.lock().unwrap());
     Json(json!({
-        "ok": true, "started": true,
+        "ok": true, "started": true, "token_saved": token_saved,
         "server": server, "user": user, "total": total, "folders": dirs,
         "job": snap,
     })).into_response()
+}
+
+/// 用恢复码解锁本机凭证库（凭证库锁在另一台设备上时），解锁后可重新登录保存 token。
+async fn desktop_account_unlock(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) { return e.into_response(); }
+    if let Err(e) = desktop_guard(&st) { return e.into_response(); }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let code = req.get("code").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if code.is_empty() { return err(StatusCode::BAD_REQUEST, "需要恢复码").into_response(); }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    match kernel_core::secrets::unlock(&root, &code) {
+        Ok(n) => Json(json!({"ok": true, "unlocked": n})).into_response(),
+        Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
+    }
 }
 
 /// 远端清单：Notes/ 下可同步文档的「路径 + size:mtime」，供客户端做增量同步。

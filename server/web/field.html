@@ -4780,10 +4780,18 @@ async function openAccount(){
       '<form id="ac-form" autocomplete="on"><label for="ac-server">服务器地址</label><input id="ac-server" name="server" type="url" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/litmus" required value="' + esc(account.server || 'https://nownexts.com/litmus') + '"' + (account.connected ? ' disabled' : '') + '>' +
       '<label for="ac-user">用户名</label><input id="ac-user" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value="' + esc(account.user || '') + '"' + (account.connected ? ' disabled' : '') + '>' +
       (account.connected ? '' : '<label for="ac-pass">密码</label><input id="ac-pass" name="password" type="password" autocomplete="current-password" required>') +
-      '<label for="ac-days">同步范围</label><select id="ac-days" class="sel"><option value="0">全部</option><option value="90">最近 90 天</option><option value="30">最近 30 天</option><option value="7">最近 7 天</option></select>' +
+      '<label for="ac-days">同步范围</label><select id="ac-days" class="sel"><option value="90" selected>最近 90 天</option><option value="0">全部</option><option value="30">最近 30 天</option><option value="7">最近 7 天</option></select>' +
       '<div class="acts"><button type="submit" class="btn pri" id="ac-go">' + (account.connected ? '获取最新内容' : '登录并同步') + '</button>' + (account.connected ? '<button type="button" class="btn" id="ac-out">退出登录</button>' : '') + '<button type="button" class="btn" id="ac-cancel" hidden>取消同步</button></div><p class="bad" id="ac-error" role="alert"></p></form>' +
+      (account.token_saved === false ? '<p class="hint" style="color:var(--litmus)">凭证库锁着：这次同步能用，但登录 token 没保存，下次打开要重新登录。输入原设备的恢复码可以解锁并保存。</p><div class="acts"><input id="ac-code" type="text" placeholder="恢复码" autocapitalize="none" spellcheck="false"><button type="button" class="btn" id="ac-unlock">解锁</button></div>' : '') +
       '<p class="hint" id="ac-status" role="status" aria-live="polite"></p><p class="hint">只下载远端内容，本机编辑不会上传。同步在后台分批跑、随时可取消；已下载的笔记断网也能打开。退出登录会保留笔记。</p>';
     renderRemotePull(job);
+    if ($('ac-unlock')) $('ac-unlock').onclick = async () => {
+      const b = $('ac-unlock'), code = ($('ac-code').value || '').trim();
+      if (!code) return;
+      b.disabled = true;
+      try { await api('/desktop/account/unlock', {method:'POST', json:{code}}); toast('已解锁，请重新点「登录并同步」把登录保存下来'); b.textContent = '已解锁'; }
+      catch(e){ toast('<b>解锁失败</b>：' + esc(e.message || e), true); b.disabled = false; }
+    };
     if ($('ac-cancel')) $('ac-cancel').onclick = async () => {
       const c = $('ac-cancel'); c.disabled = true;
       try { await api('/desktop/pull/cancel', {method:'POST'}); toast('已请求取消，已下载的内容保留'); }
@@ -4801,8 +4809,9 @@ async function openAccount(){
         const json = account.connected ? scope : Object.assign(scope, {server:$('ac-server').value.trim(), user:$('ac-user').value.trim(), pass:$('ac-pass').value});
         const result = await api('/desktop/pull', {method:'POST', json});
         if ($('ac-pass')) $('ac-pass').value = '';
-        remoteAccount = {connected:true, server:result.server, user:result.user};
-        await openAccount(); pollRemotePull();
+        remoteAccount = {connected:true, token_saved:result.token_saved !== false, server:result.server, user:result.user};
+        if (result.token_saved === false) toast('同步能跑，但凭证库锁着：登录没保存，下次打开要重新登录；可输入恢复码解锁', true);
+        pollRemotePull();
       } catch(x){
         if (error.isConnected){ error.textContent = x.message || String(x); go.disabled = false; }
       }
