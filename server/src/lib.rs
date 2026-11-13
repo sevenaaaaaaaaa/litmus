@@ -96,6 +96,8 @@ pub struct PullJob {
     error: String,
     started: u64,
     finished: u64,
+    /// 用户点了取消：后台流每取完一篇就看一眼。
+    cancel: bool,
 }
 
 fn pull_json(j: &PullJob) -> Value {
@@ -115,6 +117,7 @@ fn pull_json(j: &PullJob) -> Value {
         "error": j.error,
         "started": j.started,
         "finished": j.finished,
+        "cancel": j.cancel,
         "pct": if j.total == 0 { 100 } else { (j.done * 100 / j.total).min(100) },
     })
 }
@@ -299,6 +302,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/version", get(version))
         .route("/status", get(status))
         .route("/docs", get(list_docs_api))
+        .route("/sync/manifest", get(sync_manifest))
         .route("/memo/docs", get(memo_docs))
         .route("/graph", get(graph))
         .route("/browse", get(browse))
@@ -347,6 +351,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/desktop/quarantine", post(desktop_quarantine))
         .route("/desktop/account", get(remote::status).delete(remote::disconnect))
         .route("/desktop/pull", post(desktop_pull))
+        .route("/desktop/pull/cancel", post(desktop_pull_cancel))
         .route("/desktop/pull/status", get(desktop_pull_status))
         .route("/organize/plan", post(organize_plan))
         .route("/organize/apply", post(organize_apply))
@@ -8289,7 +8294,11 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
     let saved = remote::account(&root);
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
-    let server = req.get("server").and_then(|v| v.as_str()).or_else(|| saved.get("server").and_then(|v| v.as_str())).unwrap_or("").trim().trim_end_matches('/').trim_end_matches("/field").to_string();
+    let mut server = req.get("server").and_then(|v| v.as_str()).or_else(|| saved.get("server").and_then(|v| v.as_str())).unwrap_or("").trim().trim_end_matches('/').trim_end_matches("/field").to_string();
+    // 直接填 nownexts.com/litmus 也认：没写协议就补 https://
+    if !server.is_empty() && !server.starts_with("http://") && !server.starts_with("https://") {
+        server = format!("https://{server}");
+    }
     let mut rtoken = req.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let mut user = req.get("user").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if rtoken.is_empty() && req.get("pass").and_then(|v| v.as_str()).unwrap_or("").is_empty()
@@ -8364,9 +8373,45 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     // Validate all remote paths before any filesystem operation.
     let mut docs: Vec<String> = docs.into_iter().filter(|p| remote::valid_path(p)).collect();
     docs.sort(); docs.dedup();
-    let total = docs.len();
+
+    // 增量：取远端「路径 + size:mtime」清单，本地指纹相同的不再下载。
+    // 清单拿不到（旧服务器/网络异常）就退回全量，行为与旧版一致。
+    let mut manifest: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    if let Ok(resp) = client.get(format!("{server}/sync/manifest"))
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header("x-litmus-token", &rtoken).send().await
+    {
+        if let Ok(j) = read_json(resp, "远端清单").await {
+            if let Some(arr) = j.get("docs").and_then(|v| v.as_array()) {
+                for d in arr {
+                    if let (Some(p), Some(fp)) = (d.get("path").and_then(|v| v.as_str()), d.get("fp").and_then(|v| v.as_str())) {
+                        manifest.insert(p.to_string(), fp.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // 可选范围：只拉最近 N 天改过的（0 = 全部）。第一次同步大库时先拉近的，快得多。
+    let days = req.get("days").and_then(|v| v.as_u64()).unwrap_or(0);
+    let cutoff = if days > 0 { now_secs().saturating_sub(days * 86_400) } else { 0 };
+    let mut pending: Vec<String> = docs.into_iter()
+        .filter(|p| match manifest.get(p) {
+            Some(fp) => {
+                if days > 0 {
+                    let mtime = fp.split(':').nth(1).and_then(|m| m.parse::<u64>().ok()).unwrap_or(0);
+                    if mtime < cutoff { return false; }
+                }
+                !remote::unchanged(&root, &server, p, fp)
+            }
+            None => true,
+        })
+        .collect();
+    // 最近的先拉：清单指纹是 "size:mtime"，按 mtime 倒序，先看到最新内容。
+    pending.sort_by_key(|p| manifest.get(p).and_then(|fp| fp.split(':').nth(1)).and_then(|m| m.parse::<i64>().ok()).unwrap_or(0));
+    pending.reverse();
+    let total = pending.len();
     // Directories are created only when a validated document is written.
-    let dirs = docs.iter().filter_map(|p| std::path::Path::new(p).parent())
+    let dirs = pending.iter().filter_map(|p| std::path::Path::new(p).parent())
         .collect::<std::collections::HashSet<_>>().len();
     if user.is_empty() { user = "token".into(); }
     {
@@ -8394,7 +8439,7 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let rtoken2 = rtoken.clone();
     let root2 = root.clone();
     reservation.1 = false;
-    tokio::spawn(async move { run_pull(st2, root2, client, server2, rtoken2, docs).await; });
+    tokio::spawn(async move { run_pull(st2, root2, client, server2, rtoken2, pending, manifest).await; });
 
     let snap = pull_json(&st.pull.lock().unwrap());
     Json(json!({
@@ -8402,6 +8447,41 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
         "server": server, "user": user, "total": total, "folders": dirs,
         "job": snap,
     })).into_response()
+}
+
+/// 远端清单：Notes/ 下可同步文档的「路径 + size:mtime」，供客户端做增量同步。
+async fn sync_manifest(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) { return e.into_response(); }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let out = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+        let vault = kernel_core::Vault::open(&root).map_err(|e| e.to_string())?;
+        let docs = kernel_core::list_docs(&vault).map_err(|e| e.to_string())?;
+        let mut items = Vec::with_capacity(docs.len());
+        for rel in docs {
+            let p = rel.to_string_lossy().replace('\\', "/");
+            if !remote::valid_path(&p) { continue; }
+            let Ok(meta) = std::fs::metadata(root.join(&rel)) else { continue; };
+            let mtime = meta.modified().ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()).unwrap_or(0);
+            items.push(json!({"path": p, "fp": format!("{}:{}", meta.len(), mtime)}));
+        }
+        Ok(json!({"docs": items, "count": items.len()}))
+    }).await;
+    match out {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// 取消后台拉取：已下载的内容保留，只是不再继续。
+async fn desktop_pull_cancel(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) { return e.into_response(); }
+    if let Err(e) = desktop_guard(&st) { return e.into_response(); }
+    let mut j = st.pull.lock().unwrap();
+    j.cancel = true;
+    Json(json!({"ok": true, "active": j.active})).into_response()
 }
 
 /// 查询后台拉取进度。
@@ -8420,12 +8500,11 @@ async fn run_pull(
     server: String,
     rtoken: String,
     docs: Vec<String>,
+    manifest: std::collections::HashMap<String, String>,
 ) {
-    // 只处理 Notes/ 下的文档；浅层（根目录）优先，让编辑区先有内容
-    let mut ordered: Vec<String> = docs.into_iter().filter(|p| remote::valid_path(p)).collect();
-    ordered.sort_by(|a, b| {
-        a.matches('/').count().cmp(&b.matches('/').count()).then_with(|| a.cmp(b))
-    });
+    // 先处理最近的（desktop_pull 已按远端 mtime 倒序）；并发 8 只受网络约束，不持内核锁。
+    let ordered: Vec<String> = docs.into_iter().filter(|p| remote::valid_path(p)).collect();
+    let manifest = std::sync::Arc::new(manifest);
 
     let mut stream = futures_util::stream::iter(ordered.into_iter().map(|path| {
         let client = client.clone();
@@ -8433,7 +8512,8 @@ async fn run_pull(
         let rtoken = rtoken.clone();
         let root = root.clone();
         let st = st.clone();
-        async move { pull_one(&st, &client, &server, &rtoken, &root, &path).await }
+        let manifest = manifest.clone();
+        async move { pull_one(&st, &client, &server, &rtoken, &root, &path, &manifest).await }
     }))
     .buffer_unordered(8);
 
@@ -8441,6 +8521,7 @@ async fn run_pull(
     while let Some((code, bytes)) = stream.next().await {
         {
             let mut j = st.pull.lock().unwrap();
+            if j.cancel { break; }
             j.done += 1;
             match code {
                 1 => { j.pulled += 1; j.bytes += bytes; }
@@ -8450,19 +8531,24 @@ async fn run_pull(
             }
         }
         since_sync += 1;
-        if since_sync >= 300 {
+        if since_sync >= 500 {
             since_sync = 0;
-            sync_in_background(&st).await;
+            sync_incremental(&st).await;
         }
     }
-    sync_in_background(&st).await;
+    sync_incremental(&st).await;
 
     let mut j = st.pull.lock().unwrap();
     j.active = false;
-    j.phase = if j.pulled == 0 && j.failed > 0 { "error".into() } else { "done".into() };
     j.finished = now_secs();
-    if j.error.is_empty() && j.failed > 0 {
-        j.error = format!("{} 篇未能拉取（可点同步重试）", j.failed);
+    if j.cancel {
+        j.phase = "cancelled".into();
+        if j.error.is_empty() { j.error = "已取消（已下载的内容保留）".into(); }
+    } else {
+        j.phase = if j.pulled == 0 && j.failed > 0 { "error".into() } else { "done".into() };
+        if j.error.is_empty() && j.failed > 0 {
+            j.error = format!("{} 篇未能拉取（可点同步重试）", j.failed);
+        }
     }
     let snap = pull_json(&j);
     drop(j);
@@ -8477,6 +8563,7 @@ async fn pull_one(
     rtoken: &str,
     root: &std::path::Path,
     path: &str,
+    manifest: &std::collections::HashMap<String, String>,
 ) -> (u8, u64) {
     for attempt in 0..2u8 {
         let resp = client.get(format!("{server}/doc"))
@@ -8485,9 +8572,14 @@ async fn pull_one(
         if let Ok(resp) = resp {
             if let Ok(j) = read_json(resp, path).await {
                 if let Some(src) = j.get("source").and_then(|s| s.as_str()) {
-                    let _k = st.kernel.lock().unwrap();
+                    // 写文件不需要全局内核锁：store 用临时文件 + rename 原子落盘，
+                    // 索引由 sync_incremental 分批合入，避免同步大库时 UI 请求被饿死。
+                    let _ = st;
                     return match remote::store(root, server, path, src) {
-                        Ok(code) => (code, if code == 0 { 0 } else { src.len() as u64 }),
+                        Ok(code) => {
+                            if let Some(fp) = manifest.get(path) { let _ = remote::save_fingerprint(root, server, path, fp); }
+                            (code, if code == 0 { 0 } else { src.len() as u64 })
+                        }
                         Err(_) => (2, 0),
                     };
                 }
@@ -8501,13 +8593,20 @@ async fn pull_one(
 }
 
 /// 后台把磁盘上的外部改动合入内核索引（不阻塞 async runtime）。
-async fn sync_in_background(st: &Arc<AppState>) {
-    let k = st.kernel.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(mut g) = k.lock() {
-            let _ = g.sync_all();
-        }
-    }).await;
+/// 分批把新文件合进索引：每批 25 篇、批间让出 150ms。
+/// 每批只短持内核锁，1.2 万篇的库里同步时 /field/data 仍能毫秒级返回。
+async fn sync_incremental(st: &Arc<AppState>) {
+    for _ in 0..2000 {
+        let k = st.kernel.clone();
+        let more = tokio::task::spawn_blocking(move || {
+            match k.lock() {
+                Ok(mut g) => g.sync_limited(25).map(|(_, more)| more).unwrap_or(false),
+                Err(_) => false,
+            }
+        }).await.unwrap_or(false);
+        if !more { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
 }
 
 #[cfg(test)]

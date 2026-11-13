@@ -51,6 +51,32 @@ pub(super) fn valid_path(path: &str) -> bool {
 
 fn hash(bytes: &[u8]) -> String { hex::encode(Sha256::digest(bytes)) }
 
+/// 原子落盘：先写同目录临时文件再 rename，内核随时读到的都是完整文件。
+fn write_atomic(dest: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = dest.parent().ok_or("目标没有父目录")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let tmp = parent.join(format!(".{}.tmp-{}", dest.file_name().unwrap_or_default().to_string_lossy(), std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, dest).map_err(|e| { let _ = std::fs::remove_file(&tmp); e.to_string() })
+}
+
+fn fingerprint_path(root: &Path, server: &str, path: &str) -> PathBuf {
+    root.join(".litmus/local/remote-meta").join(hash(format!("{server}\n{path}").as_bytes()))
+}
+
+/// 上次同步记下的远端指纹（size:mtime）与本地文件都在，且远端没变 → 不必再下载。
+pub(super) fn unchanged(root: &Path, server: &str, path: &str, remote: &str) -> bool {
+    if !root.join(path).is_file() { return false; }
+    let baseline = root.join(".litmus/local/remote-hashes").join(hash(format!("{server}\n{path}").as_bytes()));
+    baseline.is_file() && std::fs::read_to_string(fingerprint_path(root, server, path)).ok().as_deref() == Some(remote)
+}
+
+pub(super) fn save_fingerprint(root: &Path, server: &str, path: &str, remote: &str) -> Result<(), String> {
+    let p = fingerprint_path(root, server, path);
+    if let Some(d) = p.parent() { std::fs::create_dir_all(d).map_err(|e| e.to_string())?; }
+    std::fs::write(p, remote).map_err(|e| e.to_string())
+}
+
 /// Returns 0=unchanged, 1=downloaded, 3=conflict copy. Never overwrite local edits.
 /// The caller holds the kernel lock so editor saves cannot race this write.
 pub(super) fn store(root: &Path, server: &str, path: &str, source: &str) -> Result<u8, String> {
@@ -93,7 +119,7 @@ pub(super) fn store(root: &Path, server: &str, path: &str, source: &str) -> Resu
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err("已有同名冲突副本，请整理后重试".into()),
             Err(e) => return Err(e.to_string()),
         }
-    } else { std::fs::write(target, source).map_err(|e| e.to_string())?; }
+    } else { write_atomic(&target, source.as_bytes())?; }
     std::fs::write(baseline, incoming).map_err(|e| e.to_string())?;
     Ok(if conflict { 3 } else { 1 })
 }
@@ -207,6 +233,17 @@ mod tests {
         let copies: Vec<_> = std::fs::read_dir(root.join("Notes")).unwrap().map(|e| e.unwrap().path()).collect();
         assert_eq!(copies.len(), 2);
         assert!(copies.iter().any(|p| std::fs::read_to_string(p).unwrap() == "three"));
+    }
+
+    #[test]
+    fn fingerprint_marks_synced_files() {
+        let dir = tempfile::tempdir().unwrap(); let root = dir.path();
+        assert_eq!(store(root, "s", "Notes/a.md", "one").unwrap(), 1);
+        assert!(!unchanged(root, "s", "Notes/a.md", "3:123"));
+        save_fingerprint(root, "s", "Notes/a.md", "3:123").unwrap();
+        assert!(unchanged(root, "s", "Notes/a.md", "3:123"));
+        assert!(!unchanged(root, "s", "Notes/a.md", "4:124"));
+        assert!(!unchanged(root, "other", "Notes/a.md", "3:123"));
     }
 
     #[test]

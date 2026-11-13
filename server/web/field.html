@@ -4743,16 +4743,17 @@ addEventListener('tray-secrets', () => openSecrets());
 let remoteAccount = null, remotePullTimer = 0;
 function remotePullText(job){
   if (job.active && job.phase === 'connecting') return '正在登录并读取远端目录…';
-  if (job.active) return '正在下载 ' + (job.done || 0) + ' / ' + (job.total || 0) + ' 篇';
+  if (job.active) return '正在下载 ' + (job.done || 0) + ' / ' + (job.total || 0) + ' 篇' + (job.pct != null ? ' · ' + job.pct + '%' : '') + '（可取消，已下载的先能用）';
   if (job.error) return '同步未完成：' + job.error;
   if (job.finished) return '已获取最新内容 · 下载 ' + (job.pulled || 0) + ' 篇 · 未变 ' + (job.skipped || 0) + ' 篇' + (job.conflicts ? ' · ' + job.conflicts + ' 篇冲突已另存远端副本' : '');
-  return '登录后会下载远端笔记，保存在此设备上，离线也能阅读。';
+  return '登录后只下载远端笔记到本机；已下载的内容离线也能阅读。';
 }
 function renderRemotePull(job){
   if ((!remoteAccount || !remoteAccount.connected) && !job.active) job = {};
   const line = $('ac-status'); if (line) line.textContent = remotePullText(job);
   const go = $('ac-go'); if (go) go.disabled = !!job.active;
   const out = $('ac-out'); if (out) out.disabled = !!job.active;
+  const cancel = $('ac-cancel'); if (cancel){ cancel.hidden = !job.active; cancel.disabled = false; }
   const entry = $('b-account');
   entry.textContent = job.active ? '同步中' : remoteAccount && remoteAccount.connected ? '账户' : '登录';
   entry.setAttribute('aria-label', job.active ? remotePullText(job) : '登录与同步');
@@ -4779,9 +4780,16 @@ async function openAccount(){
       '<form id="ac-form" autocomplete="on"><label for="ac-server">服务器地址</label><input id="ac-server" name="server" type="url" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/litmus" required value="' + esc(account.server || 'https://nownexts.com/litmus') + '"' + (account.connected ? ' disabled' : '') + '>' +
       '<label for="ac-user">用户名</label><input id="ac-user" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value="' + esc(account.user || '') + '"' + (account.connected ? ' disabled' : '') + '>' +
       (account.connected ? '' : '<label for="ac-pass">密码</label><input id="ac-pass" name="password" type="password" autocomplete="current-password" required>') +
-      '<div class="acts"><button type="submit" class="btn pri" id="ac-go">' + (account.connected ? '获取最新内容' : '登录并同步') + '</button>' + (account.connected ? '<button type="button" class="btn" id="ac-out">退出登录</button>' : '') + '</div><p class="bad" id="ac-error" role="alert"></p></form>' +
-      '<p class="hint" id="ac-status" role="status" aria-live="polite"></p><p class="hint">这里只下载远端内容；本机编辑不会上传到服务器。退出登录会保留已下载的笔记。</p>';
+      '<label for="ac-days">同步范围</label><select id="ac-days" class="sel"><option value="0">全部</option><option value="90">最近 90 天</option><option value="30">最近 30 天</option><option value="7">最近 7 天</option></select>' +
+      '<div class="acts"><button type="submit" class="btn pri" id="ac-go">' + (account.connected ? '获取最新内容' : '登录并同步') + '</button>' + (account.connected ? '<button type="button" class="btn" id="ac-out">退出登录</button>' : '') + '<button type="button" class="btn" id="ac-cancel" hidden>取消同步</button></div><p class="bad" id="ac-error" role="alert"></p></form>' +
+      '<p class="hint" id="ac-status" role="status" aria-live="polite"></p><p class="hint">只下载远端内容，本机编辑不会上传。同步在后台分批跑、随时可取消；已下载的笔记断网也能打开。退出登录会保留笔记。</p>';
     renderRemotePull(job);
+    if ($('ac-cancel')) $('ac-cancel').onclick = async () => {
+      const c = $('ac-cancel'); c.disabled = true;
+      try { await api('/desktop/pull/cancel', {method:'POST'}); toast('已请求取消，已下载的内容保留'); }
+      catch(e){ toast('<b>取消失败</b>：' + esc(e.message || e), true); c.disabled = false; return; }
+      pollRemotePull();
+    };
     if (job.active) pollRemotePull();
     $('ac-form').onsubmit = async e => {
       e.preventDefault(); const go = $('ac-go'), error = $('ac-error');
@@ -4789,7 +4797,8 @@ async function openAccount(){
       go.disabled = true; error.textContent = '';
       try {
         if (editing){ await flushSave(); if (save.state === 'failed') throw new Error('还有没保存的改动，请存好后再同步'); }
-        const json = account.connected ? {} : {server:$('ac-server').value.trim(), user:$('ac-user').value.trim(), pass:$('ac-pass').value};
+        const scope = {days: +($('ac-days') ? $('ac-days').value : 0) || 0};
+        const json = account.connected ? scope : Object.assign(scope, {server:$('ac-server').value.trim(), user:$('ac-user').value.trim(), pass:$('ac-pass').value});
         const result = await api('/desktop/pull', {method:'POST', json});
         if ($('ac-pass')) $('ac-pass').value = '';
         remoteAccount = {connected:true, server:result.server, user:result.user};
