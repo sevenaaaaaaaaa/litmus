@@ -2,8 +2,14 @@
 # Litmus 双轨部署（唯一入口）
 #   GitHub 轨：gitleaks 扫描 → git add -A（.gitignore 已排除密钥/本地数据）→ commit → push origin main
 #   服务器轨：rsync 工作区源码（含 gitignored 但服务器需要的文件）→ 服务器 cargo build → 重启 systemd
-# 用法：./deploy/deploy.sh [--skip-build] [--server-only] [--dry-run] [-m "提交信息"]
+# 用法：./deploy/deploy.sh [--skip-build] [--prebuilt <本地二进制>] [--server-only] [--dry-run] [-m "提交信息"]
 #   --skip-build   服务器端跳过 cargo build（沿用旧参数）
+#   --prebuilt     上传本机交叉编译好的 x86_64 Linux 二进制并安装，服务器完全不编译
+#                  本机怎么出这个二进制（服务器只有 2G 内存 + 常被其他站点抢资源，编译极慢/易 OOM）：
+#                    rustup target add x86_64-unknown-linux-gnu
+#                    brew install zig && cargo install cargo-zigbuild
+#                    cargo zigbuild --release -p litmus --target x86_64-unknown-linux-gnu.2.17
+#                  → target/x86_64-unknown-linux-gnu/release/litmus（glibc 2.17，CentOS 7 可用）
 #   --server-only  跳过 git，只同步服务器
 #   --dry-run      rsync -n 预演；不 commit/push、不构建、不重启
 # 分支约束：正式部署（含 --server-only）只允许在 main 上进行；--dry-run 任意分支可跑（仅告警）
@@ -19,11 +25,12 @@ SSH_OPTS="ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=accept-new"
 SSH_CMD="${SSH_OPTS} ${USER_}@${HOST}"
 GITLEAKS="${GITLEAKS:-$HOME/.local/bin/gitleaks}"
 
-SKIP_BUILD=""; SERVER_ONLY=0; DRY_RUN=0
+SKIP_BUILD=""; PREBUILT=""; SERVER_ONLY=0; DRY_RUN=0
 MSG="chore: sync $(date '+%Y-%m-%d %H:%M')"
 while [ $# -gt 0 ]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1 ;;
+    --prebuilt) shift; PREBUILT="${1:?--prebuilt 需要二进制路径}" ;;
     --server-only) SERVER_ONLY=1 ;;
     --dry-run) DRY_RUN=1 ;;
     -m) shift; MSG="${1:?-m 需要提交信息}" ;;
@@ -102,10 +109,17 @@ fi
 
 # ─── 3. 服务器构建 + 重启（与旧脚本一致） ───
 step "服务器构建 + 重启 litmus"
-if [ -n "$SKIP_BUILD" ]; then
+if [ -n "$PREBUILT" ]; then
+  [ -f "$PREBUILT" ] || { echo "✗ 找不到二进制：$PREBUILT"; exit 1; }
+  step "上传预编译二进制 → ${HOST}（服务器不编译）"
+  scp -q -i ${SSH_KEY} -P ${SSH_PORT} -o StrictHostKeyChecking=accept-new "$PREBUILT" "${USER_}@${HOST}:${REMOTE_DIR}/bin/litmus.new"
+  $SSH_CMD "chmod +x ${REMOTE_DIR}/bin/litmus.new && cp -f ${REMOTE_DIR}/bin/litmus ${REMOTE_DIR}/bin/litmus.bak-\$(date +%Y%m%d-%H%M) && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
+elif [ -n "$SKIP_BUILD" ]; then
   echo "skip-build：保留服务器现有二进制"
 else
-  $SSH_CMD "set -o pipefail; cd ${REMOTE_DIR}/src && cargo build --release -p litmus 2>&1 | tail -1 && mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/litmus ${REMOTE_DIR}/bin/litmus.new && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
+  # CARGO_BUILD_JOBS=1：服务器只有 2G 内存，并行 rustc 编译 litmus-server 会被 OOM killer 杀掉（SIGKILL, exit 101）；
+  # 单任务串行编虽慢但不会 OOM。tail -3 而不是 -1：失败时要把 error/Caused by 留在日志里。
+  $SSH_CMD "set -o pipefail; cd ${REMOTE_DIR}/src && CARGO_BUILD_JOBS=1 cargo build --release -p litmus 2>&1 | tail -3 && mkdir -p ${REMOTE_DIR}/bin ${REMOTE_DIR}/kb && cp ${REMOTE_DIR}/src/target/release/litmus ${REMOTE_DIR}/bin/litmus.new && mv -f ${REMOTE_DIR}/bin/litmus.new ${REMOTE_DIR}/bin/litmus"
 fi
 $SSH_CMD "systemctl disable --now thirdc 2>/dev/null; cp ${REMOTE_DIR}/src/deploy/litmus.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable litmus && systemctl restart litmus"
 echo "Litmus: https://nownexts.com/litmus/  (daemon on 127.0.0.1:7700)"
