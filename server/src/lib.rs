@@ -59,6 +59,8 @@ pub struct AppState {
     pub rag: Arc<RagJob>,
     /// 备份任务状态（/backup/status）。
     pub backup: Arc<BackupJob>,
+    /// 跨端配对码：一次性 6 位数字码 → 过期时间（unix 秒）。桌面 / 服务器生成，手机 PWA 输码即登录（0.34.0）。
+    pub pair: Arc<Mutex<Vec<(String, u64)>>>,
 }
 
 /// RAG 建向量后台任务的可观察状态。
@@ -393,6 +395,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/asset", post(post_asset))
         .route("/sync", post(sync))
         .route("/auth/login", post(auth_login))
+        .route("/auth/pair-code", post(pair_code))
+        .route("/auth/pair", post(pair_login))
         .route("/refresh", post(force_refresh))
         .route("/backup", post(backup_vault))
         .route("/agent/memory", get(agent_memory_list).post(agent_memory_add))
@@ -2945,6 +2949,7 @@ pub fn build_state(vault: Vault) -> anyhow::Result<Arc<AppState>> {
         pull: Arc::new(Mutex::new(PullJob::default())),
         rag: Arc::new(RagJob::default()),
         backup: Arc::new(BackupJob::default()),
+        pair: Arc::new(Mutex::new(Vec::new())),
     }))
 }
 
@@ -3029,6 +3034,27 @@ pub async fn serve_listener(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn pairing_code_flow_generates_and_consumes_once() {
+        let (app, token, _dir) = test_router();
+        let res = app.clone().oneshot(Request::builder().method("POST").uri("/auth/pair-code").header("authorization", format!("Bearer {token}")).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), 8192).await.unwrap();
+        let code = serde_json::from_slice::<serde_json::Value>(&body).unwrap()["code"].as_str().unwrap().to_string().to_string();
+        assert_eq!(code.len(), 6);
+        assert!(code.chars().all(|c| c.is_ascii_digit()), "6 位数字");
+        let res = app.clone().oneshot(Request::builder().method("POST").uri("/auth/pair").header("content-type", "application/json").body(Body::from("{\"code\":\"000000\"}")).unwrap()).await.unwrap();
+        assert_eq!(res.status(), 401, "不存在的码要 401");
+        let res = app.clone().oneshot(Request::builder().method("POST").uri("/auth/pair").header("content-type", "application/json").body(Body::from(format!("{{\"code\":\"{code}\"}}"))).unwrap()).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), 8192).await.unwrap();
+        let token2 = serde_json::from_slice::<serde_json::Value>(&body).unwrap()["token"].as_str().unwrap().to_string().to_string();
+        assert!(!token2.is_empty(), "配对码登录要发 token");
+        let res = app.clone().oneshot(Request::builder().method("POST").uri("/auth/pair").header("content-type", "application/json").body(Body::from(format!("{{\"code\":\"{code}\"}}"))).unwrap()).await.unwrap();
+        assert_eq!(res.status(), 401, "同一个码只能用一次");
+    }
+
     use axum::body::Body;
     use axum::http::Request;
     use base64::Engine;
@@ -6342,6 +6368,51 @@ async fn auth_login(
     } else {
         err(StatusCode::UNAUTHORIZED, "用户名或密码错误").into_response()
     }
+}
+
+/// 跨端配对：桌面 / 服务器生成一次性 6 位码（5 分钟有效），手机输码即登录（0.34.0）。
+/// 与「用户名密码登录」同权：成功即发 machine token；码用一次即作废。
+fn pair_generate() -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let nanos = now.as_nanos() as u64;
+    let pid = std::process::id() as u64;
+    let mut s = nanos ^ (pid.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    for _ in 0..3 { s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); }
+    format!("{:06}", (s % 1_000_000) as u64)
+}
+
+fn pair_prune(pairs: &mut Vec<(String, u64)>) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    pairs.retain(|(_, exp)| *exp > now);
+}
+
+async fn pair_code(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let code = pair_generate();
+    let exp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() + 300;
+    let mut g = st.pair.lock().unwrap();
+    pair_prune(&mut g);
+    g.push((code.clone(), exp));
+    Json(json!({ "code": code, "expires_in": 300 })).into_response()
+}
+
+async fn pair_login(State(st): State<Arc<AppState>>, body: Bytes) -> impl IntoResponse {
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let code = req.get("code").and_then(|c| c.as_str()).unwrap_or("").trim().to_string();
+    if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
+        return err(StatusCode::BAD_REQUEST, "配对码是 6 位数字").into_response();
+    }
+    let machine = { let k = st.kernel.lock().unwrap(); k.vault.ensure_machine().unwrap_or_default() };
+    let mut g = st.pair.lock().unwrap();
+    pair_prune(&mut g);
+    let before = g.len();
+    g.retain(|(c, _)| c != &code);
+    if g.len() == before {
+        return err(StatusCode::UNAUTHORIZED, "配对码无效或已过期：回桌面 /库 重新生成一个").into_response();
+    }
+    Json(json!({ "token": machine.token, "ok": true })).into_response()
 }
 
 /// 强制刷新：清缓存 + 全量同步 + 返回最新状态。

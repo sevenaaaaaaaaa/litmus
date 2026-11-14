@@ -22,6 +22,14 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- 0.34.0 快速进入：litmus://quick 与 litmus://compose?text=… 从小组件 / 快捷方式直达快速记一条 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="litmus" android:host="quick" />
+                <data android:scheme="litmus" android:host="compose" />
+            </intent-filter>
         </activity>
 
         <provider

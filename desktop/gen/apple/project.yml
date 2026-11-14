@@ -49,6 +49,9 @@ targets:
               - UISceneConfigurationName: Default
                 UISceneDelegateClassName: TaoSceneDelegate
         UILaunchStoryboardName: LaunchScreen
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nownexts.litmus.quick
+            CFBundleURLSchemes: [litmus]
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

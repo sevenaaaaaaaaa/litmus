@@ -896,17 +896,31 @@ if (!token){ showLogin(); return; }
 function showLogin(){
   document.body.classList.add('login');
   const el = document.createElement('form'); el.id = 'login'; el.autocomplete = 'on';
-  el.innerHTML = '<b>Litmus</b><p>登录到这个知识库</p><input type="text" id="lg-u" name="username" placeholder="用户名" autocomplete="username" required><input type="password" id="lg-p" name="password" placeholder="密码" autocomplete="current-password" required><button type="submit">登录</button><p class="bad" id="lg-e" role="alert"></p>';
+  el.innerHTML = '<b>Litmus</b><p>登录到这个知识库</p>' +
+    '<div id="lg-mode-pass"><input type="text" id="lg-u" name="username" placeholder="用户名" autocomplete="username" required><input type="password" id="lg-p" name="password" placeholder="密码" autocomplete="current-password" required><button type="submit">登录</button><p class="hint" style="text-align:left;margin:6px 0 0">手机上进不去？在桌面 /库 里点「配对码」，回这里输 6 位码即可，不用密码。<button type="button" class="btn" id="lg-swap" style="padding:3px 10px">改用配对码登录</button></p></div>' +
+    '<div id="lg-mode-pair" hidden><input type="text" id="lg-c" inputmode="numeric" maxlength="6" placeholder="6 位配对码" autocomplete="one-time-code" required><button type="submit">用配对码登录</button><p class="hint" style="text-align:left;margin:6px 0 0">在桌面（同一台设备的桌面 App 或服务器控制台）打开 /库 → 配对码，会给出一个 6 位码，5 分钟内有效、只用一次。<button type="button" class="btn" id="lg-swap2" style="padding:3px 10px">改用用户名密码</button></p></div>' +
+    '<p class="bad" id="lg-e" role="alert"></p>';
   document.body.appendChild(el);
+  const swapTo = mode => {
+    document.getElementById('lg-mode-pass').hidden = mode !== 'pass';
+    document.getElementById('lg-mode-pair').hidden = mode !== 'pair';
+    const f = document.getElementById(mode === 'pair' ? 'lg-c' : 'lg-u');
+    setTimeout(() => f && f.focus(), 30);
+  };
+  document.getElementById('lg-swap').onclick = () => swapTo('pair');
+  document.getElementById('lg-swap2').onclick = () => swapTo('pass');
   setTimeout(() => document.getElementById('lg-u').focus(), 30);
   el.onsubmit = async e => {
     e.preventDefault();
     const er = document.getElementById('lg-e'); er.textContent = '';
+    const pairMode = !document.getElementById('lg-mode-pair').hidden;
     try {
-      const r = await fetch(BASE + '/auth/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username:document.getElementById('lg-u').value.trim(), password:document.getElementById('lg-p').value})});
+      const r = pairMode
+        ? await fetch(BASE + '/auth/pair', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({code:document.getElementById('lg-c').value.trim()})})
+        : await fetch(BASE + '/auth/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username:document.getElementById('lg-u').value.trim(), password:document.getElementById('lg-p').value})});
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.token) throw new Error(d.error || '登录失败');
-      try { localStorage.setItem('litmus_token', d.token); localStorage.setItem('litmus_user', document.getElementById('lg-u').value.trim()); } catch(_){}
+      try { localStorage.setItem('litmus_token', d.token); localStorage.setItem('litmus_user', pairMode ? '配对码' : document.getElementById('lg-u').value.trim()); } catch(_){}
       location.replace(location.pathname + location.search + location.hash);
     } catch(x){ er.textContent = x.message || String(x); }
   };
@@ -2141,6 +2155,12 @@ function autoTags(text){
     if (tag.length < 2 || tag.length > 24) continue;
     if (out.some(x => x.toLowerCase() === tag.toLowerCase())) continue;
     if (tagHit(text, tag)){ out.push(tag); if (out.length >= 3) return out; }
+  }
+  /* 0.34.0 自动 hashtag：库里没匹配到时，兜底给「随手记」和当月时间标签，快速记不落空 */
+  if (!out.length){
+    const d = new Date();
+    out.push('随手记');
+    out.push(d.getFullYear() + '年' + (d.getMonth() + 1) + '月');
   }
   return out;
 }
@@ -4833,13 +4853,21 @@ async function openVaults(){
     const cur = (r.current || {}).path || '';
     box.innerHTML = '<p class="hint" style="margin-top:0">每个库是磁盘上的一个文件夹。切换后窗口会重新载入；各库的知识场互不相干。</p>' +
       (r.vaults || []).map((v, i) => '<div class="row"><div class="grow"><span>' + esc(v.name) + (v.path === cur ? ' · 当前' : '') + '</span><small>' + esc(v.path) + '</small></div>' + (v.path === cur ? '' : '<button class="btn" data-sw="' + i + '">切过去</button>') + '</div>').join('') +
-      '<div class="acts"><button class="btn pri" id="vl-account">登录与同步</button></div><label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="' + (MOBILE ? '库名，保存在此设备上' : '名字，会建在「文稿」文件夹里') + '"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
+      '<div class="acts"><button class="btn pri" id="vl-account">登录与同步</button><button class="btn" id="vl-pair">跨端配对码…</button></div><div id="vl-pair-out"></div><label for="vl-new">新建一个库</label><input type="text" id="vl-new" placeholder="' + (MOBILE ? '库名，保存在此设备上' : '名字，会建在「文稿」文件夹里') + '"><div class="acts"><button class="btn pri" id="vl-go">新建并切过去</button><span id="vl-msg"></span></div>';
     box.querySelectorAll('[data-sw]').forEach(b => b.onclick = async () => {
       const v = r.vaults[+b.dataset.sw]; if (editing) await flushSave();
       b.disabled = true; b.textContent = '正在切换…';
       try { await window.__TAURI_INTERNALS__.invoke('desktop_switch_vault', {path:v.path}); } catch(e){ toast('<b>切换失败</b>：' + esc(e.message || e), true); b.disabled = false; b.textContent = '切过去'; }
     });
     $('vl-account').onclick = openAccount;
+    $('vl-pair').onclick = async () => {
+      const out = $('vl-pair-out'); out.innerHTML = '<span class="thinking"><i></i><i></i><i></i> 正在生成配对码</span>';
+      try {
+        const r = await api('/auth/pair-code', {method:'POST'});
+        const min = Math.round(r.expires_in / 60);
+        out.innerHTML = '<p style="margin:6px 0 0">配对码：<b style="font:700 var(--fs-1) var(--f-mono);letter-spacing:.3em">' + esc(r.code) + '</b>（' + min + ' 分钟内有效，只用一次）</p><p class="hint">在手机浏览器打开这台库的地址 → 登录页点「改用配对码登录」→ 输入这 6 位码，不用输密码。</p>';
+      } catch(e){ out.innerHTML = '<p class="bad">' + esc(e.message || e) + '</p>'; }
+    };
     $('vl-go').onclick = async () => {
       const name = $('vl-new').value.trim(), m = $('vl-msg'); if (!name) return;
       if (editing) await flushSave();
@@ -5141,6 +5169,12 @@ async function localizeUrl(url){
   try {
     const r = await api('/field/localize', {method:'POST', json:html ? {url, html} : {url}});
     await refreshNow(); const n = byPath.get(r.rel);
+    /* 0.34.0 自动 hashtag：网页采集落库后自动打「网页 + 域名」标签，可手动删 */
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+      const hostTag = host.replace(/[^a-z0-9-]/gi, '-').slice(0, 40);
+      if (n && hostTag){ const d = await api('/doc?path=' + encP(n.p)); await api('/doc?path=' + encP(n.p), {method:'PUT', body:addTags(d.source || '', ['网页', hostTag]), headers:{'content-type':'text/markdown'}}); }
+    } catch(_e){}
     if (n){ flash(n); focusOn(n.gx, n.gy, Math.max(cam.ts, .7), (vw - sheetW()) / 2, vh * .42); }
     toastAct('存进来了：<b>' + esc(r.title || r.rel) + '</b>' + (r.images ? ' · ' + r.images + ' 张图' : '') + (r.failed ? '（' + r.failed + ' 张没下下来，保留了原地址）' : ''), '打开', () => n && openDoc(n));
   } catch(e){
@@ -5819,6 +5853,29 @@ loadField().then(() => {
   }
   /* 深链：/?doc=Notes/… （浏览器扩展、托盘、旧书签）直接打开那篇 */
   const deep = params.get('doc'); if (deep && byPath.get(deep)) setTimeout(() => openDoc(byPath.get(deep)), 400);
+  /* 快速进入三件套（0.34.0）：litmus:// 落到这里；顶部下拉 / 三次敲击直接弹快速记一条 */
+  const QUICK_OPEN = () => { q.value = '+ '; onInput(); q.focus(); toast('快速记：写一句，回车进库'); };
+  if (MOBILE){
+    let qd = null;
+    field.addEventListener('pointerdown', e => { qd = (e.clientY < 96 && !(e.target && e.target.closest && e.target.closest('#nodes .n'))) ? {x: e.clientX, y: e.clientY} : null; }, {passive:true});
+    field.addEventListener('pointerup', e => {
+      if (qd && e.clientY - qd.y > 64 && Math.abs(e.clientX - qd.x) < 60){ QUICK_OPEN(); }
+      qd = null;
+    }, {passive:true});
+  }
+  let tp0 = null, tapT = [];
+  field.addEventListener('pointerdown', e => { tp0 = {x: e.clientX, y: e.clientY}; }, {passive:true});
+  field.addEventListener('pointerup', e => {
+    if (tp0 && Math.hypot(e.clientX - tp0.x, e.clientY - tp0.y) < 12 && !(e.target && e.target.closest && e.target.closest('#nodes .n'))){
+      const now = Date.now();
+      /* 击与击间隔 320ms 以上：绕开双击缩放的窗口，三击在 1.2 秒内完成 */
+      tapT = tapT.filter(t => now - t >= 320 && now - t < 1200);
+      tapT.push(now);
+      if (tapT.length >= 3){ tapT = []; QUICK_OPEN(); }
+    } else tapT = [];
+    tp0 = null;
+  }, {passive:true});
+
   /* 快速记一条：/?compose=1&text=…（主屏图标、快捷指令、Back Tap 都走这里） */
   const compose = params.get('compose') || params.get('memo');
   if (compose){
