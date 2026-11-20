@@ -494,6 +494,19 @@ impl Vault {
         self.sidecar().join("blobs")
     }
 
+    /// 补齐 sidecar 目录树（.litmus/local/{ops,index,blobs,publish,design}），幂等。
+    ///
+    /// 用于「litmus.toml 还在、.litmus/local 却丢了」的半残库：换机、恢复备份、
+    /// 清理缓存、上次 init 中途被打断，都会留下这种库。不补齐的话，
+    /// ensure_machine 写 machine.toml、Index::open 开 index.db 都会撞
+    /// io: No such file or directory，桌面端只看到「内核没能启动」。
+    pub fn ensure_sidecar(&self) -> Result<(), StoreError> {
+        for d in ["ops", "index", "blobs", "publish", "design"] {
+            fs::create_dir_all(self.sidecar().join(d))?;
+        }
+        Ok(())
+    }
+
     /// 读取/生成设备身份与本地 API 令牌（.litmus/local/machine.toml）。
     pub fn ensure_machine(&self) -> Result<MachineConfig, StoreError> {
         let path = self.sidecar().join("machine.toml");
@@ -758,6 +771,26 @@ mod tests {
         let m2 = v.ensure_machine().unwrap();
         assert_eq!(m.device_id, m2.device_id);
         assert_eq!(m.token, m2.token);
+    }
+
+    #[test]
+    fn ensure_sidecar_rebuilds_missing_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = Vault::init(dir.path(), "t").unwrap();
+        // 模拟换机 / 恢复备份：litmus.toml 在，.litmus/local 整个丢了
+        std::fs::remove_dir_all(v.sidecar()).unwrap();
+        assert!(!v.sidecar().exists());
+        v.ensure_sidecar().expect("应补齐 sidecar 目录树");
+        for d in ["ops", "index", "blobs", "publish", "design"] {
+            assert!(v.sidecar().join(d).is_dir(), "{d} 未补齐");
+        }
+        // 补齐后设备身份能正常生成——这一笔原来会 io: No such file or directory
+        let m = v.ensure_machine().expect("补齐后应能生成身份");
+        assert!(!m.token.is_empty());
+        // 幂等：再跑一次不报错、不换身份
+        v.ensure_sidecar().unwrap();
+        let m2 = v.ensure_machine().unwrap();
+        assert_eq!(m.device_id, m2.device_id);
     }
 
     #[test]

@@ -2,6 +2,19 @@
 
 Litmus 的用户可见变化，新版本在上。正式版本只发 `X.Y.0`（紧急修复才发 `X.Y.Z`）；每日构建见 GitHub Releases 里的 **Nightly** 预发布，不在此逐条记录。
 
+## 0.34.1 — 2026-11-20 · 修「内核没能启动 / io: No such file or directory」
+
+### 修了什么
+
+- **纯修 bug，没有新功能。** 有一种库会打不开：目录里 `litmus.toml` 还在，但 `.litmus/local/` 丢了（换机、恢复备份、清理缓存、上次初始化中途被打断都会这样）。这种库以前会直接弹「内核没能启动 · 构建内核状态失败：io: No such file or directory (os error 2)」，而界面上没有任何可点的路。
+- 现在打开库时会先补齐 sidecar 目录树（`.litmus/local/{ops,index,blobs,publish,design}`）并重建设备身份，索引由内核按 `Notes/` 重新建，**笔记不丢**。
+- 三层都补了：`kernel-store` 新增幂等的 `Vault::ensure_sidecar()`；服务端 `build_state` 与桌面端 `open_or_init` 各调一次；每层各带一条回归测试（配置在、sidecar 缺失 → 打开成功且 `machine.toml`/`index.db` 被重建）。
+
+### 升级方式
+
+- 服务器：`/www/wwwroot/litmus/update.sh`（拉取 → 构建 → 重启），之后 `curl 127.0.0.1:7700` 应 200。
+- macOS：装 Release 里的 `Litmus-0.34.1.dmg`，覆盖安装即可，库不用动。
+
 ## 0.34.0 — 2026-11-14 · 移动端快速进入与跨端配对
 
 ### 跨端配对码：手机不用密码也能进
