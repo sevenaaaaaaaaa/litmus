@@ -1,0 +1,58 @@
+# 用仓库 Secret 里的 Tauri 签名私钥，给 Release 上已存在的某个资产补一份 .sig
+#
+# 为什么存在：本账号的 GitHub macOS runner 会被秒取消，macOS 更新归档只能本地打；
+# 而私钥只存在于 Secret（TAURI_SIGNING_PRIVATE_KEY），本机没有。
+# 签名与平台无关——ubuntu runner 拿同一把钥匙签 macOS 的 .app.tar.gz 完全等价。
+#
+# 用法：
+#   gh workflow run sign-asset.yml -f tag=v0.34.1 -f asset=Litmus.app.tar.gz
+# 产物：Release 上多一个同名 .sig 资产（内容即 App 更新校验用的签名）。
+name: sign-asset
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release 标签，如 v0.34.1"
+        required: true
+      asset:
+        description: "该 Release 上已存在的资产名，如 Litmus.app.tar.gz"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: 拉取待签资产
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ASSET="${{ inputs.asset }}"
+          gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$ASSET" --clobber -O "./$ASSET"
+          ls -l "./$ASSET"
+
+      - name: 用 Secret 签名
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          set -euo pipefail
+          ASSET="${{ inputs.asset }}"
+          cargo tauri signer sign "./$ASSET"
+          ls -l "./$ASSET.sig"
+          head -c 60 "./$ASSET.sig"; echo
+
+      - name: 回传 .sig
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.tag }}" "./${{ inputs.asset }}.sig" --clobber -R "${{ github.repository }}"
