@@ -70,7 +70,8 @@ build_macos_app() {
   fi
 
   # CFBundleShortVersionString = full version (may carry -nightly.YYYYMMDD);
-  # CFBundleVersion stays purely numeric. Updater archives are produced and signed by CI.
+  # CFBundleVersion stays purely numeric. 更新归档（.app.tar.gz）由本机打包、由 CI 用仓库 Secret 签名
+  # —— 见 release.sh 的 --macos-sign 与 .github/workflows/sign-asset.yml。
   cfg="{\"version\":\"$ver\",\"bundle\":{\"createUpdaterArtifacts\":false,\"macOS\":{\"bundleVersion\":\"$core\"}}}"
   start=$(date +%s)
   if ! (cd "$ROOT/desktop" && cargo tauri build --bundles app --config "$cfg"); then

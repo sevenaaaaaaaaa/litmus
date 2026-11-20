@@ -4,7 +4,8 @@
 # 用法:
 #   scripts/release.sh 0.2.0                 # 正式发版
 #   scripts/release.sh 0.2.0 --no-install    # 发版但不替换本机 /Applications/Litmus.app
-#   scripts/release.sh 0.2.0 --updater-only  # 补救：CI 挂掉时本地签名打 macOS 更新归档 + latest.json 并上传
+#   scripts/release.sh 0.2.0 --updater-only  # 补救：本机有私钥时，本地签名打 macOS 更新归档 + latest.json 并上传
+#   scripts/release.sh 0.2.0 --macos-sign   # 本机无私钥（只有仓库 Secret）时：打 tar.gz → CI 代签 → 合并 darwin 条目
 #
 # 流程：main + 干净 + 与 origin 同步 → CHANGELOG.md 必须已有「## X.Y.Z — …」一节（补丁为「### X.Y.Z — …」）
 # → 内核测试 → 写入唯一版本源 Cargo.toml [workspace.package]（+ Cargo.lock）→ 提交 `chore(release): vX.Y.Z`
@@ -31,11 +32,12 @@ cd "$ROOT"
 VER="${1:?用法: scripts/release.sh X.Y.Z [--no-install|--updater-only]}"
 VER="${VER#v}"
 shift
-INSTALL=1 UPDATER_ONLY=0
+INSTALL=1 UPDATER_ONLY=0 MACOS_SIGN=0
 for arg in "$@"; do
   case "$arg" in
     --no-install) INSTALL=0 ;;
     --updater-only) UPDATER_ONLY=1 ;;
+    --macos-sign) MACOS_SIGN=1 ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -89,6 +91,112 @@ PY
   gh_upload_asset "$TAG" "$ARCHIVE" --clobber
   gh_upload_asset "$TAG" "$SIG" --clobber
   echo "🎉 完成。验证: curl -sL https://github.com/$REPO_SLUG/releases/latest/download/latest.json | python3 -m json.tool"
+  exit 0
+fi
+
+# ---------- --macos-sign: 本机无私钥时，让 CI 用 Secret 签 macOS 更新归档并补 latest.json ----------
+# 背景：TAURI_SIGNING_PRIVATE_KEY 只在仓库 Secret 里（本机 ~/.tauri 可能什么都没有），而本账号的
+# GitHub macOS runner 会被秒取消，macOS 更新归档只能本地打。签名与平台无关——ubuntu runner 拿同一把
+# 钥匙签 .app.tar.gz 等价，所以这里走 .github/workflows/sign-asset.yml 代签，公钥与 Secret 都不动。
+if [[ "${MACOS_SIGN}" == 1 ]]; then
+  git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null || { echo "✗ tag ${TAG} 不存在"; exit 1; }
+  [[ "$(cargo_version)" == "${VER}" ]] || { echo "✗ Cargo.toml 版本 $(cargo_version) ≠ ${VER}"; exit 1; }
+  ASSET="${APP_NAME}.app.tar.gz"
+  SIG_ASSET="${ASSET}.sig"
+  WORK="$(mktemp -d)"
+
+  # 1) 打更新归档：优先用已构建的 .app，没有就从本机 DMG 里取
+  APP_DIR="${APP_OUT:-}"
+  if [[ -z "$APP_DIR" || ! -d "$APP_DIR" ]]; then
+    DMG_LOCAL="$(ls -t "$ROOT"/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)"
+    [[ -n "$DMG_LOCAL" ]] || { echo "✗ 既没有 .app 也没有 DMG，先跑一次构建（不带 --macos-sign 的发版流程）"; exit 1; }
+    MNT="$(mktemp -d)"
+    log "从 DMG 提取 ${APP_NAME}.app：$(basename "$DMG_LOCAL")"
+    hdiutil attach -nobrowse -quiet -mountpoint "$MNT" "$DMG_LOCAL"
+    cp -R "$MNT/${APP_NAME}.app" "$WORK/"
+    hdiutil detach -quiet "$MNT"
+    APP_DIR="$WORK/${APP_NAME}.app"
+  fi
+  BUILT_VER="$(defaults read "$APP_DIR/Contents/Info.plist" CFBundleShortVersionString)"
+  [[ "$BUILT_VER" == "${VER}" ]] || { echo "✗ 归档里的版本是 ${BUILT_VER}，期望 ${VER}"; exit 1; }
+  PACK="$WORK/$ASSET"
+  tar czf "$PACK" -C "$(dirname "$APP_DIR")" "${APP_NAME}.app"
+  log "打包 $(basename "$PACK")（$(du -h "$PACK" | cut -f1)）"
+  gh_upload_asset "${TAG}" "$PACK" --clobber
+
+  # 2) 等 desktop.yml 产出 latest.json：win/linux 两条必须留着，不能被我们整份覆盖掉
+  log "等待 Release 上出现 latest.json（desktop.yml 产出）"
+  deadline=$(( $(date +%s) + ${LATEST_WAIT:-1800} ))
+  until gh_release_has_asset "${TAG}" latest.json; do
+    [[ "$(date +%s)" -lt "$deadline" ]] || { echo "✗ 等 latest.json 超时（LATEST_WAIT=${LATEST_WAIT:-1800}s）"; exit 1; }
+    printf '.'; sleep 10
+  done
+  echo
+
+  # 3) 触发 CI 代签
+  log "触发 sign-asset.yml（tag=${TAG} asset=${ASSET}）"
+  gh workflow run sign-asset.yml -R "${REPO_SLUG}" -f tag="${TAG}" -f asset="$ASSET" >/dev/null
+  RUN_ID=""
+  for _ in $(seq 1 12); do
+    RUN_ID="$(gh run list -R "${REPO_SLUG}" --workflow sign-asset.yml -L1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
+    [[ -n "$RUN_ID" && "$RUN_ID" != "null" ]] && break
+    sleep 5
+  done
+  [[ -n "$RUN_ID" && "$RUN_ID" != "null" ]] || { echo "✗ 没找到 sign-asset 的运行"; exit 1; }
+  log "运行 $RUN_ID"
+  deadline=$(( $(date +%s) + ${SIGN_WAIT:-1800} ))
+  while :; do
+    ST="$(gh run view "$RUN_ID" -R "${REPO_SLUG}" --json status,conclusion --jq '.status + "/" + (.conclusion // "-")')"
+    case "$ST" in
+      completed/success) break ;;
+      completed/*) echo "✗ 签名失败：${ST}（gh run view ${RUN_ID} --log）"; exit 1 ;;
+    esac
+    [[ "$(date +%s)" -lt "$deadline" ]] || { echo "✗ 等签名超时"; exit 1; }
+    sleep 10
+  done
+  log "签名完成"
+
+  # 4) 取回 .sig，并核对签名钥匙 = 客户端内嵌公钥（轮换过就别装哑巴，直接停下）
+  gh release download "${TAG}" -R "${REPO_SLUG}" -p "$SIG_ASSET" --clobber -O "$WORK/$SIG_ASSET"
+  python3 - "$WORK/$SIG_ASSET" "$ROOT/desktop/tauri.conf.json" <<'PY'
+import base64, json, sys
+sig_path, conf_path = sys.argv[1], sys.argv[2]
+sig = base64.b64decode(base64.b64decode(open(sig_path).read().strip()).decode().splitlines()[1])
+sig_kid = sig[2:10].hex().upper()
+conf = json.load(open(conf_path))
+pub = base64.b64decode(base64.b64decode(conf["plugins"]["updater"]["pubkey"]).decode().splitlines()[1])
+pub_kid = pub[2:10].hex().upper()
+print(f"  签名钥匙 {sig_kid} / 客户端公钥 {pub_kid}")
+if sig_kid != pub_kid:
+    sys.exit("  ✗ 钥匙不一致：这个包客户端会拒收（私钥被轮换过？）")
+PY
+  log "钥匙一致"
+
+  # 5) 合并 darwin 条目（保留其它平台）
+  gh release download "${TAG}" -R "${REPO_SLUG}" -p latest.json --clobber -O "$WORK/latest.json"
+  python3 - "$WORK/latest.json" "$WORK/$SIG_ASSET" "${VER}" "${REPO_SLUG}" "${APP_NAME}" <<'PY'
+import json, pathlib, sys
+latest_path, sig_path, ver, slug, app = sys.argv[1:6]
+d = json.loads(pathlib.Path(latest_path).read_text())
+sig = pathlib.Path(sig_path).read_text().strip()
+url = f"https://github.com/{slug}/releases/download/v{ver}/{app}.app.tar.gz"
+entry = {"signature": sig, "url": url}
+d.setdefault("platforms", {})
+d["platforms"]["darwin-aarch64"] = entry
+d["platforms"]["darwin-aarch64-app"] = entry
+d["version"] = ver
+d.setdefault("pub_date", "")
+pathlib.Path(latest_path).write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
+print("  platforms:", ", ".join(sorted(d["platforms"])))
+PY
+  gh_upload_asset "${TAG}" "$WORK/latest.json" --clobber
+
+  rm -rf "$WORK"
+  echo
+  echo "  macOS 自动更新已就绪"
+  echo "  归档:     $ASSET"
+  echo "  签名:     $SIG_ASSET"
+  echo "  验证:     curl -sL https://github.com/${REPO_SLUG}/releases/latest/download/latest.json | python3 -m json.tool"
   exit 0
 fi
 
