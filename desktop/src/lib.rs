@@ -260,7 +260,11 @@ fn open_or_init(path: &Path) -> anyhow::Result<kernel_core::Vault> {
     let cfg = path.join("litmus.toml");
     if cfg.is_file() {
         match kernel_core::Vault::open(path) {
-            Ok(v) => return Ok(v),
+            Ok(v) => {
+                // 配置完好但 .litmus/local 丢了：先补齐再打开，否则 build_state 里报 io 错误。
+                v.ensure_sidecar()?;
+                return Ok(v);
+            }
             Err(e) => {
                 // 坏配置自愈：进程上次被杀在 init 写盘途中会留下空的 litmus.toml
                 // （目录项已提交、数据丢失——移动端尤其常见）。空文件直接删掉重建；
@@ -1642,6 +1646,21 @@ mod tests {
         assert!(dir.join("litmus.toml").is_file());
         let v2 = open_or_init(&dir).expect("再次应 open");
         assert_eq!(v1.root, v2.root);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_or_init_selfheals_missing_sidecar() {
+        let dir = std::env::temp_dir().join(format!("litmus-desk-nosidecar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // 模拟「litmus.toml 在、.litmus/local 没了」：正是报「内核没能启动」的那种库
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("litmus.toml"), "name = \"Litmus\"\n").unwrap();
+        let v = open_or_init(&dir).expect("缺 sidecar 时应自愈打开，而不是报 io 错误");
+        assert!(v.sidecar().join("index").is_dir(), "index 目录应补齐");
+        assert!(v.sidecar().join("blobs").is_dir(), "blobs 目录应补齐");
+        let m = v.ensure_machine().expect("补齐后应能生成设备身份");
+        assert!(!m.token.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

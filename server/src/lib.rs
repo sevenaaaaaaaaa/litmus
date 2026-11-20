@@ -2936,6 +2936,9 @@ pub fn build_state(vault: Vault) -> anyhow::Result<Arc<AppState>> {
         let _ = std::fs::create_dir_all(&d);
         std::env::set_var("LITMUS_KEYS_DIR", d);
     }
+    // sidecar 自愈：litmus.toml 在、.litmus/local 丢了（换机/恢复备份/被清理）时先补齐目录树，
+    // 否则 ensure_machine 与 Index::open 都会报 io: No such file or directory。
+    vault.ensure_sidecar()?;
     let machine = vault.ensure_machine()?;
     let kernel = Arc::new(Mutex::new(Kernel::open(vault)?));
     let mcp = Arc::new(litmus_mcp::McpServer::new(kernel.clone()));
@@ -3066,6 +3069,19 @@ mod tests {
         let state = build_state(vault).unwrap();
         let token = state.token.clone();
         (router(state), token, dir)
+    }
+
+    #[test]
+    fn build_state_selfheals_vault_without_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::init(dir.path(), "heal-test").unwrap();
+        // 模拟「配置在、.litmus/local 丢了」：换机、恢复备份、清理缓存后的典型状态
+        std::fs::remove_dir_all(vault.sidecar()).unwrap();
+        let state = build_state(Vault::open(dir.path()).unwrap())
+            .expect("缺 sidecar 时应自愈，而不是 io: No such file or directory");
+        assert!(!state.token.is_empty(), "自愈后应生成本地 API 令牌");
+        assert!(dir.path().join(".litmus/local/machine.toml").is_file());
+        assert!(dir.path().join(".litmus/local/index/index.db").is_file(), "索引应重建");
     }
 
     #[test]
