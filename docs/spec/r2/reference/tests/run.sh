@@ -73,6 +73,11 @@ node --test p1-01-soul/soul.test.mjs >/tmp/t10.log 2>&1 && ok "17 条解析/校�
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-example.md >/tmp/t11.log 2>&1 && ok "示例卡 VALID（$(grep -o '[0-9]* 条' /tmp/t11.log | head -1)）" || { bad "示例卡"; cat /tmp/t11.log; }
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-template.md >/tmp/t12.log 2>&1 && ok "临时卡 VALID（confirmed:false）" || { bad "临时卡"; cat /tmp/t12.log; }
 
+say "P1-07 「像我」盲评"
+node --test p1-07-review/review.test.mjs >/tmp/t26.log 2>&1 && ok "18 条（均值/裁决/无法判定/κ/整卷判定）" || { bad "盲评测试"; tail -20 /tmp/t26.log; }
+node p1-07-review/review.mjs --in p1-07-review/example-ratings.json >/tmp/t27.log 2>&1 || true
+grep -q "判定：revise" /tmp/t27.log && ok "示例卷：6/10 达 4 分、1 段无法判定 → revise" || { bad "示例卷"; cat /tmp/t27.log; }
+
 echo
 if [ "$fail" -eq 0 ]; then printf '\033[32mALL PASS\033[0m\n'; else printf '\033[31mSOME FAILED\033[0m\n'; fi
 exit "$fail"

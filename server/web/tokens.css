@@ -90,6 +90,25 @@
   --edge-soft: oklch(24% .02 130/.12);
   --axis: oklch(24% .02 130/.20);
   --type-query: oklch(50% .15 305);
+  /* ── 显色五态（P1-06）──
+   * 颜色只是第三信道：文字 + 图标永远在。明度按 card-state ORDER 递增
+   * （种子最浅 → 已发布最深），灰度与色盲下靠深浅就能读出推进顺序。
+   * soft 只做 2px 边与浅底；ink 只允许压在 soft 底上（palette.rs 强制 ≥4.5:1）。 */
+  --state-seed:        oklch(62% .012 284);
+  --state-seed-soft:   oklch(from var(--state-seed) l c h / .12);
+  --state-seed-ink:    oklch(from var(--state-seed) calc(l - .14) c h);
+  --state-grounded:    oklch(56% .100 155);
+  --state-grounded-soft: oklch(from var(--state-grounded) l c h / .12);
+  --state-grounded-ink:  oklch(from var(--state-grounded) calc(l - .14) c h);
+  --state-tension:     oklch(50% .150 72);
+  --state-tension-soft: oklch(from var(--state-tension) l c h / .12);
+  --state-tension-ink:  oklch(from var(--state-tension) calc(l - .14) c h);
+  --state-settled:     oklch(48% .170 259);
+  --state-settled-soft: oklch(from var(--state-settled) l c h / .12);
+  --state-settled-ink:  oklch(from var(--state-settled) calc(l - .14) c h);
+  --state-shipped:     oklch(42% .090 165);
+  --state-shipped-soft: oklch(from var(--state-shipped) l c h / .12);
+  --state-shipped-ink:  oklch(from var(--state-shipped) calc(l - .14) c h);
   color-scheme: light;
 }
 
@@ -144,6 +163,22 @@
   --edge-soft: oklch(100% 0 0/.15);
   --axis: oklch(100% 0 0/.25);
   --type-query: oklch(76% .13 305);
+  /* ── 显色五态（暗色）：同一批色相，对比按 ORDER 递增（种子最低 → 已发布最高）── */
+  --state-seed:        oklch(58% .010 282);
+  --state-seed-soft:   oklch(from var(--state-seed) l c h / .16);
+  --state-seed-ink:    oklch(from var(--state-seed) calc(l + .12) c h);
+  --state-grounded:    oklch(66% .090 155);
+  --state-grounded-soft: oklch(from var(--state-grounded) l c h / .16);
+  --state-grounded-ink:  oklch(from var(--state-grounded) calc(l + .07) c h);
+  --state-tension:     oklch(72% .120 78);
+  --state-tension-soft: oklch(from var(--state-tension) l c h / .16);
+  --state-tension-ink:  oklch(from var(--state-tension) calc(l + .07) c h);
+  --state-settled:     oklch(78% .150 252);
+  --state-settled-soft: oklch(from var(--state-settled) l c h / .16);
+  --state-settled-ink:  oklch(from var(--state-settled) calc(l + .07) c h);
+  --state-shipped:     oklch(84% .080 165);
+  --state-shipped-soft: oklch(from var(--state-shipped) l c h / .16);
+  --state-shipped-ink:  oklch(from var(--state-shipped) calc(l + .07) c h);
   color-scheme: dark;
 }
 

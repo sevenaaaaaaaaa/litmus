@@ -13,7 +13,7 @@ Litmus（林下 Understory 出品）：本地优先的「知识操作系统」�
 
 ## 目录结构
 
-- `kernel/crates/` — 内核 crates（kernel-core / md / store / sync / design / browser / a2ui / deploy / backup / convert）
+- `kernel/crates/` — 内核 crates（kernel-core / md / store / sync / design / browser / a2ui / deploy / backup / convert / soul）
 - `server/` — `litmus` 二进制（serve 守护进程 + Web UI `server/web/`）
 - `cli/`、`mcp/` — CLI 与 MCP server；`desktop/` — Tauri 应用（`desktop/gen/` 为生成物）
 - `packaging/macos/` — DMG 打包脚本与 Gatekeeper 打开助手模板
@@ -32,7 +32,7 @@ cargo build --release -p litmus
 docker compose up -d                       # 7700 端口
 
 # 测试（同 CI kernel.yml）
-cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser
+cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser -p kernel-soul
 cargo check -p kernel-md -p kernel-a2ui --target wasm32-unknown-unknown
 cargo test -p litmus-server --test craft --test palette --test field   # 前端壳工艺/配色纪律（改 server/web 必跑）
 node --test server/tests/field.mjs        # 壳里的纯函数

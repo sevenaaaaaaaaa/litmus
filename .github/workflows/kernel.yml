@@ -24,7 +24,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: 内核测试
-        run: cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser
+        run: cargo test -p kernel-core -p kernel-store -p kernel-md -p kernel-a2ui -p kernel-sync -p kernel-design -p kernel-deploy -p kernel-browser -p kernel-soul
 
       - name: wasm32 可移植性（kernel-md / kernel-a2ui）
         run: cargo check -p kernel-md -p kernel-a2ui --target wasm32-unknown-unknown

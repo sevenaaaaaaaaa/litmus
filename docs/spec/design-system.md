@@ -422,3 +422,23 @@ server/web/field.html   <style> 只放本页独有部件（0.14 起唯一的壳�
 - `craft.rs` 不变：字号 / 圆角 / 动效 / 模糊仍只走 token。
 - 身份元素只有三处：品牌下的石蕊线、库根封面、卡片选中的石蕊上沿；其余保持安静。
 
+## 显色五态（2026-11-24 · P1-06）
+
+`--state-*` 是**卡的状态**，不是语义告警；与 `--ok / --warn / --danger` 不混用。
+
+| 状态 | fill | soft | ink | 主动作 |
+|---|---|---|---|---|
+| 种子 | `--state-seed` | `--state-seed-soft` | `--state-seed-ink` | 找证据 |
+| 有据 | `--state-grounded` | `--state-grounded-soft` | `--state-grounded-ink` | 找反例 |
+| 有张力 | `--state-tension` | `--state-tension-soft` | `--state-tension-ink` | 做决定 |
+| 已定 | `--state-settled` | `--state-settled-soft` | `--state-settled-ink` | 成稿 |
+| 已发布 | `--state-shipped` | `--state-shipped-soft` | `--state-shipped-ink` | 回流 / 更新 |
+
+规则：
+
+- 颜色是第三信道：每态必须有文字 + 图标（`card-state.mjs` 的 `assertAccessible` 守）。
+- fill 对 `--bg-1` ≥3:1，按种子 → 已发布递增，相邻差 >0.15（灰度下也能读顺序）。
+- ink **只允许压在 soft 底上**，≥4.5:1；不要直接放纸上（暗色种子最紧，只有 4.71）。
+- 不新增第六色：“未确认”复用 `--state-seed`，“升级为真卡”进入 `--state-grounded`。
+- 测试：`server/tests/palette.rs` 四条（两主题存在性 / 对比阶梯 / ink / CVD ΔE）。
+

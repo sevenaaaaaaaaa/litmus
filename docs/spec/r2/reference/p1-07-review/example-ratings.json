@@ -1,0 +1,54 @@
+[
+  {
+    "id": "judgment",
+    "a": 5,
+    "b": 5
+  },
+  {
+    "id": "taste",
+    "a": 4,
+    "b": 5
+  },
+  {
+    "id": "boundary",
+    "a": 4,
+    "b": 4
+  },
+  {
+    "id": "counter",
+    "a": 3,
+    "b": 4
+  },
+  {
+    "id": "workstyle",
+    "a": 5,
+    "b": 5
+  },
+  {
+    "id": "relation",
+    "a": 4,
+    "b": 3
+  },
+  {
+    "id": "language",
+    "a": 5,
+    "b": 4
+  },
+  {
+    "id": "memory",
+    "a": 2,
+    "b": 4,
+    "c": 3
+  },
+  {
+    "id": "time",
+    "a": 5,
+    "b": 5
+  },
+  {
+    "id": "unknown",
+    "a": 1,
+    "b": 4,
+    "c": 2
+  }
+]

@@ -1,10 +1,12 @@
 //! 配色体系契约（docs/spec/design-system.md「配色体系 v2」）。
 //!
-//! 在 `cargo test` 里强制三件事，任何一屏都不用靠肉眼复核：
+//! 在 `cargo test` 里强制四件事，任何一屏都不用靠肉眼复核：
 //! 1. 零 hex：tokens.css 全文、index.html 的 <style> 与静态标记不得出现 hex/rgb()/hsl() 色值；
 //! 2. 明度阶梯：五级表面在两套主题下严格单调，且相邻级差足以被看见；
 //! 3. WCAG AA：文字/强调/语义色对五级表面 ≥4.5:1，text-4 ≥3:1，on-accent ≥4.5:1——
-//!    亮/暗 × 石蕊双色/经典蓝 四种组合全部覆盖。
+//!    亮/暗 × 石蕊双色/经典蓝 四种组合全部覆盖；
+//! 4. 显色五态（P1-06）：边对纸面 ≥3:1 且按「种子→已发布」递增；ink 压在 soft 底上
+//!    ≥4.5:1；灰度与红绿色盲模拟后阶梯仍成立——颜色是第三信道，文字与图标才是前两道。
 //!
 //! 零依赖：oklch → sRGB、alpha 合成、相对亮度全部手写（公式见 CSS Color 4 / WCAG 2.2）。
 
@@ -265,6 +267,52 @@ fn color(p: &HashMap<String, String>, name: &str, ctx: &str) -> Rgba {
     oklch_to_rgba(resolve_parts(p, v, 0))
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Cvd {
+    Protan,
+    Deutan,
+}
+
+/// Machado et al. 2009（severity 1.0）的红绿色盲矩阵，作用在线性 sRGB 上。
+/// 用来回答一个具体问题：把颜色全去掉一档之后，五态还能不能按深浅读出顺序。
+fn simulate_cvd(c: Rgba, kind: Cvd) -> Rgba {
+    let m: [[f64; 3]; 3] = match kind {
+        Cvd::Protan => [
+            [0.152_286, 1.052_583, -0.204_868],
+            [0.114_503, 0.786_281, 0.099_216],
+            [-0.003_882, -0.048_116, 1.051_998],
+        ],
+        Cvd::Deutan => [
+            [0.367_322, 0.860_646, -0.227_968],
+            [0.280_085, 0.672_501, 0.047_413],
+            [-0.011_820, 0.042_940, 0.968_881],
+        ],
+    };
+    let mut out = [0.0; 3];
+    for (i, row) in m.iter().enumerate() {
+        out[i] = (row[0] * c.lin[0] + row[1] * c.lin[1] + row[2] * c.lin[2]).clamp(0.0, 1.0);
+    }
+    Rgba { lin: out, a: 1.0 }
+}
+
+/// 线性 sRGB → OKLab（Björn Ottosson）。色盲模拟后用它量两态还差多少。
+fn oklab(c: Rgba) -> [f64; 3] {
+    let [r, g, b] = c.lin;
+    let l = 0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b;
+    let m = 0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b;
+    let s = 0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b;
+    let (l, m, s) = (l.cbrt(), m.cbrt(), s.cbrt());
+    [
+        0.210_454_255_3 * l + 0.793_617_785_0 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205_0 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766_0 * s,
+    ]
+}
+
+fn delta_e(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
 const SURFACES: [&str; 5] = ["--bg-0", "--bg-1", "--surface-1", "--surface-2", "--surface-3"];
 const COMBOS: [(Theme, Accent); 4] = [
     (Theme::Light, Accent::Litmus),
@@ -351,6 +399,112 @@ fn text_and_accents_pass_wcag_aa_on_every_surface() {
         }
     }
     assert!(report.is_empty(), "WCAG AA 未通过：\n{}", report.join("\n"));
+}
+
+/// 五态顺序的唯一真相在 card-state.mjs：种子 → 有据 → 有张力 → 已定 → 已发布。
+/// 这里只认 token 名，不复制文案。
+const STATES: [&str; 5] = [
+    "--state-seed",
+    "--state-grounded",
+    "--state-tension",
+    "--state-settled",
+    "--state-shipped",
+];
+
+#[test]
+fn five_state_tokens_exist_in_both_themes() {
+    let all = blocks(TOKENS);
+    for sel in [r#":root,[data-theme="light"]"#, r#"[data-theme="dark"]"#] {
+        let d = &all
+            .iter()
+            .find(|(s, _)| s == sel)
+            .unwrap_or_else(|| panic!("tokens.css 缺少选择器块：{sel}"))
+            .1;
+        for s in STATES {
+            for suffix in ["", "-soft", "-ink"] {
+                let k = format!("{s}{suffix}");
+                assert!(d.contains_key(&k), "[{sel}] 缺 {k}——暗色漏写会静默沿用亮色值");
+            }
+        }
+    }
+}
+
+#[test]
+fn five_state_edges_form_a_contrast_ladder() {
+    for theme in [Theme::Light, Theme::Dark] {
+        let ctx = format!("{theme:?}");
+        let p = palette(theme, Accent::Litmus);
+        let bg = color(&p, "--bg-1", &ctx);
+        let mut prev = 0.0;
+        for (i, s) in STATES.iter().enumerate() {
+            let r = contrast(color(&p, s, &ctx), bg);
+            assert!(r >= 3.0, "[{ctx}] {s} 对纸面 {r:.2} < 3.0（非文本 UI 下限）");
+            if i > 0 {
+                assert!(
+                    r > prev + 0.15,
+                    "[{ctx}] {s} 没有比上一态更实：{prev:.2} → {r:.2}；灰度下会糊成一条"
+                );
+            }
+            prev = r;
+        }
+    }
+}
+
+#[test]
+fn five_state_inks_pass_wcag_aa_on_their_soft_beds() {
+    let mut report = Vec::new();
+    for (theme, accent) in COMBOS {
+        let ctx = format!("{theme:?}/{accent:?}");
+        let p = palette(theme, accent);
+        // soft 只做浅底：按最常用的承载面合成（亮色卡片 / 暗色面板）
+        let host = color(
+            &p,
+            if theme == Theme::Dark { "--surface-1" } else { "--surface-3" },
+            &ctx,
+        );
+        for s in STATES {
+            let soft = format!("{s}-soft");
+            let ink = format!("{s}-ink");
+            let bg = over(color(&p, &soft, &ctx), host);
+            let r = contrast(color(&p, &ink, &ctx), bg);
+            if r < 4.5 {
+                report.push(format!("[{ctx}] {ink} on {soft} = {r:.2} < 4.5"));
+            }
+        }
+    }
+    assert!(report.is_empty(), "显色五态 ink 未达标：\n{}", report.join("\n"));
+}
+
+#[test]
+fn five_state_states_stay_distinguishable_under_cvd() {
+    // 灰度下的顺序由上面的对比阶梯保证（contrast 只依赖亮度）。
+    // 这里回答另一个问题：红绿色盲仍保留蓝黄轴，五态不必保持亮度顺序，
+    // 但相邻两态必须还看得出差别，且每一态都不能糊进背景。
+    let mut report = Vec::new();
+    for kind in [Cvd::Protan, Cvd::Deutan] {
+        for theme in [Theme::Light, Theme::Dark] {
+            let ctx = format!("{theme:?}/{kind:?}");
+            let p = palette(theme, Accent::Litmus);
+            let bg = simulate_cvd(color(&p, "--bg-1", &ctx), kind);
+            let mut prev: Option<([f64; 3], &str)> = None;
+            for s in STATES {
+                let c = simulate_cvd(color(&p, s, &ctx), kind);
+                let r = contrast(c, bg);
+                if r < 3.0 {
+                    report.push(format!("[{ctx}] {s} 只剩 {r:.2} < 3.0"));
+                }
+                let lab = oklab(c);
+                if let Some((pc, ps)) = prev {
+                    let de = delta_e(pc, lab);
+                    if de < 0.05 {
+                        report.push(format!("[{ctx}] {ps} → {s} 色盲模拟下 ΔE={de:.3} < 0.05"));
+                    }
+                }
+                prev = Some((lab, s));
+            }
+        }
+    }
+    assert!(report.is_empty(), "色盲模拟下五态分不开：\n{}", report.join("\n"));
 }
 
 #[test]

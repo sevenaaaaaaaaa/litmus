@@ -3118,6 +3118,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-soul"
+version = "0.34.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "kernel-store"
 version = "0.34.1"
 dependencies = [
