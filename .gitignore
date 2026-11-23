@@ -36,3 +36,4 @@ kb/
 /sim-verify/
 /litmus-firefox.xpi
 *.xpi
+dist/
