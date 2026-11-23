@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "note": "六条覆盖三色与两种失败：逐字命中、转述、推断、无来源、引文对不上、锚点不存在。",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "判断是被反复使用过的取舍，不是结论。",
+      "citations": [
+        {
+          "anchor": "note-a-1",
+          "kind": "direct",
+          "quote": "是被反复使用过的取舍"
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "text": "证据的价值在于能回到原文。",
+      "citations": [
+        {
+          "anchor": "note-a-2",
+          "kind": "paraphrase"
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "text": "所以记忆应该少而硬。",
+      "citations": [
+        {
+          "anchor": "note-b-1",
+          "kind": "inference"
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "text": "灵魂卡应该每月自动重写一次。",
+      "citations": []
+    },
+    {
+      "id": "c5",
+      "text": "记忆越多越像你。",
+      "citations": [
+        {
+          "anchor": "note-b-1",
+          "kind": "direct",
+          "quote": "记忆越多越像你"
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "text": "显色边应该做成渐变。",
+      "citations": [
+        {
+          "anchor": "note-z-9",
+          "kind": "paraphrase"
+        }
+      ]
+    }
+  ]
+}

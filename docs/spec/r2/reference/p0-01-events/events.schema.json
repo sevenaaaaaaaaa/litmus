@@ -1,0 +1,541 @@
+{
+  "version": 2,
+  "updated": "2026-11-23",
+  "rules": {
+    "storage": "本地 JSONL：<vault>/.litmus/local/events/YYYY-MM-DD.jsonl；一行一条；不写内容，只写结构与计数",
+    "opt_out": "设置里一个开关；关闭后不写任何新事件，已有事件可一键清空",
+    "no_pii": "禁止写入：正文、标题、文件名、绝对路径、剪贴板内容、模型请求体",
+    "clock": "统一 UTC ISO8601；时长用 ms 整数",
+    "dedupe": "同一 session_id + name + ts 视为同一事件，写入端去重",
+    "role": "每个事件标一个 role：metric（有指标消费）或 diagnostic（只用于排查，不支撑指标）。只有 role=metric 却没有指标消费的事件才算孤儿。"
+  },
+  "piiLevels": [
+    "none",
+    "count",
+    "bucket"
+  ],
+  "piiMeaning": {
+    "none": "不含任何用户内容",
+    "count": "只是数量（如来源条数）",
+    "bucket": "离散桶（如 0 / 1-3 / 4+、时长档）"
+  },
+  "events": [
+    {
+      "name": "app.session",
+      "when": "应用前后台切换",
+      "pii": "none",
+      "properties": {
+        "phase": {
+          "type": "enum",
+          "values": [
+            "start",
+            "end"
+          ],
+          "required": true
+        },
+        "cold_start_ms": {
+          "type": "int",
+          "required": false,
+          "min": 0,
+          "max": 60000
+        },
+        "crash_free": {
+          "type": "bool",
+          "required": false
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "capture.opened",
+      "when": "快捕/分享入口被触发",
+      "pii": "none",
+      "properties": {
+        "channel": {
+          "type": "enum",
+          "values": [
+            "hotkey",
+            "share",
+            "voice",
+            "camera",
+            "dock",
+            "handoff",
+            "menu"
+          ],
+          "required": true
+        },
+        "to_input_ms": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 10000
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "capture.submitted",
+      "when": "用户按下保存/回车",
+      "pii": "count",
+      "properties": {
+        "channel": {
+          "type": "enum",
+          "values": [
+            "hotkey",
+            "share",
+            "voice",
+            "camera",
+            "dock",
+            "handoff",
+            "menu"
+          ],
+          "required": true
+        },
+        "bytes_bucket": {
+          "type": "enum",
+          "values": [
+            "<200",
+            "200-2k",
+            "2k-20k",
+            ">20k"
+          ],
+          "required": false
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "capture.saved",
+      "when": "落盘成功或失败",
+      "pii": "none",
+      "properties": {
+        "channel": {
+          "type": "enum",
+          "values": [
+            "hotkey",
+            "share",
+            "voice",
+            "camera",
+            "dock",
+            "handoff",
+            "menu"
+          ],
+          "required": true
+        },
+        "ok": {
+          "type": "bool",
+          "required": true
+        },
+        "latency_ms": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 60000
+        },
+        "error_kind": {
+          "type": "enum",
+          "values": [
+            "none",
+            "disk",
+            "permission",
+            "encoding",
+            "unknown"
+          ],
+          "required": false
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "card.state_changed",
+      "when": "卡片显色状态变化",
+      "pii": "count",
+      "properties": {
+        "from": {
+          "type": "enum",
+          "values": [
+            "seed",
+            "grounded",
+            "tension",
+            "settled",
+            "shipped"
+          ],
+          "required": true
+        },
+        "to": {
+          "type": "enum",
+          "values": [
+            "seed",
+            "grounded",
+            "tension",
+            "settled",
+            "shipped"
+          ],
+          "required": true
+        },
+        "trigger": {
+          "type": "enum",
+          "values": [
+            "source.added",
+            "source.conflict",
+            "decide",
+            "publish",
+            "unpublish",
+            "reset",
+            "manual"
+          ],
+          "required": true
+        },
+        "source_count": {
+          "type": "int",
+          "required": false,
+          "min": 0,
+          "max": 999
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "advance.opened",
+      "when": "推进被触发（选区已定）",
+      "pii": "count",
+      "properties": {
+        "scope": {
+          "type": "enum",
+          "values": [
+            "card",
+            "cards",
+            "text",
+            "folder",
+            "doc"
+          ],
+          "required": true
+        },
+        "scope_size": {
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 999
+        },
+        "intent": {
+          "type": "enum",
+          "values": [
+            "evidence",
+            "counter",
+            "cluster",
+            "outline",
+            "draft",
+            "review",
+            "free"
+          ],
+          "required": true
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "advance.candidate",
+      "when": "候选卡出现",
+      "pii": "count",
+      "properties": {
+        "mode": {
+          "type": "enum",
+          "values": [
+            "model",
+            "rule",
+            "offline"
+          ],
+          "required": true
+        },
+        "first_token_ms": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 120000
+        },
+        "sourced": {
+          "type": "bool",
+          "required": true
+        },
+        "source_count": {
+          "type": "int",
+          "required": false,
+          "min": 0,
+          "max": 999
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "advance.settled",
+      "when": "用户对候选做了决定",
+      "pii": "count",
+      "properties": {
+        "verdict": {
+          "type": "enum",
+          "values": [
+            "accepted",
+            "edited",
+            "rejected",
+            "retried",
+            "cancelled"
+          ],
+          "required": true
+        },
+        "wrote_to_disk": {
+          "type": "bool",
+          "required": true
+        },
+        "linked_back": {
+          "type": "bool",
+          "required": true
+        },
+        "undo_within_10s": {
+          "type": "bool",
+          "required": false
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "link.created",
+      "when": "两张卡之间出现关系",
+      "pii": "count",
+      "properties": {
+        "method": {
+          "type": "enum",
+          "values": [
+            "manual",
+            "ai_suggested",
+            "auto_evidence"
+          ],
+          "required": true
+        },
+        "accepted": {
+          "type": "bool",
+          "required": true
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "publish.done",
+      "when": "发布完成",
+      "pii": "count",
+      "properties": {
+        "channel": {
+          "type": "enum",
+          "values": [
+            "page",
+            "html",
+            "llms",
+            "share"
+          ],
+          "required": true
+        },
+        "card_count": {
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 999
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "publish.visit",
+      "when": "读者打开已发布页面（聚合计数，按天）",
+      "pii": "none",
+      "properties": {
+        "visitors": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 1000000
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "soul.read",
+      "when": "一次 AI 调用读了灵魂卡",
+      "pii": "count",
+      "properties": {
+        "blocks": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 6
+        },
+        "anchors": {
+          "type": "int",
+          "required": true,
+          "min": 0,
+          "max": 64
+        },
+        "confirmed": {
+          "type": "bool",
+          "required": true
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "soul.edit",
+      "when": "灵魂卡被改动",
+      "pii": "count",
+      "properties": {
+        "channel": {
+          "type": "enum",
+          "values": [
+            "interview",
+            "distill",
+            "paste",
+            "manual",
+            "ai_diff"
+          ],
+          "required": true
+        },
+        "blocks_changed": {
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 6
+        },
+        "accepted_ai_suggestion": {
+          "type": "bool",
+          "required": false
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "sync.conflict",
+      "when": "同步冲突被检测/解决",
+      "pii": "none",
+      "properties": {
+        "phase": {
+          "type": "enum",
+          "values": [
+            "detected",
+            "resolved"
+          ],
+          "required": true
+        },
+        "files": {
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 999
+        },
+        "resolution": {
+          "type": "enum",
+          "values": [
+            "mine",
+            "theirs",
+            "merged",
+            "postponed"
+          ],
+          "required": false
+        },
+        "silent_overwrite": {
+          "type": "bool",
+          "required": true
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "error.shown",
+      "when": "用户看到错误页/错误提示",
+      "pii": "none",
+      "properties": {
+        "kind": {
+          "type": "enum",
+          "values": [
+            "save",
+            "sync",
+            "ai",
+            "index",
+            "publish",
+            "unknown"
+          ],
+          "required": true
+        },
+        "has_next_step": {
+          "type": "bool",
+          "required": true
+        }
+      },
+      "role": "metric"
+    },
+    {
+      "name": "deleted",
+      "when": "删除与撤销",
+      "pii": "none",
+      "properties": {
+        "target": {
+          "type": "enum",
+          "values": [
+            "card",
+            "space",
+            "soul",
+            "asset"
+          ],
+          "required": true
+        },
+        "undo_available": {
+          "type": "bool",
+          "required": true
+        },
+        "undone": {
+          "type": "bool",
+          "required": false
+        }
+      },
+      "role": "diagnostic"
+    },
+    {
+      "name": "ui.entry_used",
+      "when": "用户从某个入口触发一个动作（减法评审用）",
+      "pii": "count",
+      "role": "diagnostic",
+      "properties": {
+        "entry": {
+          "type": "enum",
+          "values": [
+            "topbar",
+            "dock",
+            "sidebar",
+            "command",
+            "inspector",
+            "menu",
+            "keyboard",
+            "contextmenu"
+          ],
+          "required": true
+        },
+        "action": {
+          "type": "enum",
+          "values": [
+            "open",
+            "run",
+            "toggle"
+          ],
+          "required": true
+        },
+        "surface": {
+          "type": "enum",
+          "values": [
+            "canvas",
+            "doc",
+            "board",
+            "timeline",
+            "settings"
+          ],
+          "required": true
+        }
+      }
+    }
+  ]
+}

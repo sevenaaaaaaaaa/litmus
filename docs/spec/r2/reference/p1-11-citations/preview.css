@@ -1,0 +1,42 @@
+/* 三色引用：颜色只是第三信道。每条引用都有图标 + 文字标签，色盲/灰度也能读。 */
+:root{
+  --cite-direct: oklch(.53 .19 259);      --cite-direct-ink: oklch(.45 .17 259);
+  --cite-para: oklch(.47 .02 282);        --cite-para-ink: oklch(.40 .02 282);
+  --cite-infer: oklch(.57 .19 18);        --cite-infer-ink: oklch(.50 .19 18);
+}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 14px/1.65 var(--f-ui)}
+.bar{display:flex;gap:14px;align-items:baseline;padding:12px 20px;border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--paper);z-index:2}
+.bar b{font:600 15px/1 var(--f-display)}
+.bar span{color:var(--ink-2);font-size:12.5px}
+.bar .stat{margin-left:auto;font:11.5px/1 var(--f-mono);color:var(--ink-3)}
+main{max-width:760px;margin:0 auto;padding:28px 20px 60px;display:flex;flex-direction:column;gap:18px}
+footer{max-width:760px;margin:0 auto;padding:0 20px 60px;color:var(--ink-3);font:11.5px/1.6 var(--f-mono)}
+
+.claim{background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--lift)}
+.claim[data-status="ungrounded"]{border-style:dashed}
+.claim header{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.status{font:11px/1 var(--f-mono);letter-spacing:.04em;padding:4px 8px;border-radius:var(--r-pill);border:1px solid var(--rule);color:var(--ink-2)}
+.status.grounded{color:var(--cite-direct-ink);border-color:color-mix(in oklch, var(--cite-direct) 45%, var(--rule))}
+.status.weak{color:var(--cite-para-ink)}
+.status.inferred{color:var(--cite-infer-ink);border-color:color-mix(in oklch, var(--cite-infer) 45%, var(--rule))}
+.status.broken{color:var(--cite-infer-ink);border-style:dashed}
+.status.ungrounded{color:var(--ink-2);border-style:dashed}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--cite-infer-ink)}
+.claim-text{margin:0 0 10px;font:400 15.5px/1.6 var(--f-display)}
+.claim-text.muted{color:var(--ink-2)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;
+  border:1px solid var(--rule);border-radius:var(--r-pill);padding:4px 9px;font-size:12px;color:var(--ink-2);background:var(--paper)}
+.chip b{font-weight:600;color:var(--ink)}
+.chip a{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;font-family:var(--f-mono);font-size:11.5px}
+.chip q{margin:0 0 0 2px;color:var(--ink-2);font-style:normal;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip em{font:10.5px/1 var(--f-mono);color:var(--cite-infer-ink);font-style:normal}
+.chip .ico,.badge .ico{width:13px;height:13px;flex:0 0 auto}
+.cite-direct{border-color:color-mix(in oklch, var(--cite-direct) 50%, var(--rule));color:var(--cite-direct-ink)}
+.cite-para{border-color:color-mix(in oklch, var(--cite-para) 40%, var(--rule));color:var(--cite-para-ink)}
+.cite-infer{border-color:color-mix(in oklch, var(--cite-infer) 45%, var(--rule));color:var(--cite-infer-ink)}
+.chip.bad{border-style:dashed}
+.no-source{margin:0;color:var(--ink-2);font-size:12.5px}
+.no-source b{color:var(--ink)}
+.problems{margin:10px 0 0;padding-left:18px;color:var(--ink-2);font-size:12px}
+.problems li{margin:2px 0}

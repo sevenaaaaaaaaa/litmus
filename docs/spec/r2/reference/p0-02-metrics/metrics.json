@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "updated": "2026-11-23",
+  "windows": {
+    "day": 1,
+    "week": 7
+  },
+  "metrics": [
+    {
+      "id": "ttfv",
+      "name": "首次价值时间",
+      "question": "从打开到第一张有用卡，要多久",
+      "unit": "分钟",
+      "formula": "median(first_advance_settled_at - first_open_at)",
+      "events": [
+        "advance.settled",
+        "app.session"
+      ],
+      "needs": [
+        "advance.settled.verdict",
+        "app.session.phase"
+      ],
+      "baseline": "unmeasured",
+      "target90": 15,
+      "target12m": 8,
+      "direction": "down"
+    },
+    {
+      "id": "capture_latency",
+      "name": "落卡延迟",
+      "question": "快捕到保存成功",
+      "unit": "ms",
+      "formula": "p95(capture.saved.latency_ms where ok=true)",
+      "events": [
+        "capture.saved"
+      ],
+      "needs": [
+        "capture.saved.latency_ms",
+        "capture.saved.ok"
+      ],
+      "baseline": "unmeasured",
+      "target90": 300,
+      "target12m": 200,
+      "direction": "down"
+    },
+    {
+      "id": "wac",
+      "name": "每周被推进的卡数 / 活跃用户",
+      "question": "用户是否更常把想法推进一步",
+      "unit": "张/周/人",
+      "formula": "count(advance.settled where verdict in accepted,edited and wrote_to_disk=true) / WAU",
+      "events": [
+        "advance.settled",
+        "app.session"
+      ],
+      "needs": [
+        "advance.settled.verdict",
+        "advance.settled.wrote_to_disk"
+      ],
+      "baseline": "unmeasured",
+      "target90": 2.5,
+      "target12m": 4,
+      "direction": "up"
+    },
+    {
+      "id": "link_rate",
+      "name": "卡片连接率",
+      "question": "有多少卡至少有一条真实关系",
+      "unit": "%",
+      "formula": "cards_with_link / cards_created_in_window",
+      "events": [
+        "link.created",
+        "card.state_changed"
+      ],
+      "needs": [
+        "link.created.accepted"
+      ],
+      "baseline": "unmeasured",
+      "target90": 30,
+      "target12m": 40,
+      "direction": "up"
+    },
+    {
+      "id": "ai_accept",
+      "name": "AI 候选接受率",
+      "question": "候选有多大用",
+      "unit": "%",
+      "formula": "accepted+edited / (accepted+edited+rejected)",
+      "events": [
+        "advance.settled"
+      ],
+      "needs": [
+        "advance.settled.verdict"
+      ],
+      "baseline": "unmeasured",
+      "target90": 50,
+      "target12m": 65,
+      "direction": "up"
+    },
+    {
+      "id": "publish_rate",
+      "name": "发布转化",
+      "question": "月活里有多少人当月发布过内容",
+      "unit": "%",
+      "formula": "publishers_30d / mau_30d",
+      "events": [
+        "publish.done",
+        "app.session"
+      ],
+      "needs": [
+        "publish.done.channel"
+      ],
+      "baseline": "unmeasured",
+      "target90": 5,
+      "target12m": 8,
+      "direction": "up"
+    },
+    {
+      "id": "d30",
+      "name": "D30 留存",
+      "question": "第 30 天还回来吗",
+      "unit": "%",
+      "formula": "active_on_day_30_cohort / cohort_size",
+      "events": [
+        "app.session"
+      ],
+      "needs": [
+        "app.session.phase"
+      ],
+      "baseline": "unmeasured",
+      "target90": 20,
+      "target12m": 28,
+      "direction": "up"
+    },
+    {
+      "id": "likeness",
+      "name": "「像我」评分",
+      "question": "十段盲评里能认出本人写的",
+      "unit": "分（1-5）",
+      "formula": "mean(blind_review_score) over 10 items",
+      "events": [],
+      "needs": [],
+      "baseline": "unmeasured",
+      "target90": 3.8,
+      "target12m": 4.3,
+      "direction": "up",
+      "note": "人工盲评，不进自动埋点；每轮 10 段，评审不知来源"
+    },
+    {
+      "id": "conflict_rate",
+      "name": "同步冲突率",
+      "question": "同步出冲突的比例",
+      "unit": "%",
+      "formula": "conflicted_files / synced_files",
+      "events": [
+        "sync.conflict"
+      ],
+      "needs": [
+        "sync.conflict.files",
+        "sync.conflict.silent_overwrite"
+      ],
+      "baseline": "unmeasured",
+      "target90": 0.5,
+      "target12m": 0.2,
+      "direction": "down"
+    },
+    {
+      "id": "crash_free",
+      "name": "崩溃自由会话",
+      "question": "没有崩溃的会话占比",
+      "unit": "%",
+      "formula": "1 - sessions_with_crash / sessions",
+      "events": [
+        "app.session",
+        "error.shown"
+      ],
+      "needs": [
+        "app.session.crash_free"
+      ],
+      "baseline": "unmeasured",
+      "target90": 99.8,
+      "target12m": 99.9,
+      "direction": "up"
+    }
+  ]
+}

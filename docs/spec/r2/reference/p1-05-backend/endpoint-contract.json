@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "route": "/agent/apply",
+  "alternativeRoutes": [
+    "/field/place"
+  ],
+  "status": "unverified",
+  "needs": {
+    "method": {
+      "question": "GET 还是 POST？还是 POST + SSE？",
+      "guess": "POST",
+      "evidence": "路由字符串存在，方法未知"
+    },
+    "pathParams": {
+      "question": "是否有 :id / :kind 之类的路径参数？",
+      "guess": "可能无",
+      "evidence": "字面里没有 :param"
+    },
+    "requestBody": {
+      "question": "最小可用 body 长什么样？（card 文本 / 锚点 / 目标空间）",
+      "guess": "unknown",
+      "evidence": "无"
+    },
+    "responseShape": {
+      "question": "返回卡 id 还是整个文档？失败时返回什么？",
+      "guess": "unknown",
+      "evidence": "无"
+    },
+    "errorCodes": {
+      "question": "冲突、无权限、索引中分别是什么码？",
+      "guess": "unknown",
+      "evidence": "无"
+    }
+  },
+  "howToGetIt": [
+    "在内核运行时对 /agent/apply 发一次带真实卡内容的请求，记录 4xx 报错里提到的字段名",
+    "看内核日志（.litmus/local/ops/）里同一请求的入参回显",
+    "如果 App 是 Tauri 壳，抓一次前端到内核的调用（devtools network）"
+  ],
+  "fallback": "参数到位前，一律用 FileBackend；EndpointBackend 只用于让调用方显式失败。"
+}

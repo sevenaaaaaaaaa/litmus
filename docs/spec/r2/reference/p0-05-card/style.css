@@ -1,0 +1,86 @@
+/* 卡解剖 v1：只做正/背与显色边，不加装饰。
+ * 纪律：没有渐变、没有光晕、没有假进度条；层级靠明度与留白。 */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font:400 14px/1.6 var(--f-ui);
+  -webkit-font-smoothing:antialiased;
+}
+.bar{
+  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+  padding:12px 20px;border-bottom:1px solid var(--rule);background:var(--paper);
+  position:sticky;top:0;z-index:5;
+}
+.mark{font:600 15px/1 var(--f-display);letter-spacing:.02em}
+.mark .dot{color:var(--ink-3);margin:0 4px}
+.states{display:flex;gap:2px;background:var(--sheet);border:1px solid var(--rule);border-radius:var(--r-pill);padding:2px}
+.states button{
+  border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;
+  padding:5px 11px;border-radius:var(--r-pill);cursor:pointer;
+}
+.states button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.tools{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:13px;color:var(--ink-2)}
+.switch{display:flex;align-items:center;gap:6px;cursor:pointer}
+#check{border:1px solid var(--rule);background:var(--sheet);color:var(--ink);font:inherit;font-size:13px;padding:6px 12px;border-radius:var(--r-pill);cursor:pointer}
+#check:hover{border-color:var(--ink-3)}
+
+.canvas{position:relative;min-height:calc(100% - 52px);padding:48px 24px 80px;
+  background-image:radial-gradient(oklch(var(--rule-c)) 1px, transparent 1px);
+  background-size:22px 22px;background-position:11px 11px}
+.hint{position:absolute;top:14px;right:22px;font:11px/1.4 var(--f-mono);color:var(--ink-3)}
+.stack{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+
+/* ── 卡 ── */
+.card{
+  position:relative;width:352px;min-height:212px;background:var(--sheet);
+  border:1px solid var(--rule);border-radius:var(--r-lg);box-shadow:var(--lift);
+  padding:20px 20px 16px 24px;cursor:pointer;transition:transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.card:hover{transform:translateY(-1px)}
+.card:focus-visible{outline:2px solid var(--litmus);outline-offset:3px}
+.card[data-selected="true"]{box-shadow:0 0 0 1px var(--ink) , var(--lift)}
+
+/* 显色边：2px，按证据覆盖度自下而上填充 */
+.edge{position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:var(--r-lg) 0 0 var(--r-lg);background:oklch(var(--rule-c));overflow:hidden}
+.edge i{display:block;position:absolute;left:0;right:0;bottom:0;height:0;background:var(--tone);transition:height var(--dur-3) var(--ease)}
+
+.title{font:600 16.5px/1.45 var(--f-display);margin:0 0 6px;letter-spacing:.01em}
+.gist{margin:0;color:var(--ink-2);font-size:13.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0}
+.chip{font:11.5px/1 var(--f-mono);color:var(--ink-2);border:1px solid var(--rule);border-radius:var(--r-pill);padding:4px 8px;background:var(--paper)}
+.chip.bad{color:var(--tone-ink);border-color:color-mix(in oklch, var(--tone) 40%, var(--rule))}
+.state-row{display:flex;align-items:center;gap:7px;margin-top:14px;color:var(--tone-ink);font-size:12.5px}
+.state-row svg{width:14px;height:14px}
+.next{margin-top:6px;font-size:12.5px;color:var(--ink-2)}
+.next b{color:var(--tone-ink);font-weight:600}
+.meta{margin-top:14px;padding-top:10px;border-top:1px solid var(--rule);display:flex;justify-content:space-between;
+  font:11.5px/1 var(--f-mono);color:var(--ink-3)}
+
+/* 卡背 */
+.back{padding-top:6px}
+.back h4{margin:0 0 4px;font:600 11.5px/1.4 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.back ul{margin:0 0 12px;padding-left:16px;color:var(--ink-2);font-size:12.8px}
+.back li{margin:2px 0}
+.back li a{color:var(--litmus);text-decoration:none;border-bottom:1px solid oklch(var(--litmus-c) / .3)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.acts button{font:inherit;font-size:12.5px;padding:5px 10px;border-radius:var(--r-sm);border:1px solid var(--rule);background:var(--paper);color:var(--ink);cursor:pointer}
+.acts button.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* 只靠颜色模式：把文字与图标藏起来，用来证明这样会失守 */
+body[data-a11y="color-only"] .state-row span,
+body[data-a11y="color-only"] .state-row svg,
+body[data-a11y="color-only"] .next b{visibility:hidden}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
+  background:var(--ink);color:var(--paper);padding:9px 14px;border-radius:var(--r-pill);
+  font-size:12.5px;opacity:0;pointer-events:none;transition:opacity var(--dur-2) var(--ease),transform var(--dur-2) var(--ease)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.check{position:fixed;right:24px;top:64px;width:300px;background:var(--sheet);border:1px solid var(--rule);
+  border-radius:var(--r-md);box-shadow:var(--lift);padding:14px 16px;font-size:13px}
+.check h4{margin:0 0 8px;font:600 12px/1.4 var(--f-mono);letter-spacing:.08em;color:var(--ink-3)}
+.check dl{margin:0;display:grid;grid-template-columns:52px 1fr;gap:6px 8px}
+.check dt{color:var(--ink-3);font-size:12px}
+.check dd{margin:0;color:var(--ink)}
+.check .fail{margin-top:10px;color:var(--tone-ink, var(--acid));font-size:12px}

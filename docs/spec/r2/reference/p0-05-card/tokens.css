@@ -1,0 +1,78 @@
+/* 鹿蕊 · 设计 tokens（v1 基线）
+ * 来源：/Applications/Litmus.app 内嵌 assets/tokens.css 实测值（oklch，零 hex）。
+ * 本文件只做两件事：抄准基线、扩展「显色状态」。
+ * 规则：颜色不是唯一信道——每个状态必须同时有文字 + 图标。
+ */
+:root{
+  /* 纸与墨（基线，勿改） */
+  --paper-c: .972 .006 286;
+  --sheet-c: .992 .003 286;
+  --ink-c: .255 .022 282;
+  --ink2-c: .47 .02 282;
+  --ink3-c: .74 .013 284;
+  --rule-c: .905 .008 286;
+
+  /* 石蕊两色（基线） */
+  --litmus-c: .53 .19 259;   /* 与此刻意图相关 */
+  --acid-c: .57 .19 18;      /* 刚记下、尚未沉淀 */
+
+  --paper: oklch(var(--paper-c));
+  --sheet: oklch(var(--sheet-c));
+  --ink: oklch(var(--ink-c));
+  --ink-2: oklch(var(--ink2-c));
+  --ink-3: oklch(var(--ink3-c));
+  --rule: oklch(var(--rule-c));
+  --litmus: oklch(var(--litmus-c));
+  --acid: oklch(var(--acid-c));
+  --lift: 0 1px 0 oklch(var(--ink-c) / .04), 0 12px 40px -12px oklch(var(--ink-c) / .18);
+
+  /* 字体 */
+  --f-display: "Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif;
+  --f-ui: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+  --f-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* 层级与动效 */
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 300ms;
+  --ease: cubic-bezier(.2,.7,.2,1);
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px; --r-pill: 999px;
+
+  /* ── 显色状态：种子 / 有据 / 有张力 / 已定 / 已发布 ──
+   * 每档给出 soft（2px 边与浅底）与 ink（文字/图标）。
+   * ink 一档若对比度不足 4.5:1，组件里必须退回 --ink 写字，只让颜色出现在边与图标上。
+   */
+  --state-seed:        oklch(.62 .012 284);
+  --state-seed-ink:    oklch(.42 .014 284);
+  --state-grounded:    oklch(.56 .100 155);
+  --state-grounded-ink:oklch(.42 .085 155);
+  --state-tension:     oklch(.62 .150 72);
+  --state-tension-ink: oklch(.46 .110 62);
+  --state-settled:     oklch(.53 .190 259);
+  --state-settled-ink: oklch(.45 .170 259);
+  --state-shipped:     oklch(.42 .090 165);
+  --state-shipped-ink: oklch(.36 .080 165);
+}
+
+/* 暗色：同一批色相，整体抬亮，纸墨反转 */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper-c: .185 .014 278;
+    --sheet-c: .222 .016 278;
+    --ink-c: .93 .010 282;
+    --ink2-c: .72 .018 282;
+    --ink3-c: .52 .020 280;
+    --rule-c: .300 .016 278;
+    --litmus-c: .72 .150 252;
+    --acid-c: .72 .150 20;
+
+    --state-seed:        oklch(.62 .010 282);
+    --state-seed-ink:    oklch(.80 .010 282);
+    --state-grounded:    oklch(.72 .090 155);
+    --state-grounded-ink:oklch(.84 .080 155);
+    --state-tension:     oklch(.78 .120 78);
+    --state-tension-ink: oklch(.88 .090 78);
+    --state-settled:     oklch(.72 .150 252);
+    --state-settled-ink: oklch(.84 .110 252);
+    --state-shipped:     oklch(.74 .080 165);
+    --state-shipped-ink: oklch(.86 .070 165);
+  }
+}

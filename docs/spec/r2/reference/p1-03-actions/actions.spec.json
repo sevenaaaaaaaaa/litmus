@@ -1,0 +1,365 @@
+{
+  "version": 1,
+  "updated": "2026-11-23",
+  "note": "五动作的唯一真相。界面、文案、快捷键、埋点、失败行为都从这里生成，不另写一份。",
+  "platforms": [
+    "mac",
+    "ios",
+    "web"
+  ],
+  "actions": [
+    {
+      "id": "drop",
+      "label": "落下",
+      "blurb": "把想法先存下来，不追问文件名，不要求分类",
+      "keys": {
+        "mac": [
+          "opt+space"
+        ],
+        "ios": [],
+        "web": [
+          "enter"
+        ]
+      },
+      "gestures": {
+        "mac": [
+          "菜单栏图标",
+          "拖入画布",
+          "分享扩展"
+        ],
+        "ios": [
+          "分享扩展",
+          "Action Button",
+          "锁屏控件"
+        ],
+        "web": [
+          "粘贴"
+        ]
+      },
+      "landing": "new-card",
+      "writes": true,
+      "undoable": true,
+      "confirm": false,
+      "failure": {
+        "preserveInput": true,
+        "retryable": true,
+        "message": "没写成，内容还在输入框里",
+        "noSilent": true
+      },
+      "telemetry": [
+        "capture.opened",
+        "capture.submitted",
+        "capture.saved"
+      ],
+      "rule": "成功只由本地写盘判定；同步、上传、AI 分诊都是后置状态",
+      "ops": [
+        {
+          "name": "打开快捕",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "提交落卡",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "取消",
+          "keyboard": true,
+          "pointer": true
+        }
+      ]
+    },
+    {
+      "id": "link",
+      "label": "连上",
+      "blurb": "把两张卡之间的一条真实关系写下来",
+      "keys": {
+        "mac": [
+          "cmd+shift+enter"
+        ],
+        "ios": [],
+        "web": [
+          "mod+shift+enter"
+        ]
+      },
+      "gestures": {
+        "mac": [
+          "选中卡 → 连到 → 点另一张",
+          "拖线到另一张卡"
+        ],
+        "ios": [
+          "长按卡 → 连到"
+        ],
+        "web": [
+          "选中后拖线"
+        ]
+      },
+      "landing": "edge",
+      "writes": true,
+      "undoable": true,
+      "confirm": false,
+      "failure": {
+        "preserveInput": true,
+        "retryable": true,
+        "message": "这两张连不上：目标卡可能已删除",
+        "noSilent": true
+      },
+      "telemetry": [
+        "link.created"
+      ],
+      "rule": "连上不是装饰：要么写一条 wikilink，要么什么都不写",
+      "ops": [
+        {
+          "name": "开始连线",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "选目标",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "取消",
+          "keyboard": true,
+          "pointer": true
+        }
+      ]
+    },
+    {
+      "id": "flip",
+      "label": "翻开",
+      "blurb": "看卡背：来源、历史、关系、下一步",
+      "keys": {
+        "mac": [
+          "space"
+        ],
+        "ios": [],
+        "web": [
+          "space"
+        ]
+      },
+      "gestures": {
+        "mac": [
+          "点卡背图标",
+          "双指轻点"
+        ],
+        "ios": [
+          "上滑卡面",
+          "长按预览"
+        ],
+        "web": [
+          "点卡背图标"
+        ]
+      },
+      "landing": "view",
+      "writes": false,
+      "undoable": false,
+      "confirm": false,
+      "failure": {
+        "preserveInput": false,
+        "retryable": true,
+        "message": "这张卡的来源还没索引好，稍等一下就回来",
+        "noSilent": true
+      },
+      "telemetry": [
+        "ui.entry_used"
+      ],
+      "rule": "只读动作：翻开永远不改变任何数据",
+      "ops": [
+        {
+          "name": "翻开",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "合上",
+          "keyboard": true,
+          "pointer": true
+        }
+      ]
+    },
+    {
+      "id": "advance",
+      "label": "推进",
+      "blurb": "带范围地问一句，得到候选，确认后才落盘",
+      "keys": {
+        "mac": [
+          "cmd+enter"
+        ],
+        "ios": [],
+        "web": [
+          "mod+enter"
+        ]
+      },
+      "gestures": {
+        "mac": [
+          "大按钮",
+          "Dock 输入",
+          "长按卡"
+        ],
+        "ios": [
+          "长按 → 推进",
+          "阅读器内提问"
+        ],
+        "web": [
+          "选中后按钮"
+        ]
+      },
+      "landing": "new-card",
+      "writes": true,
+      "undoable": true,
+      "confirm": true,
+      "failure": {
+        "preserveInput": true,
+        "retryable": true,
+        "message": "这次没生成出来，范围和你的输入都还在",
+        "noSilent": true
+      },
+      "telemetry": [
+        "advance.opened",
+        "advance.candidate",
+        "advance.settled"
+      ],
+      "rule": "候选不写盘；没有来源就写「没有找到来源」；规则降级要标注",
+      "ops": [
+        {
+          "name": "开启推进",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "取消候选",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "确认落盘",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "重试",
+          "keyboard": true,
+          "pointer": true
+        }
+      ]
+    },
+    {
+      "id": "ship",
+      "label": "发布",
+      "blurb": "把一张卡或一组卡变成能拿出去的页面",
+      "keys": {
+        "mac": [
+          "cmd+shift+p"
+        ],
+        "ios": [],
+        "web": [
+          "mod+shift+p"
+        ]
+      },
+      "gestures": {
+        "mac": [
+          "发布面板",
+          "卡背操作"
+        ],
+        "ios": [
+          "分享 → 发布"
+        ],
+        "web": [
+          "发布按钮"
+        ]
+      },
+      "landing": "page",
+      "writes": true,
+      "undoable": true,
+      "confirm": true,
+      "failure": {
+        "preserveInput": true,
+        "retryable": true,
+        "message": "没发出去：先检查发布前体检，页面还没生成",
+        "noSilent": true
+      },
+      "telemetry": [
+        "publish.done"
+      ],
+      "rule": "发布永远要一次确认；不出半成品页面",
+      "ops": [
+        {
+          "name": "打开发布面板",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "确认发布",
+          "keyboard": true,
+          "pointer": true
+        },
+        {
+          "name": "取消",
+          "keyboard": true,
+          "pointer": true
+        }
+      ]
+    }
+  ],
+  "states": [
+    {
+      "state": "seed",
+      "action": "advance",
+      "intent": "evidence",
+      "why": "种子卡缺来源"
+    },
+    {
+      "state": "grounded",
+      "action": "advance",
+      "intent": "counter",
+      "why": "有据之后找反例"
+    },
+    {
+      "state": "tension",
+      "action": "advance",
+      "intent": "review",
+      "why": "有张力要做决定"
+    },
+    {
+      "state": "settled",
+      "action": "advance",
+      "intent": "draft",
+      "why": "已定要成稿"
+    },
+    {
+      "state": "shipped",
+      "action": "flip",
+      "intent": null,
+      "why": "已发布看回流"
+    }
+  ],
+  "reserved": [
+    {
+      "key": "cmd+1",
+      "why": "镜头：画布"
+    },
+    {
+      "key": "cmd+2",
+      "why": "镜头：文档"
+    },
+    {
+      "key": "cmd+3",
+      "why": "镜头：时间线"
+    },
+    {
+      "key": "cmd+4",
+      "why": "镜头：看板"
+    },
+    {
+      "key": "cmd+k",
+      "why": "命令面板"
+    },
+    {
+      "key": "esc",
+      "why": "退一层"
+    }
+  ]
+}

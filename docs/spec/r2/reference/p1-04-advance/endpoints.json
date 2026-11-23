@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "verifiedAt": "2026-11-23T15:13:41Z",
+  "binary": {
+    "path": "/Applications/Litmus.app/Contents/MacOS/litmus-desktop",
+    "bytes": 40280928,
+    "sha256": "f9cc7c9c1a6af8a88a5771bea07aba15455a4903dba13286e519c284d30cf2a4",
+    "scannedWith": "buffer scan (strings-equivalent)"
+  },
+  "meaning": "route-verified 只说明路由字符串存在于已安装的二进制里，不说明方法、入参、返回。要真联调还得跑一次真实请求。",
+  "routes": [
+    {
+      "route": "/field/place",
+      "group": "写入",
+      "purpose": "落一条字段（最接近“落卡”）",
+      "planRef": "§3.3 落下",
+      "status": "route-verified"
+    },
+    {
+      "route": "/field/note",
+      "group": "写入",
+      "purpose": "给对象加备注",
+      "planRef": "§3.1 翻开",
+      "status": "route-verified"
+    },
+    {
+      "route": "/field/react",
+      "group": "写入",
+      "purpose": "给卡加反应/状态",
+      "planRef": "§3.2 状态",
+      "status": "route-verified"
+    },
+    {
+      "route": "/agent/apply",
+      "group": "写入",
+      "purpose": "应用 agent 产物（推进落盘最可能的入口）",
+      "planRef": "§3.3 确认",
+      "status": "route-verified"
+    },
+    {
+      "route": "/agent/recall",
+      "group": "读取",
+      "purpose": "召回相关材料",
+      "planRef": "§4.3 灵魂记忆",
+      "status": "route-verified"
+    },
+    {
+      "route": "/chat",
+      "group": "AI",
+      "purpose": "一次性对话",
+      "planRef": "§4.1",
+      "status": "route-verified"
+    },
+    {
+      "route": "/chat/stream",
+      "group": "AI",
+      "purpose": "流式对话（候选卡的来源）",
+      "planRef": "§4.1",
+      "status": "route-verified"
+    },
+    {
+      "route": "/publish/site",
+      "group": "发布",
+      "purpose": "发布站点",
+      "planRef": "§3.1 发布",
+      "status": "route-verified"
+    },
+    {
+      "route": "/search/hybrid",
+      "group": "读取",
+      "purpose": "混合检索",
+      "planRef": "§3.1 找证据",
+      "status": "route-verified"
+    },
+    {
+      "route": "/health/status",
+      "group": "系统",
+      "purpose": "内核健康",
+      "planRef": "P0-03 基线",
+      "status": "route-verified"
+    },
+    {
+      "route": "/docs/sync",
+      "group": "系统",
+      "purpose": "文档同步",
+      "planRef": "§7.2",
+      "status": "route-verified"
+    },
+    {
+      "route": "/browse/tree",
+      "group": "读取",
+      "purpose": "目录树",
+      "planRef": "§5.4",
+      "status": "route-verified"
+    },
+    {
+      "route": "/trash/restore",
+      "group": "写入",
+      "purpose": "回收站恢复（撤销的兜底）",
+      "planRef": "§9.3 删除可撤销",
+      "status": "route-verified"
+    },
+    {
+      "route": "/export/",
+      "group": "系统",
+      "purpose": "导出（格式是路径参数）",
+      "planRef": "§1.5 导出是一等命令",
+      "status": "route-verified"
+    },
+    {
+      "route": "/organize/apply",
+      "group": "AI",
+      "purpose": "整理方案应用",
+      "planRef": "§4.1 值守",
+      "status": "route-verified"
+    },
+    {
+      "route": "/write-result",
+      "group": "写入",
+      "purpose": "规划 §3.3 声称可复用的端点",
+      "planRef": "§3.3",
+      "status": "missing"
+    }
+  ],
+  "gaps": [
+    {
+      "claim": "规划 §3.3：复用时用 write-result",
+      "evidence": "二进制里 0 次出现（大小写敏感、buffer 级扫描）",
+      "action": "改用 /agent/apply 或 /field/place；P1-05 联调前必须先拿到真实入参出参",
+      "owner": "P1-05"
+    },
+    {
+      "claim": "P0-03 的性能脚本假设 /docs/tree 存在",
+      "evidence": "二进制里 0 次出现；实际是 /docs/sync 与 /browse/tree",
+      "action": "已改 measure.mjs 用 /browse/tree",
+      "owner": "P0-03（已修）"
+    },
+    {
+      "claim": "所有 route-verified 端点可直接联调",
+      "evidence": "只验证了路由字符串存在，方法名/参数/返回结构全部未知",
+      "action": "P1-05 需要一次真实请求；拿不到就先用文件层参考实现（本轮已做）",
+      "owner": "P1-05"
+    }
+  ]
+}
