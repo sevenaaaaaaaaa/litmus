@@ -156,6 +156,24 @@ fn reanchor_mints_exactly_one_for_a_new_item_and_continues_numbering() {
 }
 
 #[test]
+fn two_new_items_in_one_round_never_share_an_anchor() {
+    // 参考实现 soul.mjs 在这里会铸出 ["voice-5","voice-5"]：nextNum 只扫 historical，
+    // 而铸造时只写 usedAnchors、不回写 historical。Rust 版把铸出的号立刻并入 historical，
+    // 所以本轮必须是 5 和 6 两个不同的号。撞号的后果不是报错而是静默：两条不同的判断
+    // 共用一个锚点，卡背与已发布页面里指向上面的引用会悄悄指向另一条。
+    let with_two = strip_anchors(EX).replace(
+        "- 特征：短句、具体、少形容词、先结论后理由。",
+        "- 特征：短句、具体、少形容词、先结论后理由。\n- 样本 4：写完先删掉三句。\n- 样本 5：先给结论再给理由。",
+    );
+    let r = reanchor(EX, &with_two);
+    assert_eq!(r.minted.len(), 2, "应当只铸两条：{:?}", r.minted);
+    let uniq: std::collections::BTreeSet<&String> = r.minted.iter().collect();
+    assert_eq!(uniq.len(), 2, "两条新条目撞了同一个号：{:?}", r.minted);
+    let d = parse(&r.text);
+    assert!(d.errors.is_empty(), "撞号会变成重复锚点错误：{:?}", d.errors);
+}
+
+#[test]
 fn anchors_survive_40_random_one_char_edits() {
     let base = parse(EX);
     let base_anchors = all_anchors(&base);

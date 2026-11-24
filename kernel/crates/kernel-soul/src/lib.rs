@@ -611,9 +611,11 @@ pub fn reanchor(old_text: &str, new_text: &str) -> Reanchor {
                 let next = max_num.entry(prefix.clone()).or_insert(0);
                 *next += 1;
                 let id = format!("{prefix}-{next}");
-                // 铸出来的号立刻进 used/historical：同一轮里新增两条不会撞号。
+                // 防撞号靠上面那个 max_num 计数器：它在铸号前从 historical 播种一次、
+                // 每铸一个就自增，所以同一轮里新增两条会拿到 5 和 6。Node 版每次重扫
+                // 冻结的 historical，第二轮仍算出同一个 max+1，于是铸出两个 voice-5
+                // （tests/soul.rs 的 two_new_items_in_one_round_never_share_an_anchor 钉住这点）。
                 used.insert(id.clone());
-                historical.insert(id.clone());
                 minted.push(id.clone());
                 out_lines.push(format!("{} ^{}", line.trim_end(), id));
             }

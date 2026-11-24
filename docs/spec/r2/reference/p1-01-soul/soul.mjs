@@ -269,13 +269,23 @@ export function reanchor(oldText, newText) {
   // 复用会让老引用（卡背「读了哪几条」、已发布页面）悄悄指向另一条判断。
   const historical = new Set([...usedAnchors, ...oldAnchorAt.filter(Boolean)]);
 
+  // 取号用「一次性播种、逐次自增」的计数器。每次重扫冻结的 historical 会让同一轮里
+  // 新增的两条算出同一个 max + 1，铸出两个 voice-5（两条不同判断共用一个锚点，
+  // 卡背与已发布页面的引用会静默指向另一条）。kernel-soul 的 max_num 同此语义。
+  const seededMax = new Map();
   const nextNum = (prefix) => {
+    if (seededMax.has(prefix)) {
+      const v = seededMax.get(prefix) + 1;
+      seededMax.set(prefix, v);
+      return v;
+    }
     let max = 0;
     for (const a of historical) {
       if (!a.startsWith(prefix + '-')) continue;
       const n = Number(a.slice(prefix.length + 1));
       if (Number.isFinite(n) && n > max) max = n;
     }
+    seededMax.set(prefix, max + 1);
     return max + 1;
   };
 

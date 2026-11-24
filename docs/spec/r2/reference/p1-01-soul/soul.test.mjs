@@ -157,3 +157,16 @@ test('锚点编号不复用：删掉最大号再新增，拿到的是下一个�
   assert.ok(!r.minted.includes('voice-4'), '复用了已删除的 voice-4');
   assert.ok(r.minted.includes('voice-5'), '实际新铸：' + r.minted.join(','));
 });
+
+test('reanchor：同一轮新增两条，各拿各的号（不撞号）', () => {
+  const NL = String.fromCharCode(10);
+  const base = stripAnchors(ex).replace(
+    '- 特征：短句、具体、少形容词、先结论后理由。',
+    ['- 特征：短句、具体、少形容词、先结论后理由。', '- 样本 4：写完先删掉三句。', '- 样本 5：先给结论再给理由。'].join(NL),
+  );
+  const r = reanchor(ex, base);
+  assert.equal(r.minted.length, 2, '应当只铸两条：' + r.minted.join(','));
+  assert.equal(new Set(r.minted).size, 2, '两条新条目撞了同一个号：' + r.minted.join(','));
+  const d = parseSoul(r.text);
+  assert.deepEqual(d.errors, [], '撞号会变成重复锚点错误');
+});

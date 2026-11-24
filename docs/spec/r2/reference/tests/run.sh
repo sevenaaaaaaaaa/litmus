@@ -69,7 +69,7 @@ node p1-11-citations/demo.mjs >/tmp/t13.log 2>&1 && ok "端到端：6 条结论�
 node --test p1-11-citations/citations.test.mjs >/tmp/t14.log 2>&1 && ok "15 条（三色/失败分型/固定文案/转义/对比度/点回原文）" || { bad "引用测试"; tail -20 /tmp/t14.log; }
 
 say "P1-01 灵魂卡模型 + 块锚点"
-node --test p1-01-soul/soul.test.mjs >/tmp/t10.log 2>&1 && ok "17 条解析/校验/重挂测试" || { bad "灵魂卡测试"; tail -20 /tmp/t10.log; }
+node --test p1-01-soul/soul.test.mjs >/tmp/t10.log 2>&1 && ok "18 条解析/校验/重挂测试" || { bad "灵魂卡测试"; tail -20 /tmp/t10.log; }
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-example.md >/tmp/t11.log 2>&1 && ok "示例卡 VALID（$(grep -o '[0-9]* 条' /tmp/t11.log | head -1)）" || { bad "示例卡"; cat /tmp/t11.log; }
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-template.md >/tmp/t12.log 2>&1 && ok "临时卡 VALID（confirmed:false）" || { bad "临时卡"; cat /tmp/t12.log; }
 
