@@ -17,7 +17,7 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
-use kernel_soul::sources::{check_sources, parse_sources, sources_to_json, SOURCES_DIR, SOURCES_VERSION};
+use kernel_soul::sources::{check_sources, parse_sources, sources_to_json, Sources, SOURCES_DIR, SOURCES_VERSION};
 use kernel_soul::{parse, upgrade};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -60,6 +60,21 @@ fn write_atomic(path: &Path, data: &str) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// 一条判断没有出处 = 有锚点、旁挂里没有它。
+///
+/// 没有旁挂时每一条都算缺：整张卡没有出处，绝不能被读成「0 条缺失」。
+/// 界面只看 `sourceIssues` 的条数会把这两种情况混成一种，所以这里直接给数。
+fn count_missing(doc: &kernel_soul::SoulDoc, sources: Option<&Sources>) -> usize {
+    doc.sections
+        .iter()
+        .flat_map(|s| s.items.iter())
+        .filter(|i| match i.anchor.as_deref() {
+            Some(a) => sources.map_or(true, |s| !s.anchors.contains_key(a)),
+            None => false,
+        })
+        .count()
+}
+
 /// 读一张卡。卡不存在是 404，不是空卡——空卡会让人以为卡还在、只是没内容。
 pub async fn card_get(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
@@ -86,6 +101,7 @@ pub async fn card_get(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Q
         },
     };
     let issues = sources.as_ref().map(|s| check_sources(&doc, s)).unwrap_or_default();
+    let missing_sources = count_missing(&doc, sources.as_ref());
 
     Json(json!({
         "path": rel,
@@ -107,6 +123,7 @@ pub async fn card_get(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Q
         "anchorCount": doc.anchor_count,
         "sourcesPath": sources_rel(&rel),
         "sourcesError": sources_error,
+        "missingSources": missing_sources,
         "sourceIssues": issues,
     }))
     .into_response()
@@ -123,61 +140,103 @@ pub async fn card_put(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
     let force = req["force"] == true;
     let root = st.kernel.lock().unwrap().vault.root.clone();
 
-    let path = match card_path_in(&root, &rel) {
-        Ok(p) => p,
-        Err(e) => return err(StatusCode::BAD_REQUEST, e).into_response(),
-    };
-    if markdown.trim().is_empty() {
-        return err(StatusCode::BAD_REQUEST, "markdown 不能为空".to_string()).into_response();
-    }
-    let doc = parse(&markdown);
-    if !doc.errors.is_empty() {
-        return err(StatusCode::BAD_REQUEST, format!("卡不合法：{}", doc.errors[0].message)).into_response();
-    }
-    if path.exists() && !force {
-        let existing = std::fs::read_to_string(&path).unwrap_or_default();
-        if !parse(&existing).temporary {
-            return err(StatusCode::CONFLICT, format!("已经有真卡了：{rel}（要覆盖请显式 force）")).into_response();
-        }
-    }
-    if let Err(e) = write_atomic(&path, &markdown) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-    }
-
     // 出处：给了就一起落盘，并当场对一遍；缺的报出来，不补。
-    let mut sources_path: Option<String> = None;
-    let mut source_issues: Vec<Value> = Vec::new();
+    let mut sources: Option<Sources> = None;
     if let Some(obj) = req.get("sources").filter(|v| v.is_object()) {
-        let mut s = kernel_soul::sources::Sources::new(rel.clone());
+        let mut s = Sources::new(rel.clone());
         let mut anchors = std::collections::BTreeMap::new();
         if let Some(map) = obj.get("anchors").and_then(|v| v.as_object()) {
             for (k, v) in map {
                 let entry = serde_json::from_value::<kernel_soul::sources::SourceEntry>(v.clone());
                 match entry {
-                    Ok(e) => { anchors.insert(k.clone(), e); }
+                    Ok(e) => { anchors.insert(k.clone(), e); },
                     Err(e) => return err(StatusCode::BAD_REQUEST, format!("出处 {k} 格式不对：{e}")).into_response(),
                 }
             }
         }
         s.anchors = anchors;
         s.version = SOURCES_VERSION;
-        let sp = root.join(sources_rel(&rel));
-        if let Err(e) = write_atomic(&sp, &sources_to_json(&s)) {
-            return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
-        sources_path = Some(sources_rel(&rel));
-        source_issues = check_sources(&doc, &s).into_iter().map(|i| json!(i)).collect();
+        sources = Some(s);
     }
 
+    let issues = match write_card(&root, &rel, &markdown, sources.as_ref(), force) {
+        Ok(v) => v,
+        Err((status, message)) => return err(status, message).into_response(),
+    };
+    let doc = parse(&markdown);
     Json(json!({
         "ok": true,
         "path": rel,
         "temporary": doc.temporary,
         "anchorCount": doc.anchor_count,
-        "sourcesPath": sources_path,
-        "sourceIssues": source_issues,
+        "sourcesPath": sources.as_ref().map(|_| sources_rel(&rel)),
+        "sourceIssues": issues,
     }))
     .into_response()
+}
+
+/// 写一张卡 + 旁挂。HTTP 面与桌面快捕共用这一条写路径。
+///
+/// 返回写完后复查出的出处问题（缺 / 悬空 / quote 不覆盖）；路径与合法性错误带 HTTP 状态码。
+pub fn write_card(
+    root: &Path,
+    rel: &str,
+    markdown: &str,
+    sources: Option<&Sources>,
+    force: bool,
+) -> Result<Vec<Value>, (StatusCode, String)> {
+    let path = card_path_in(root, rel).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    if markdown.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "markdown 不能为空".to_string()));
+    }
+    let doc = parse(markdown);
+    if let Some(first) = doc.errors.first() {
+        return Err((StatusCode::BAD_REQUEST, format!("卡不合法：{}", first.message)));
+    }
+    if path.exists() && !force {
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        if !parse(&existing).temporary {
+            return Err((StatusCode::CONFLICT, format!("已经有真卡了：{rel}（要覆盖请显式 force）")));
+        }
+    }
+    write_atomic(&path, markdown).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut issues: Vec<Value> = Vec::new();
+    if let Some(s) = sources {
+        let sp = root.join(sources_rel(rel));
+        write_atomic(&sp, &sources_to_json(s))
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        issues = check_sources(&doc, s).into_iter().map(|i| json!(i)).collect();
+    }
+    Ok(issues)
+}
+
+/// 桌面端 Alt+Space 的快捕：剪贴板文字 → 一张临时卡（confirmed:false）+ 旁挂。
+///
+/// 与三个入口同一条写路径（write_card），只是候选来自 from_capture：
+/// 不猜语义，只切句，最多三条；区块按线索词判，一条都没命中就落「我相信」。
+pub fn capture_card(root: &Path, text: &str, now_ms: u128) -> Result<(String, usize), String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("剪贴板里没有文字".to_string());
+    }
+    let (rules, _) = crate::entrances::load_rules(root)?;
+    let cands = kernel_soul::entrances::from_capture(text, &rules, 3);
+    if cands.is_empty() {
+        return Err("没有可落卡的文字".to_string());
+    }
+    let mut review = kernel_soul::entrances::Review::new(cands);
+    review.accept_all();
+    let draft = kernel_soul::entrances::assemble(&review.kept(), false, 0, &kernel_core::today_string())
+        .map_err(|e| format!("{}: {}", e.code, e.message))?;
+    let rel = format!("Notes/快捕/捕捉-{now_ms}.md");
+    let sources = Sources {
+        version: SOURCES_VERSION,
+        card: rel.clone(),
+        anchors: draft.sources.clone(),
+    };
+    write_card(root, &rel, &draft.markdown, Some(&sources), true).map_err(|(_, e)| e)?;
+    Ok((rel, draft.sources.len()))
 }
 
 /// 临时卡 → 真卡。只翻 frontmatter 那一行；锚点丢了就 409，一个字节都不写。
@@ -216,15 +275,14 @@ pub async fn upgrade_post(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
     // 升级不动锚点，所以升级前建的旁挂应当逐条仍然对得上；对不上就报出来。
     let doc = parse(&up.text);
     let sp = root.join(sources_rel(&rel));
-    let mut source_issues: Vec<Value> = Vec::new();
-    let mut missing = 0usize;
-    if let Ok(raw) = std::fs::read_to_string(&sp) {
-        if let Ok(s) = parse_sources(&raw) {
-            let issues = check_sources(&doc, &s);
-            missing = issues.iter().filter(|i| i.code == "missing-source").count();
-            source_issues = issues.into_iter().map(|i| json!(i)).collect();
-        }
-    }
+    let parsed = std::fs::read_to_string(&sp).ok().and_then(|raw| parse_sources(&raw).ok());
+    let missing = count_missing(&doc, parsed.as_ref());
+    let source_issues: Vec<Value> = parsed
+        .as_ref()
+        .map(|s| check_sources(&doc, s).into_iter().map(|i| json!(i)).collect())
+        .unwrap_or_default();
+    // 超集必须由响应自己算出来：客户端读到的应当是结果，不是一句承诺。
+    let superset = up.anchors_before.iter().all(|a| up.anchors_after.contains(a));
 
     Json(json!({
         "ok": true,
@@ -232,7 +290,7 @@ pub async fn upgrade_post(State(st): State<Arc<AppState>>, h: HeaderMap, body: B
         "temporary": false,
         "anchorsBefore": up.anchors_before,
         "anchorsAfter": up.anchors_after,
-        "superset": true,
+        "superset": superset,
         "missingSources": missing,
         "sourceIssues": source_issues,
     }))
@@ -441,6 +499,127 @@ confirmed: false
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "应当拒绝：{bad}");
         }
+    }
+
+    #[tokio::test]
+    async fn get_reports_missing_sources_and_never_reads_a_missing_sidecar_as_zero() {
+        let (app, token, dir) = app();
+        let p = dir.path().join("Notes");
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("temp.md"), TEMP_CARD).unwrap();
+
+        // 没有旁挂：6 条判断全都没有出处，不是一个 0。
+        let resp = app
+            .clone()
+            .oneshot(auth_req("GET", "/field/soul/card?path=Notes%2Ftemp.md", &token, None))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["sourcesError"], "no-sources");
+        assert_eq!(v["missingSources"], 6, "没有旁挂时每一条都算缺");
+        assert!(v["sourceIssues"].as_array().unwrap().is_empty(), "没有旁挂时逐条判定是空的，所以数不能靠它");
+
+        // 旁挂只覆盖 1 条：5 条缺。
+        let body = serde_json::json!({
+            "path": "Notes/temp.md",
+            "markdown": TEMP_CARD,
+            "sources": { "anchors": {
+                "belief-1": { "source": "interview", "ref": "answer:belief", "quote": "知识不是收藏，是被用过的判断。" }
+            }}
+        })
+        .to_string();
+        let resp = app
+            .clone()
+            .oneshot(auth_req("PUT", "/field/soul/card", &token, Some(body)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let resp = app
+            .oneshot(auth_req("GET", "/field/soul/card?path=Notes%2Ftemp.md", &token, None))
+            .await
+            .unwrap();
+        let v = body_json(resp).await;
+        assert_eq!(v["missingSources"], 5, "6 条只给 1 条出处，应当报 5 条缺");
+        assert_eq!(v["sourceIssues"].as_array().unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn upgrade_reports_missing_sources_even_when_no_sidecar_exists() {
+        let (app, token, dir) = app();
+        let p = dir.path().join("Notes");
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("temp.md"), TEMP_CARD).unwrap();
+
+        let resp = app
+            .oneshot(auth_req("POST", "/field/soul/upgrade", &token, Some(r#"{"path":"Notes/temp.md"}"#.to_string())))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let v = body_json(resp).await;
+        assert_eq!(v["superset"], true, "超集必须由响应算出来，且升级不动锚点");
+        assert_eq!(v["missingSources"], 6, "没有旁挂不是 0 条缺");
+        assert!(v["sourceIssues"].as_array().unwrap().is_empty());
+        assert_eq!(v["anchorsBefore"].as_array().unwrap().len(), 6);
+        assert_eq!(v["anchorsBefore"], v["anchorsAfter"]);
+    }
+
+    /// 核心里能出现的每个 upgrade- 码，界面都必须有一句人话。
+    /// 三条码在现有实现里不可达（升级自己就拒绝），所以文案只能靠这条测试兜住。
+    #[test]
+    fn every_upgrade_error_code_has_copy_in_the_ui() {
+        let ui = include_str!("../web/field.html");
+        // 只扫内核：升级码都从那里发出，服务端只映射状态码；
+        // 扫 server/src/soul.rs 会命中这条测试自己的字符串。
+        let mut rest = include_str!("../../kernel/crates/kernel-soul/src/lib.rs");
+        let mut codes = std::collections::BTreeSet::new();
+        while let Some(i) = rest.find("\"upgrade-") {
+            let after = &rest[i + 1..];
+            match after.find('"') {
+                Some(j) => {
+                    let code = &after[..j];
+                    if code.len() > "upgrade-".len() {
+                        codes.insert(code.to_string());
+                    }
+                    rest = &after[j..];
+                }
+                None => break,
+            }
+        }
+        assert!(codes.len() >= 5, "应当至少五个升级码，实际 {codes:?}");
+        for c in &codes {
+            assert!(ui.contains(&format!("'{c}':")), "界面缺 {c} 的文案：加进 SOUL_BAD");
+        }
+    }
+
+    #[test]
+    fn capture_card_writes_a_temporary_card_with_capture_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::init(dir.path(), "capture").unwrap();
+        let root = vault.root.clone();
+
+        let (rel, anchors) = crate::soul::capture_card(
+            &root,
+            "短句、具体、少形容词。这句话没有任何线索词。",
+            1_767_225_600_000,
+        )
+        .unwrap();
+        assert_eq!(anchors, 2);
+        assert!(rel.starts_with("Notes/快捕/捕捉-"));
+
+        let text = std::fs::read_to_string(root.join(&rel)).unwrap();
+        let doc = parse(&text);
+        assert!(doc.temporary, "快捕进来的一律是临时卡");
+        assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+        assert_eq!(doc.sections.iter().map(|s| s.items.len()).sum::<usize>(), 2);
+
+        let raw = std::fs::read_to_string(root.join(sources_rel(&rel))).unwrap();
+        let s = parse_sources(&raw).unwrap();
+        assert_eq!(s.anchors.len(), 2);
+        assert!(s.anchors.values().all(|e| e.source == "capture" && e.reference == "capture:quick"));
+        assert!(s.anchors.contains_key("belief-1"), "没有线索词的那句落「我相信」");
+        assert!(s.anchors.contains_key("voice-1"));
     }
 }
 

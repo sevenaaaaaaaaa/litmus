@@ -25,7 +25,7 @@ fn covering_all(doc: &SoulDoc) -> Sources {
     for (anchor, text, _) in items(doc) {
         s.anchors.insert(
             anchor,
-            SourceEntry { source: "note".to_string(), reference: "Notes/旧笔记.md:1".to_string(), quote: text },
+            SourceEntry { source: "note".to_string(), reference: "Notes/旧笔记.md:1".to_string(), quote: text, edited: false },
         );
     }
     s
@@ -74,7 +74,7 @@ fn dangling_provenance_is_reported_not_dropped() {
     let mut s = covering_all(&doc);
     s.anchors.insert(
         "ghost-9".to_string(),
-        SourceEntry { source: "paste".to_string(), reference: "paste:belief".to_string(), quote: "一句卡里已经没有的话。".to_string() },
+        SourceEntry { source: "paste".to_string(), reference: "paste:belief".to_string(), quote: "一句卡里已经没有的话。".to_string(), edited: false },
     );
 
     let found = check_sources(&doc, &s);
@@ -88,11 +88,28 @@ fn quote_that_no_longer_covers_the_item_is_an_error() {
     let mut s = covering_all(&doc);
     s.anchors.insert(
         "belief-1".to_string(),
-        SourceEntry { source: "interview".to_string(), reference: "answer:belief".to_string(), quote: "一句和条目毫无关系的话。".to_string() },
+        SourceEntry { source: "interview".to_string(), reference: "answer:belief".to_string(), quote: "一句和条目毫无关系的话。".to_string(), edited: false },
     );
 
     let found = check_sources(&doc, &s);
     assert_eq!(codes(&found), vec!["unquoted-source"]);
+}
+
+#[test]
+fn edited_items_are_not_judged_by_the_verbatim_rule() {
+    // 改写过的判断：正文是用户改的，quote 仍指原话。逐字覆盖不适用，但锚点仍然对得上。
+    let doc = parse(EX);
+    let mut s = covering_all(&doc);
+    s.anchors.insert(
+        "belief-1".to_string(),
+        SourceEntry {
+            source: "interview".to_string(),
+            reference: "answer:belief".to_string(),
+            quote: "用户原来说的那一句。".to_string(),
+            edited: true,
+        },
+    );
+    assert_eq!(check_sources(&doc, &s), vec![], "改写过的条目不报 unquoted-source");
 }
 
 #[test]
@@ -104,7 +121,7 @@ fn whitespace_differences_do_not_break_the_quote_check() {
     let spaced = format!("  {} \n\u{3000} ", text.replace('，', "， "));
     s.anchors.insert(
         "belief-1".to_string(),
-        SourceEntry { source: "interview".to_string(), reference: "answer:belief".to_string(), quote: spaced },
+        SourceEntry { source: "interview".to_string(), reference: "answer:belief".to_string(), quote: spaced, edited: false },
     );
 
     assert_eq!(check_sources(&doc, &s), vec![], "只差空白不该判成对不上");

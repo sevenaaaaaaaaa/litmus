@@ -1108,8 +1108,8 @@ async fn desktop_kernel_api(
     }))
 }
 
-/// 全局快捷键 3 秒落库：剪贴板文本 → Notes/Inbox/捕捉-<时间戳>.md。
-/// 复制 → Alt+Space → 进库，全程不碰窗口（PRODUCT.md「三秒落库」的热键入口）。
+/// 全局快捷键 3 秒落卡：剪贴板文本 → 一张临时灵魂卡（P1-14）。
+/// 复制 → Alt+Space → 进库，全程不碰窗口；卡片 confirmed:false，出处 capture:quick。
 #[cfg(desktop)]
 fn quick_capture(app: &AppHandle) {
     use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -1122,27 +1122,20 @@ fn quick_capture(app: &AppHandle) {
         return;
     }
     let Some(state) = KERNEL_STATE.get() else { return };
+    let root = state.kernel.lock().unwrap().vault.root.clone();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64;
-    let path = format!("Notes/Inbox/捕捉-{}.md", now);
-    let secs = now / 1000;
-    let tod = secs % 86400;
-    let content = format!(
-        "# 捕捉 {:02}:{:02} UTC\n\n{}\n\n---\n\n> 来源：全局快捷键（Alt+Space）· 复制即落库\n",
-        tod / 3600,
-        (tod % 3600) / 60,
-        text
-    );
-    let mut k = state.kernel.lock().unwrap();
-    let inbox = k.vault.root.join("Notes/Inbox");
-    let _ = std::fs::create_dir_all(&inbox);
-    match k.put_doc(&path, &content) {
-        Ok(()) => {
-            let _ = app.emit("quick-captured", serde_json::json!({ "path": path }));
+        .as_millis();
+    match litmus_server::soul::capture_card(&root, &text, now) {
+        Ok((rel, items)) => {
+            let _ = app.emit("quick-captured", serde_json::json!({ "path": rel, "items": items }));
         }
-        Err(e) => eprintln!("[capture] 快速捕捉失败：{e}"),
+        Err(e) => {
+            // 写盘失败不清空剪贴板：原文还在，用户再按一次就行。
+            eprintln!("[capture] 快捕失败：{e}（剪贴板原文没有动）");
+            let _ = app.emit("quick-capture-failed", serde_json::json!({ "error": e }));
+        }
     }
 }
 

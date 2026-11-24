@@ -87,9 +87,11 @@ tags: [执行, loop, 看板]
 | P1-08 | Mac 专注室 / 参考窗口规格 | todo | — | 单卡+来源并排；Esc 回原位不丢选择 |
 | P1-09 | iPhone 今天 / 捕捉 / 阅读队列规格 | todo | — | 每天最多 3 张；搁置不算失败；离线队列可恢复 |
 | **P1-10a** | 灵魂卡模型进 Rust 内核（2026-11-24 拆步；P1-10 的地基） | ✅ done | [文档](19-soul-in-kernel.md) · `kernel/crates/kernel-soul/` | `cargo test -p kernel-soul` 18 条绿；用例与 Node 参考实现同名同断言；fixture 逐字节相同；`kernel.yml` 收进 CI |
-| **P1-10b** | 临时卡 → 真卡升级路径：API + 界面（P1-10 的后半） | todo（API 已落 · 界面与四入口未做） | [API 文档](21-soul-upgrade-api.md) · `server/src/soul.rs` | 四个入口（访谈 / 提炼 / 粘贴 / 快捕）产出的临时卡都出现升级入口；升级后卡的锚点集合是升级前的**超集**；升级前 AI 输出带「未确认」 |
+| **P1-10b** | 临时卡 → 真卡升级路径：界面（API 已落；四入口 2026-11-24 拆到 P1-13 / P1-14） | ✅ done（API + 界面；四入口迁 P1-13 / P1-14） | [API 文档](21-soul-upgrade-api.md) · [四入口](22-soul-entrances-product.md) · `server/src/soul.rs` + `server/web/field.html` | ~~四个入口（访谈 / 提炼 / 粘贴 / 快捕）产出的临时卡都出现升级入口~~ → 迁 P1-14（2026-11-24，原文保留在 21 号文档）；升级后卡的锚点集合是升级前的**超集**（由响应的 `anchorsBefore` / `anchorsAfter` 算出，不是常量）；升级前 AI 输出带「未确认」；一张 `confirmed:false` 的卡在 field.html 打开即有「未确认」条 + 逐条出处 + 无出处处显式「没有记出处」（没有旁挂 ≠ 0 条缺失）；六态齐、只用 P1-06 五态色、对比度与 375/768/1280 实测；五种拒绝码各有可读提示 |
 | **P1-11** | 证据与三色引用协议（从 P2-01 前移，2026-11-23 确认） | ✅ done | [文档](16-citations.md) · `p1-11-citations/` | 三色判定 + 四种失败分型；固定文案一字不差；点回原文是真链接；15 条测试 |
 | **P1-12** | 临时卡出处（provenance）落盘（2026-11-24 新增；P1-10b 的前置） | ✅ done | [文档](20-soul-provenance.md) · `kernel/crates/kernel-soul/src/sources.rs` + `reference/p1-12-provenance/` | 造卡即有出处：卡与旁挂一起落盘；按锚点键，升级后锚点是超集时旁挂自动仍对得上；缺出处 / 悬空出处 / quote 不覆盖正文三种情况**显式报，不静默补**；Rust 9 条 + Node 12 条绿 |
+| **P1-13** | 四入口产品侧（上）：访谈 / 提炼 / 粘贴在产品里真能造临时卡（2026-11-24 从 P1-10b 拆出） | ✅ done（埋点未落，见 22 附录 C） | [文档](22-soul-entrances-product.md) · `kernel/crates/kernel-soul/src/entrances.rs` + `server/src/entrances.rs` + `server/web/field.html` | 三入口共用一个确认组件与一条 `PUT /field/soul/card`（代码里只有一处写卡）；候选逐字可核、编造报错；提炼规则搬到 Rust 且与 Node 参考同名同断言、CUES 从 JSON 读；跳过 = `confirmed:false` + 每条带出处；每入口一条端到端测试；`soul.entry_used` 上报（P0-01 升 v3） |
+| **P1-14** | 四入口产品侧（下）：快捕接入 + 四入口集成（2026-11-24 从 P1-10b 拆出） | ✅ done（快捕落卡 + 四入口集成；失败只有日志，无状态行） | [文档](22-soul-entrances-product.md) · `server/src/soul.rs::capture_card` + `cli` 的 `capture` + `desktop/src/lib.rs` | ⌥Space 落的是 `confirmed:false` 的卡（不是 Inbox 笔记），带 `capture:quick` 出处；写盘失败不清空输入；四入口产出的卡在 field.html 都能升级、锚点超集、出处不丢（原 P1-10b 第 1 条迁此）；热键被全屏吞掉要么兜底要么显式写不支持 |
 
 ### Phase 2 · 会想（Q2 · 2027-03-29 → 06-25）
 
@@ -167,6 +169,7 @@ tags: [执行, loop, 看板]
 | [P1-10a 灵魂卡进内核](19-soul-in-kernel.md) | 模型搬进 Rust；18 条测试与 Node 版同名同断言 |
 | [P1-12 出处落盘](20-soul-provenance.md) | 旁挂表格式、路径为什么在 `.litmus/soul-sources/`、四条判定 |
 | [P1-10b 升级 API](21-soul-upgrade-api.md) | 三个端点、升级只翻一行、路径安全、还差界面与四入口 |
+| [P1-13/P1-14 四入口产品侧](22-soul-entrances-product.md) | 为什么从 P1-10b 拆出、四个入口的产品形态、一条落盘路径、DoD 与顺序 |
 | [90 新思路日志](90-ideas-log.md) | 每条 TODO 之后新长出来的想法 + 三条主线 |
 | [91 复盘 R1（Phase 0）](91-retro-phase0.md) | 真实数字对账、被推翻的假设、Phase 1 修订 |
 
@@ -180,6 +183,10 @@ tags: [执行, loop, 看板]
 
 | 日期 | 改了什么 | 为什么 |
 |---|---|---|
+| 2026-11-24 | P1-14 快捕落地：`from_capture` + `capture_card`（共用 `write_card`）+ `litmus capture` CLI + 桌面 `quick_capture` 改调同一函数；四入口的卡逐个升级验过（锚点超集、出处不丢） | 第四个入口差点又变成「再写一套落卡」。写卡的自由度只该有一份——把它从 HTTP handler 抽出来，任何客户端都走同一条 |
+| 2026-11-24 | P1-13 三入口落地：`kernel-soul` 候选/确认/组装（12 条）+ `server` 两个纯端点与 5 条 e2e + `field.html` 的 `/灵魂卡` 面板与「跳过，先猜一张」；旁挂新增 `edited` 字段 | 三个入口共用的不是 UI 是管道：服务端重新推导候选、客户端只送决定，正文不能由客户端凭空给，否则「逐字可核」在 API 边界上就漏了 |
+| 2026-11-24 | P1-10b 界面落地：`field.html` 的未确认条 / 逐条出处 / 升级入口；`GET /field/soul/card` 补 `missingSources`、`upgrade` 的 `superset` 改成算出来的；Rust 12 条测试（+3） | 界面要显示「缺几条」，接口只给逐条判定——没有旁挂时逐条判定是空的，数必须由接口给，否则会把「整张卡没出处」画成「全都对得上」 |
+| 2026-11-24 | 范围变更：P1-10b 只留「界面 + 升级入口 + 未确认」，四入口产品侧拆成 P1-13（三 Web 入口）/ P1-14（快捕 + 集成）；P1-10b 第 1 条 DoD 迁 P1-14（原文保留）；21 号文档补三条 API 口径问题（以上用户 2026-11-24 确认） | 四个入口在产品侧是 0 行代码（`server/src`、`kernel/crates` 无造卡路径），那条 DoD 今天与以后很久都无法验证；Web 与 Swift 混在一行，绿的判据只能是「最慢那半做完」 |
 | 2026-11-24 | P1-10b 的 API 一半落地：`GET/PUT /field/soul/card`、`POST /field/soul/upgrade`；升级只翻 frontmatter 一行，锚点逐条保留；server 首次依赖 `kernel-soul` | 界面要画什么取决于 API 答得出什么。升级做成逐字节不动，「超集」就成了结构性结论而不是一句承诺 |
 | 2026-11-24 | 20 号文档更正：`.litmus/` 在本库被整目录忽略（产品只忽略 `.litmus/local/`），所以旁挂不进 git 但进产品备份 | 初版写的「会被提交」是错的。数据到底在不在版本库里，是这条任务唯一要保证的事，理由错了等于保证不成立 |
 | 2026-11-24 | 新增 P1-12：出处按锚点键旁挂落盘（`sources.rs` + `p1-12-provenance/`），不改卡的 Markdown 格式；四入口的出处映射一并钉住 | 出处原先只在 `temporaryCard` 的返回值里，卡一写盘就没了；ref 是行号会漂，只有原话核得住。升级是不可逆点，这次不写就永远补不回来 |

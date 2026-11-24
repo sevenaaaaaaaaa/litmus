@@ -10,6 +10,7 @@
 //!
 //! 出处（provenance）在 `sources` 子模块：按锚点键的旁挂表，不改卡本身的格式。
 
+pub mod entrances;
 pub mod sources;
 
 use serde::{Deserialize, Serialize};

@@ -70,6 +70,10 @@ Rust 版改成一次性播种、逐次自增的 `max_num` 计数器：铸号前�
 
 ## 还没做（P1-10b）
 
+> 2026-11-24 更新：下面第 1 条已落（`server/src/soul.rs`，读卡 / 写卡 / 升级三个端点）；
+> 第 3 条里的「四个入口」已迁 P1-13 / P1-14（见 [22 号文档](22-soul-entrances-product.md)），
+> 「超集」仍是 P1-10b 的判据。原文保留。
+
 - server 侧端点：读卡 / 写卡 / 升级；写盘走 `kernel-store`，不要绕开索引与 undo 栈。
 - `server/web/field.html`：临时卡的「未确认」条与升级入口。颜色用 P1-06 的
   `--state-seed`（未确认）→ `--state-grounded`（已升级），不新增第六色。

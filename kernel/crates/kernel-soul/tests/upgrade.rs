@@ -15,7 +15,7 @@ fn cover(doc: &kernel_soul::SoulDoc) -> Sources {
             if let Some(a) = &item.anchor {
                 s.anchors.insert(
                     a.clone(),
-                    SourceEntry { source: "note".into(), reference: "Notes/旧笔记.md:1".into(), quote: item.text.clone() },
+                    SourceEntry { source: "note".into(), reference: "Notes/旧笔记.md:1".into(), quote: item.text.clone(), edited: false },
                 );
             }
         }

@@ -38,6 +38,14 @@ pub struct SourceEntry {
     #[serde(rename = "ref")]
     pub reference: String,
     pub quote: String,
+    /// 这条判断被用户改写过：正文不再是原句，quote 仍指原话。
+    /// 只有「改写」会置位；逐字覆盖检查对这类条目不适用（出处仍按锚点对得上）。
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub edited: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 /// 一张卡的出处表。`anchors` 的键是块锚点。
@@ -93,6 +101,9 @@ pub fn check_sources(doc: &SoulDoc, sources: &Sources) -> Vec<Issue> {
                     format!("{anchor} 没有出处：答不出这条判断最初是从哪句话来的"),
                 )),
                 Some(entry) => {
+                    if entry.edited {
+                        continue;
+                    }
                     if !squash(&entry.quote).contains(&squash(&item.text)) {
                         found.push(Issue::at(
                             "unquoted-source",
@@ -119,7 +130,7 @@ pub fn check_sources(doc: &SoulDoc, sources: &Sources) -> Vec<Issue> {
 
 /// 与 p1-11 的 `squash` 逐字一致：只去掉空格、\t、\n、\r 和全角空格 U+3000。
 /// 不用 `char::is_whitespace`——它还会吃掉 \x0b、\x0c、NBSP，那不是同一套规则。
-fn squash(s: &str) -> String {
+pub(crate) fn squash(s: &str) -> String {
     s.chars()
         .filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{3000}'))
         .collect()

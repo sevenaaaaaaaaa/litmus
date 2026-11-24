@@ -687,6 +687,44 @@ body.god .pv{display:block!important;max-height:none;height:100%;border-left:0;p
 #carets .caret{position:absolute;width:2px;background:var(--pc)}
 #carets .caret b{position:absolute;bottom:100%;left:-1px;font:500 var(--fs-1)/1.3 var(--f-ui);color:var(--paper);background:var(--pc);padding:1px 5px;border-radius:var(--r-xs);white-space:nowrap}
 .swl i{width:22px;height:14px;border-radius:var(--r-xs);box-shadow:inset 0 0 0 1px oklch(var(--ink-c) / .12)}
+/* ── 灵魂卡三入口（P1-13）：候选 → 确认 → 一条 PUT ───────────────────── */
+.soultabs{display:flex;gap:6px;margin:0 0 12px}
+.soullab{display:grid;gap:3px;margin:12px 0 6px;font:600 var(--fs-2) var(--f-ui);color:var(--ink)}
+.soullab em{font:400 var(--fs-1) var(--f-ui);font-style:normal;color:var(--ink-2)}
+.soulta{width:100%;box-sizing:border-box;border:0;border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font:400 var(--fs-3)/1.6 var(--f-ui);padding:8px 10px;box-shadow:inset 0 0 0 1px var(--border-2)}
+.soulta:focus-visible{outline:2px solid var(--state-grounded);outline-offset:2px}
+.soulcands{display:grid;gap:8px;margin:8px 0 12px}
+.soulcand{border-radius:var(--r-sm);background:var(--paper);box-shadow:inset 0 0 0 1px var(--border-2);padding:9px 11px;display:grid;gap:6px}
+.soulcand.off{opacity:.55}
+.soulct{display:flex;gap:8px;align-items:flex-start}
+.soulcb{flex:none;font:600 var(--fs-1) var(--f-mono);color:var(--state-grounded-ink);background:var(--state-grounded-soft);border-radius:var(--r-pill);padding:2px 8px}
+.soulcx{font:400 var(--fs-3)/1.6 var(--f-ui);color:var(--ink)}
+.soulcr{font:400 var(--fs-1) var(--f-mono);color:var(--ink-2)}
+.soulca{display:flex;gap:6px;flex-wrap:wrap}
+.soulca .btn{padding:5px 9px;font-size:var(--fs-1)}
+/* ── 灵魂卡（P1-10b）：未确认条 · 逐条出处 · 升级入口 ─────────────────── */
+.soulbar{margin:0 0 20px;padding:12px 14px;border-radius:var(--r-md);display:grid;gap:8px;background:var(--state-seed-soft);box-shadow:inset 0 0 0 1px oklch(from var(--state-seed) l c h / .24)}
+.soulbar[data-s="grounded"]{background:var(--state-grounded-soft);box-shadow:inset 0 0 0 1px oklch(from var(--state-grounded) l c h / .24)}
+.soulrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.soulstate{display:inline-flex;align-items:center;gap:6px;font:600 var(--fs-2)/1 var(--f-display);color:var(--state-seed-ink)}
+.soulbar[data-s="grounded"] .soulstate{color:var(--state-grounded-ink)}
+.soulstate svg{width:13px;height:13px;flex:none}
+.soulcount{font:400 var(--fs-2)/1.5 var(--f-ui);color:var(--ink-2)}
+.soulcount b{font:600 var(--fs-2) var(--f-mono);color:var(--ink)}
+.soulrow .btn{margin-left:auto}
+.soulnote{font:400 var(--fs-2)/1.6 var(--f-ui);color:var(--ink-2)}
+.soulbar code{font:400 var(--fs-1) var(--f-mono);background:var(--paper);padding:1px 4px;border-radius:var(--r-xs);white-space:nowrap}
+.soulwarn{font:400 var(--fs-2)/1.6 var(--f-ui);color:var(--state-tension-ink);background:var(--state-tension-soft);border-radius:var(--r-sm);padding:6px 9px}
+.soulbad{font:400 var(--fs-2)/1.6 var(--f-ui);color:var(--danger-ink);background:var(--danger-soft);border-radius:var(--r-sm);padding:6px 9px}
+.soul-src{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border-radius:var(--r-pill);background:var(--state-grounded-soft);color:var(--state-grounded-ink);font:500 var(--fs-1)/1.6 var(--f-mono);white-space:nowrap;vertical-align:baseline}
+.soul-src.none{background:none;color:var(--ink-2);font-family:var(--f-ui);box-shadow:inset 0 0 0 1px var(--border-2)}
+.soul-src.none::before{content:"—"}
+.soulbar .btn:hover{background:oklch(from var(--ink) l c h / .14)}
+.soulbar .btn.pri:hover{background:var(--ink-2)}
+.soul-src:hover{box-shadow:inset 0 0 0 1px var(--state-grounded)}
+.soulbar :focus-visible{outline:2px solid var(--state-grounded);outline-offset:2px}
+.soulbar[data-s="loading"] .soulrow .btn{opacity:.5}
+@media (max-width:900px){.soulbar{padding:10px 12px}.soulrow .btn{margin-left:0;width:100%;min-height:44px}}
 </style>
 </head>
 <body>
@@ -1758,7 +1796,7 @@ function renderRead(d){
   const tg = reading.g || []; let tagEl = inner.querySelector('.dtags');
   if (tg.length){ if (!tagEl){ tagEl = document.createElement('div'); tagEl.className = 'dtags chips'; meta.after(tagEl); } tagEl.innerHTML = tg.map(t => '<button class="chip" data-tag="' + esc(t) + '"><span>#' + esc(t) + '</span></button>').join(''); tagEl.querySelectorAll('[data-tag]').forEach(b => b.onclick = () => { q.value = '#' + b.dataset.tag; onInput(); const rel = showTag(b.dataset.tag); if (rel.length > 1) toast('#' + esc(b.dataset.tag) + ' · <b>' + rel.length + '</b> 篇亮起'); }); }
   else if (tagEl) tagEl.remove();
-  if (styleId && d.html && d.format !== 'html'){ const me = reading; renderStyled(body, d).then(ok => { if (!ok && reading === me && !editing) { styleId = ''; renderRead(d); } }); return; }
+  if (styleId && d.html && d.format !== 'html'){ const me = reading; renderStyled(body, d).then(ok => { if (!ok && reading === me && !editing) { styleId = ''; renderRead(d); return; } if (reading === me) mountSoul(inner, d); }); return; }
   body.innerHTML = d.html ? fixAssets(bodyOf(d.html)) : ('<pre>' + esc(d.source || '') + '</pre>');
   /* 正文第一个标题与页头重复时去掉 */
   const h = body.querySelector('h1'); if (h && h.textContent.trim() === reading.full.trim()) h.remove();
@@ -1775,6 +1813,296 @@ function renderRead(d){
     else if (/^https?:/.test(href)){ a.target = '_blank'; a.rel = 'noopener'; }
   });
   if (cmts.path === reading.p && cmts.list.length) markComments();
+  mountSoul(inner, d);
+}
+/* ── 灵魂卡三入口（P1-13）：访谈 / 提炼 / 粘贴 → 候选 → 一条 PUT 落盘 ────── */
+const SOUL_BLOCKS = [
+  ['belief', '我相信', '你反复用来判断的一句话'],
+  ['criteria', '我如何判断', '先看什么、再看什么'],
+  ['refuse', '我拒绝', '坚决不做的事'],
+  ['voice', '我的声音', '短句、具体、少形容词'],
+  ['question', '我在追的问题', '值得反复做的问题'],
+  ['reader', '我的读者 / 作品', '写给谁']
+];
+let soulEntry = null;
+const soulBlocName = k => (SOUL_BLOCKS.find(b => b[0] === k) || [k, k])[1];
+
+function openSoulEntry(){
+  soulEntry = { kind: 'interview', payload: null, candidates: [], decisions: [], path: 'Notes/灵魂卡.md' };
+  renderSoulEntry();
+}
+function renderSoulEntry(){
+  const tabs = [['interview', '访谈'], ['extract', '提炼'], ['paste', '粘贴']];
+  let h = '<div class="soultabs">' + tabs.map(([k, n]) => '<button class="chip' + (soulEntry.kind === k ? ' on' : '') + '" data-tab="' + k + '">' + n + '</button>').join('') + '</div>';
+  if (soulEntry.kind === 'interview'){
+    h += '<p class="hint">六个问题，答哪条算哪条。候选就是你打的原话：程序只切句，不改写。</p>';
+    SOUL_BLOCKS.forEach(([k, n, hint]) => {
+      h += '<label class="soullab" for="se-' + k + '">' + n + '<em>' + hint + '</em></label>'
+        + '<textarea id="se-' + k + '" class="soulta" data-block="' + k + '" rows="2" placeholder="用自己的话写一句"></textarea>';
+    });
+  } else if (soulEntry.kind === 'extract'){
+    const notes = nodes.filter(n => /\.md$/i.test(n.p) && n.p.startsWith('Notes/'));
+    h += '<p class="hint">按线索词从笔记里挑原句：标题、代码块、列表、链接都不进候选。</p>';
+    h += '<label class="soullab" for="se-path">从哪篇提炼</label><select id="se-path" class="soulta">'
+      + (notes.length ? notes.map(n => '<option value="' + esc(n.p) + '">' + esc(n.title || n.p) + '</option>').join('') : '<option value="">（库里还没有 Notes/ 下的笔记）</option>')
+      + '</select>';
+  } else {
+    h += '<p class="hint">自我介绍、旧文章、主页简介都行。切句后逐条确认。</p>';
+    h += '<textarea id="se-text" class="soulta" rows="5" placeholder="粘贴一段你自己写过的文字"></textarea>';
+    h += '<label class="soullab" for="se-blk">先归到</label><select id="se-blk" class="soulta">'
+      + SOUL_BLOCKS.map(([k, n]) => '<option value="' + k + '"' + (k === 'voice' ? ' selected' : '') + '>' + n + '</option>').join('')
+      + '</select>';
+  }
+  h += '<div class="acts"><button class="btn pri" id="se-go">生成候选</button>'
+    + (soulEntry.kind === 'extract' ? '<button class="btn" id="se-skip">跳过，先猜一张</button>' : '')
+    + '<button class="btn" id="se-cancel">取消</button></div>';
+  const box = openPanel('灵魂卡 · 三入口', h);
+  box.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { soulEntry.kind = b.dataset.tab; renderSoulEntry(); });
+  box.querySelector('#se-cancel').onclick = () => closePanel();
+  box.querySelector('#se-go').onclick = () => soulPrepare(box);
+  const skip = box.querySelector('#se-skip'); if (skip) skip.onclick = () => soulSkip(box);
+}
+async function soulPrepare(box){
+  const go = box.querySelector('#se-go'); go.disabled = true; go.textContent = '挑句子…';
+  try {
+    let body;
+    if (soulEntry.kind === 'interview'){
+      const answers = {};
+      box.querySelectorAll('[data-block]').forEach(t => { const v = t.value.trim(); if (v) answers[t.dataset.block] = v; });
+      if (!Object.keys(answers).length) throw new Error('先答一个问题');
+      body = { kind: 'interview', answers };
+    } else if (soulEntry.kind === 'extract'){
+      const p = box.querySelector('#se-path').value;
+      if (!p) throw new Error('库里还没有可提炼的笔记');
+      body = { kind: 'extract', paths: [p], perBlock: 3 };
+    } else {
+      const text = box.querySelector('#se-text').value.trim();
+      if (!text) throw new Error('先粘贴一段文字');
+      body = { kind: 'paste', text, block: box.querySelector('#se-blk').value };
+    }
+    soulEntry.payload = body;
+    const r = await api('/field/soul/entrance', { method: 'POST', json: body });
+    soulEntry.candidates = r.candidates || [];
+    if (!soulEntry.candidates.length) throw new Error('没挑出可用的句子：换一段更具体的文字');
+    soulEntry.decisions = soulEntry.candidates.map(() => ({ decision: 'pending' }));
+    renderSoulReview();
+  } catch(e){
+    go.disabled = false; go.textContent = '生成候选';
+    toast(esc((e && e.message) || e), true);
+  }
+}
+function renderSoulReview(){
+  let h = '<p class="hint">' + soulEntry.candidates.length + ' 条候选：接受、改写或删掉，只有留下的会写进卡。</p><div class="soulcands">';
+  soulEntry.candidates.forEach((c, i) => {
+    const d = soulEntry.decisions[i] ? soulEntry.decisions[i].decision : 'pending';
+    h += '<div class="soulcand' + (d === 'dropped' ? ' off' : '') + '" data-i="' + i + '">'
+      + '<div class="soulct"><span class="soulcb">' + esc(soulBlocName(c.block)) + '</span><span class="soulcx">' + esc(c.text) + '</span></div>'
+      + '<div class="soulcr">' + esc(c.ref || '') + '</div>'
+      + '<div class="soulca">'
+      + '<button class="btn" data-d="accepted">' + (d === 'accepted' ? '✓ 接受' : '接受') + '</button>'
+      + '<button class="btn" data-d="edited">' + (d === 'edited' ? '✓ 已改写' : '改写') + '</button>'
+      + '<button class="btn" data-d="dropped">' + (d === 'dropped' ? '✓ 已删' : '删除') + '</button>'
+      + '</div></div>';
+  });
+  h += '</div><label class="soullab" for="se-out">写到</label><input id="se-out" class="soulta" value="' + esc(soulEntry.path) + '">';
+  h += '<div class="acts"><button class="btn" id="se-all">全部接受</button><button class="btn pri" id="se-save">落盘为临时卡</button><button class="btn" id="se-back">重来</button></div>';
+  const box = openPanel('灵魂卡 · 确认', h);
+  box.querySelectorAll('.soulcand').forEach(row => {
+    const i = +row.dataset.i;
+    row.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+      if (b.dataset.d === 'edited'){ soulEditRow(row, i); return; }
+      soulEntry.decisions[i] = { decision: b.dataset.d };
+      renderSoulReview();
+    });
+  });
+  box.querySelector('#se-all').onclick = () => {
+    soulEntry.decisions = soulEntry.decisions.map(d => (d.decision === 'pending' ? { decision: 'accepted' } : d));
+    renderSoulReview();
+  };
+  box.querySelector('#se-back').onclick = () => renderSoulEntry();
+  box.querySelector('#se-save').onclick = () => soulSave(box);
+}
+function soulEditRow(row, i){
+  const c = soulEntry.candidates[i];
+  const cur = (soulEntry.decisions[i] && soulEntry.decisions[i].edited) || c.text;
+  row.querySelector('.soulct').innerHTML = '<span class="soulcb">' + esc(soulBlocName(c.block)) + '</span><textarea class="soulta" id="se-edit" rows="2"></textarea>';
+  row.querySelector('#se-edit').value = cur;
+  row.querySelector('.soulca').innerHTML = '<button class="btn pri" id="se-ok">存这一条</button><button class="btn" id="se-no">取消</button>';
+  row.querySelector('#se-no').onclick = () => renderSoulReview();
+  row.querySelector('#se-ok').onclick = () => {
+    const v = row.querySelector('#se-edit').value.trim();
+    if (!v) { toast('改写不能是空的', true); return; }
+    soulEntry.decisions[i] = { decision: 'edited', edited: v };
+    renderSoulReview();
+  };
+}
+async function soulOpenWhenReady(path){
+  let n = byPath.get(path);
+  for (let i = 0; i < 8 && !n; i++){
+    await new Promise(r => setTimeout(r, 300));
+    await refreshNow();
+    n = byPath.get(path);
+  }
+  return n;
+}
+function soulFreePath(){
+  const base = 'Notes/灵魂卡';
+  if (!byPath.has(base + '.md')) return base + '.md';
+  for (let i = 2; i < 50; i++) if (!byPath.has(base + '-' + i + '.md')) return base + '-' + i + '.md';
+  return base + '-' + Date.now() + '.md';
+}
+async function soulSkip(box){
+  const p = box.querySelector('#se-path').value;
+  if (!p) { toast('库里还没有可提炼的笔记', true); return; }
+  const btn = box.querySelector('#se-skip'); btn.disabled = true; btn.textContent = '猜一张…';
+  try {
+    const body = { kind: 'extract', paths: [p], perBlock: 1 };
+    const r = await api('/field/soul/entrance', { method: 'POST', json: body });
+    const decisions = (r.candidates || []).map((c, i) => ({ index: i, decision: 'accepted' }));
+    if (!decisions.length) throw new Error('这篇笔记里没有可用的句子');
+    const d = await api('/field/soul/draft', { method: 'POST', json: Object.assign({}, body, { decisions, confirmed: false, version: 0 }) });
+    const path = soulFreePath();
+    await api('/field/soul/card', { method: 'PUT', json: { path, markdown: d.markdown, sources: d.sources } });
+    closePanel();
+    toast('跳过也能用 · <b>' + d.itemCount + '</b> 条判断 · 未确认');
+    await refreshNow();
+    const n = await soulOpenWhenReady(path);
+    if (n) openDoc(n); else toast('写好了，但场里还没扫到它：' + path, true);
+  } catch(e){
+    btn.disabled = false; btn.textContent = '跳过，先猜一张';
+    toast(esc((e && e.message) || e), true);
+  }
+}
+async function soulSave(box){
+  const path = (box.querySelector('#se-out').value || '').trim();
+  if (!path) { toast('给它一个路径，比如 Notes/灵魂卡.md', true); return; }
+  const decisions = [];
+  soulEntry.decisions.forEach((d, i) => { if (d.decision !== 'pending') decisions.push(Object.assign({ index: i }, d)); });
+  if (!decisions.length) { toast('先接受、改写或删除至少一条', true); return; }
+  const btn = box.querySelector('#se-save'); btn.disabled = true; btn.textContent = '组装…';
+  try {
+    const d = await api('/field/soul/draft', { method: 'POST', json: Object.assign({}, soulEntry.payload, { decisions, confirmed: false, version: 0 }) });
+    await api('/field/soul/card', { method: 'PUT', json: { path, markdown: d.markdown, sources: d.sources } });
+    closePanel();
+    toast('已落盘 · <b>' + d.itemCount + '</b> 条判断 · <b>' + d.anchorCount + '</b> 个锚点 · 未确认');
+    await refreshNow();
+    const n = await soulOpenWhenReady(path);
+    if (n) openDoc(n); else toast('卡写好了，但场里还没扫到它', true);
+  } catch(e){
+    btn.disabled = false; btn.textContent = '落盘为临时卡';
+    toast(esc((e && e.message) || e), true);
+  }
+}
+/* ── 灵魂卡（P1-10b）：卡级「未确认」条、逐条出处、升级入口 ─────────────────
+   判据全部来自 GET /field/soul/card：temporary 只认 confirmed:false；
+   没有旁挂时 sourceIssues 是空数组，所以「缺几条」只认 missingSources。 */
+const SOUL_BAD = {
+  'upgrade-invalid-card': '这张卡本身不合法，先修卡再升级。',
+  'upgrade-already-confirmed': '这张已经是真卡了，刷新一下。',
+  'upgrade-no-confirmed-line': 'frontmatter 里没有 confirmed 那一行，不猜，先补上。',
+  'upgrade-lost-anchor': '升级会丢锚点，所以一个字节都没写。',
+  'upgrade-broke-card': '升级后卡会不合法，已放弃写入。'
+};
+function soulIsCard(src){
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(src || '');
+  return !!m && /\btype:\s*soul-card\b/.test(m[1]);
+}
+function mountSoul(inner, d){
+  const old = inner.querySelector('#soulbar'); if (old) old.remove();
+  if (!inner.querySelector('.body') || !soulIsCard(d && d.source)) return;
+  const bar = document.createElement('div');
+  bar.id = 'soulbar'; bar.className = 'soulbar'; bar.dataset.s = 'loading';
+  bar.innerHTML = '<div class="soulrow"><span class="soulstate"><span class="thinking"><i></i><i></i><i></i></span> 正在读这张卡</span></div>';
+  const meta = inner.querySelector('.dmeta');
+  if (meta) meta.after(bar); else inner.prepend(bar);
+  const path = reading && reading.p;
+  if (!path) return;
+  api('/field/soul/card?path=' + encodeURIComponent(path)).then(v => {
+    if (bar.isConnected && reading && reading.p === path) paintSoul(bar, v);
+  }).catch(e => {
+    if (!bar.isConnected) return;
+    bar.dataset.s = 'error';
+    bar.innerHTML = '<div class="soulbad">读不出这张卡：' + esc((e && e.message) || e) + '</div>';
+  });
+}
+function paintSoul(bar, v){
+  const items = []; (v.sections || []).forEach(s => (s.items || []).forEach(i => items.push(i)));
+  const anchored = items.filter(i => i.anchor);
+  const unanchored = items.length - anchored.length;
+  /* 没有锚点的判断按定义就没有出处（旁挂按锚点键），所以一起算进「没有出处」。 */
+  const missing = (typeof v.missingSources === 'number' ? v.missingSources : anchored.filter(i => !i.source).length) + unanchored;
+  const errs = v.errors || [];
+  const temporary = !!v.temporary;
+  const icon = temporary
+    ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="5.4" stroke-dasharray="2.6 2"/></svg>'
+    : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="8" r="5.4"/><path d="M5.4 8.2l1.8 1.8 3.4-3.8"/></svg>';
+  let html = '<div class="soulrow"><span class="soulstate">' + icon + (temporary ? '未确认' : '已确认') + '</span>'
+    + '<span class="soulcount"><b>' + items.length + '</b> 条判断 · <b>' + missing + '</b> 条没有出处</span>'
+    + (temporary ? '<button class="btn pri" id="soul-go"' + ((errs.length || !anchored.length) ? ' disabled' : '') + '>升级为真卡</button>' : '')
+    + '</div>';
+  if (temporary) html += '<div class="soulnote">升级只翻 frontmatter 的 <code>confirmed: false</code> 一行，正文一个字不动；不可降级。</div>';
+  if (v.sourcesError && items.length) html += '<div class="soulwarn">' + esc(v.sourcesError === 'no-sources' ? '这张卡没有出处旁挂' : v.sourcesError) + '：下面每条判断都会标「没有记出处」。</div>';
+  if (!items.length) html += '<div class="soulwarn">这张卡还没有任何判断——先写一条再升级。</div>';
+  else if (unanchored) html += '<div class="soulwarn">有 ' + unanchored + ' 条判断没有锚点：升不了级，先在正文那一行末尾补 <code>^锚点</code>。</div>';
+  if (errs.length) html += '<div class="soulbad">这张卡有 ' + errs.length + ' 处不合法：' + esc(errs[0].message || errs[0].code || '') + '</div>';
+  bar.dataset.s = temporary ? 'seed' : 'grounded';
+  bar.innerHTML = html;
+  const go = bar.querySelector('#soul-go'); if (go) go.onclick = () => askUpgrade(bar);
+  const body = $('doc').querySelector('.body');
+  if (body) decorateSoul(body, anchored);
+}
+function decorateSoul(body, anchored){
+  /* 产品侧渲染出的 HTML 不带 data-anchor（锚点是正文里的 ^名字），所以按块尾标记找位置：
+     找到「以 ^锚点 结尾」的文本节点，把标记换成出处小签。锚点文本本身留在原文里没动过。 */
+  const want = {}; anchored.forEach(i => { want[i.anchor] = i.source || null; });
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const hits = []; const seen = {};
+  let node;
+  while ((node = walker.nextNode())){
+    const t = node.nodeValue || '';
+    const m = /\s\^([^\s^]+)\s*$/.exec(t);
+    if (!m || !Object.prototype.hasOwnProperty.call(want, m[1]) || seen[m[1]]) continue;
+    seen[m[1]] = 1; hits.push({ node, name: m[1], match: m[0] });
+  }
+  hits.forEach(h => {
+    const parent = h.node.parentElement; if (!parent) return;
+    h.node.nodeValue = h.node.nodeValue.slice(0, h.node.nodeValue.length - h.match.length) + ' ';
+    parent.appendChild(soulChip(want[h.name]));
+  });
+}
+function soulChip(s){
+  const chip = document.createElement('span');
+  chip.className = 'soul-src' + (s ? '' : ' none');
+  chip.textContent = s ? (s.ref || s.source || '有出处') : '没有记出处';
+  chip.title = s ? ('出处原话：' + (s.quote || '（未记）')) : '这条判断在旁挂里没有出处记录';
+  return chip;
+}
+function askUpgrade(bar){
+  const box = openPanel('升级为真卡', '<p>把 <code>confirmed: false</code> 改成 <code>true</code>：正文一个字不动，锚点一条不少，出处按锚点仍然对得上。</p><p class="hint">升级不可降级；写盘失败时一个字节都不写。</p><div class="acts"><button class="btn pri" id="soul-yes">升级</button><button class="btn" id="soul-no">取消</button></div>');
+  box.querySelector('#soul-no').onclick = () => closePanel();
+  box.querySelector('#soul-yes').onclick = () => { closePanel(); doUpgrade(bar); };
+}
+async function doUpgrade(bar){
+  const go = bar.querySelector('#soul-go');
+  const path = reading && reading.p;
+  if (go){ go.disabled = true; go.innerHTML = '<span class="thinking"><i></i><i></i><i></i></span> 升级中'; }
+  try {
+    const r = await api('/field/soul/upgrade', {method:'POST', json:{path}});
+    const before = (r.anchorsBefore || []).length, after = (r.anchorsAfter || []).length;
+    toast('已升级 · 锚点 <b>' + before + ' → ' + after + '</b>' + (r.superset === false ? '（<b>超集不成立</b>）' : '，一条不少') + (r.missingSources ? '；仍有 <b>' + r.missingSources + '</b> 条没有出处' : ''));
+    const d2 = await api('/doc?path=' + encodeURIComponent(path));
+    if (reading && reading.p === path){ docData = d2; renderRead(d2); }
+  } catch(e){
+    const code = String((e && e.message) || '').split(':')[0].trim();
+    const msg = SOUL_BAD[code] || ('升级失败：' + ((e && e.message) || e));
+    toast(esc(msg), true);
+    const bad = document.createElement('div'); bad.className = 'soulbad'; bad.textContent = msg;
+    bar.appendChild(bad);
+    if (go){ go.disabled = false; go.textContent = '再试一次'; }
+    if (code === 'upgrade-already-confirmed'){
+      try { const d2 = await api('/doc?path=' + encodeURIComponent(path)); if (reading && reading.p === path){ docData = d2; renderRead(d2); } } catch(_){}
+    }
+  }
 }
 /* 内核渲染的是完整 HTML 页（自带 <style> 与元数据）：只取正文，样式交给阅读页，免得它的 body 规则串到壳上 */
 function bodyOf(html){
@@ -2240,6 +2568,7 @@ const CMDS = [
   ['/明暗', '切换明暗', toggleTheme],
   ['/主题', '界面配色预设：官方默认、Notion、Claude、Apple、Linear 等 11 套（只换颜色，版式不变）', openThemes],
   ['/新建', '新建一篇文档（可接标题：/新建 周报）', () => newDoc('')],
+  ['/灵魂卡', '灵魂卡：访谈 / 提炼 / 粘贴，挑你自己的原句做一张临时卡', openSoulEntry],
   ['/最近', '最近打开和最近改过的文档', openRecent],
   ['/文件', '传统文件栏：按目录浏览、精确搜索、移动和复制文件', () => openFilesAt('Notes')],
   ['/文件夹', '所有文件夹：新建、改名或移动、复制，把一个文件夹的文档在场上亮起', () => openFolders()],

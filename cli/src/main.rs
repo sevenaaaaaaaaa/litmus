@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use kernel_core::Vault;
+use std::io::Read;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -50,6 +51,12 @@ enum Cmd {
     },
     /// 反查：哪些文档引用了该附件
     Refs { path: PathBuf, hash: String },
+    /// 快捕：把一段文字落成一张临时灵魂卡（给 text 或用 stdin），打印卡路径
+    Capture {
+        path: PathBuf,
+        /// 要落卡的文字；不给就读 stdin
+        text: Option<String>,
+    },
     /// 启动本地 daemon（HTTP API + 文件监听）
     Serve {
         path: PathBuf,
@@ -281,6 +288,24 @@ fn main() -> Result<()> {
             for doc in k.asset_docs(&hash)? {
                 println!("{doc}");
             }
+        }
+        Cmd::Capture { path, text } => {
+            let vault = Vault::open(&path)?;
+            let input = match text {
+                Some(t) => t,
+                None => {
+                    let mut s = String::new();
+                    std::io::stdin().read_to_string(&mut s)?;
+                    s
+                }
+            };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let (rel, anchors) = litmus_server::soul::capture_card(&vault.root, &input, now)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            println!("已落卡：{rel}（{anchors} 个锚点，未确认）");
         }
         Cmd::Serve { path, addr } => {
             let vault = Vault::open(&path)?;
