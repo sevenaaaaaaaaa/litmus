@@ -6,7 +6,11 @@
 //! 3. 新条目才铸新号，编号永不复用：删掉 voice-4 之后再新增，拿到的是 voice-5。
 //!
 //! 纯逻辑、零 IO：server 直接调用，也可以进 wasm 目标。参考实现是
-//! docs/spec/r2/reference/p1-01-soul/soul.mjs（Node），这里逐条对齐它的 17 条测试。
+//! docs/spec/r2/reference/p1-01-soul/soul.mjs（Node），这里逐条对齐它的 18 条测试。
+//!
+//! 出处（provenance）在 `sources` 子模块：按锚点键的旁挂表，不改卡本身的格式。
+
+pub mod sources;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};

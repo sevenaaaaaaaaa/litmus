@@ -173,7 +173,8 @@ export function temporaryCard(files) {
   const review = acceptAll(newReview(cands));
   return {
     markdown: assemble(review, { confirmed: false }),
-    provenance: cands.map((c) => ({ block: c.block, ref: c.provenance.ref })),
+    // quote 与 source 一起带出来：旁挂要存原话，否则半年后 ref 里的行号一漂就无从核对。
+    provenance: cands.map((c) => ({ block: c.block, ref: c.provenance.ref, quote: c.provenance.quote, source: c.provenance.source })),
   };
 }
 

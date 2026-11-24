@@ -73,6 +73,9 @@ node --test p1-01-soul/soul.test.mjs >/tmp/t10.log 2>&1 && ok "18 条解析/校�
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-example.md >/tmp/t11.log 2>&1 && ok "示例卡 VALID（$(grep -o '[0-9]* 条' /tmp/t11.log | head -1)）" || { bad "示例卡"; cat /tmp/t11.log; }
 node p1-01-soul/soul-cli.mjs validate p1-01-soul/soul-template.md >/tmp/t12.log 2>&1 && ok "临时卡 VALID（confirmed:false）" || { bad "临时卡"; cat /tmp/t12.log; }
 
+say "P1-12 出处旁挂"
+node --test p1-12-provenance/sources.test.mjs >/tmp/t28.log 2>&1 && ok "12 条（缺出处/悬空/quote 不覆盖/版本/落盘/不冒充）" || { bad "出处旁挂测试"; tail -20 /tmp/t28.log; }
+
 say "P1-07 「像我」盲评"
 node --test p1-07-review/review.test.mjs >/tmp/t26.log 2>&1 && ok "18 条（均值/裁决/无法判定/κ/整卷判定）" || { bad "盲评测试"; tail -20 /tmp/t26.log; }
 node p1-07-review/review.mjs --in p1-07-review/example-ratings.json >/tmp/t27.log 2>&1 || true
