@@ -10,6 +10,7 @@ path = "src/lib.rs"
 
 [dependencies]
 kernel-core = { path = "../kernel/crates/kernel-core" }
+kernel-soul = { path = "../kernel/crates/kernel-soul" }
 litmus-mcp = { path = "../mcp" }
 kernel-a2ui = { path = "../kernel/crates/kernel-a2ui" }
 kernel-deploy = { path = "../kernel/crates/kernel-deploy" }

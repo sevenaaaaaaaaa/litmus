@@ -23,6 +23,10 @@ use crate::{Issue, SoulDoc};
 /// 旁挂格式版本。结构一变就升这个数，读到别的版本必须显式拒绝，不许猜。
 pub const SOURCES_VERSION: u32 = 1;
 
+/// 旁挂落在 vault 里的哪个目录。与 Node 参考实现 `p1-12-provenance/sources.mjs`
+/// 的 `SOURCES_DIR` 必须同值——两边指的不是同一个地方，就谈不上逐条对齐。
+pub const SOURCES_DIR: &str = ".litmus/soul-sources";
+
 /// 一条出处：从哪个入口来（source）、具体指到哪（ref）、原话（quote）。
 ///
 /// quote 存原话而不是只存 ref，是因为 ref 里的行号会漂、笔记会被改：

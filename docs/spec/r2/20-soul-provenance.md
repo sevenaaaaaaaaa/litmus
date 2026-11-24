@@ -39,7 +39,17 @@ return { markdown: assemble(review, { confirmed: false }),
 
 - 放 `Notes/` 里会被 `kernel-store::list_non_doc_files` 当成「非文档文件」扫出来（它遍历 `notes_dir`，收任意扩展名），用户的笔记列表里会多出一个垃圾文件；
 - `.litmus/local/` 已被 git 忽略（`kernel-deploy` 会写进 `.gitignore`），而出处是**用户数据**，必须跟着版本库走，不能只当本机状态；
-- `.litmus/soul-sources/` 既不在 `notes_dir` 下（扫描器看不见），也不在忽略名单里（会被提交）。
+- `.litmus/soul-sources/` 既不在 `notes_dir` 下（扫描器看不见），也不属于 `kernel-deploy` 写的那三条忽略项
+  （它只忽略 `.litmus/local/`、`.thirdc/`、`.DS_Store`）。
+
+**2026-11-24 更正。** 初版这里写的是「不在忽略名单里（会被提交）」，那是错的。核对了这台机器的库：
+它自己的 `.gitignore` 第 2 行是 `.litmus/`——**整目录**，所以在这个库里旁挂不会进 git。
+产品侧的备份会带上 `.litmus/`（只排除 `machine.toml`、备份签名密钥与 `backups/`），
+所以换机恢复拿得回来；纯 git clone 拿不回来。要让旁挂进 git，得把那条规则改成 `.litmus/*`
+再放行 `.litmus/soul-sources/`——那是改用户的库规则，不在这一条里顺手做。
+
+我把这条错写在这里而不是悄悄改掉，因为「数据到底有没有进版本库」是这个任务唯一要保证的事，
+理由错了等于保证不成立。
 
 路径转义只动 `%` 和 `/`：可逆、不撞名、中文保持可读。撞名等于两条判断共用一份出处——正是这一层要防的那类静默错误。
 

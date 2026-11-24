@@ -36,6 +36,7 @@ mod jobs;
 mod conflow;
 mod organize;
 mod sources;
+mod soul;
 mod share;
 mod disk;
 mod watch;
@@ -257,6 +258,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/processing/{id}", get(conflow::get))
         .route("/processing/{id}/{action}", post(conflow::control_api))
         .route("/field/curate", get(curate::get).post(curate::start))
+        .route("/field/soul/card", get(soul::card_get).put(soul::card_put))
+        .route("/field/soul/upgrade", post(soul::upgrade_post))
         .route("/connectors", get(connectors::list))
         .route("/connectors/test", post(connectors::test))
         .route("/connectors/publish", post(connectors::publish))

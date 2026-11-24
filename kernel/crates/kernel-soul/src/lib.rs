@@ -690,3 +690,98 @@ pub fn resolve_refs(doc: &SoulDoc, ids: &[&str]) -> (Vec<ResolvedRef>, Vec<Strin
     }
     (found, missing)
 }
+
+/// 升级的结果：升级后的正文，以及升级前后的锚点集合（给「超集」这条判据留证据）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Upgrade {
+    pub text: String,
+    pub anchors_before: Vec<String>,
+    pub anchors_after: Vec<String>,
+}
+
+/// 把临时卡升级成真卡。
+///
+/// 只做一件事：frontmatter 里 confirmed: false → true，其余**逐字节不动**。
+/// 这不是偷懒。改卡的自由度归 reanchor，升级本身不该有自由——
+/// 12-soul-entrances 与 19-soul-in-kernel 的原话都是「升级不是换一张卡，是把同一堆句子
+/// 从「未确认」接到「已确认」」。因为逐字节不动，升级后的锚点集合必然等于升级前
+/// （自然满足超集）；下面那道检查是防将来有人把升级改成「重排 + 重新铸号」，
+/// 让卡背与已发布页面里的老引用悄悄指向另一条判断。
+pub fn upgrade(temp: &str) -> Result<Upgrade, Issue> {
+    let doc = parse(temp);
+    if let Some(first) = doc.errors.first() {
+        return Err(Issue::new(
+            "upgrade-invalid-card",
+            format!("卡不合法，不升级：{}", first.message),
+        ));
+    }
+    match doc.frontmatter.get("confirmed").map(|v| v.trim()) {
+        Some("true") => {
+            return Err(Issue::new(
+                "upgrade-already-confirmed",
+                "这张卡已经是真卡（confirmed: true），不重复升级",
+            ))
+        }
+        Some("false") => {}
+        _ => {
+            return Err(Issue::new(
+                "upgrade-no-confirmed-line",
+                "frontmatter 里没有 confirmed 这一行：不猜，直接拒绝",
+            ))
+        }
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    let mut fences = 0usize;
+    let mut flipped = false;
+    for line in temp.split('\n') {
+        if line.trim() == "---" {
+            fences += 1;
+            out.push(line.to_string());
+            continue;
+        }
+        // 只在 frontmatter 里改：正文里哪怕出现一模一样的字符串也不碰。
+        if fences == 1 && !flipped {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("confirmed:") {
+                if rest.trim() == "false" {
+                    let indent = &line[..line.len() - trimmed.len()];
+                    out.push(format!("{indent}confirmed: true"));
+                    flipped = true;
+                    continue;
+                }
+            }
+        }
+        out.push(line.to_string());
+    }
+    if !flipped {
+        return Err(Issue::new(
+            "upgrade-no-confirmed-line",
+            "frontmatter 里没有 confirmed: false 这一行：不猜，直接拒绝",
+        ));
+    }
+
+    let text = out.join("\n");
+    let after = parse(&text);
+    if let Some(first) = after.errors.first() {
+        return Err(Issue::new(
+            "upgrade-broke-card",
+            format!("升级后卡不合法，已放弃：{}", first.message),
+        ));
+    }
+
+    let anchors_before = doc.anchors();
+    let anchors_after = after.anchors();
+    let after_set: BTreeSet<&String> = anchors_after.iter().collect();
+    for anchor in &anchors_before {
+        if !after_set.contains(anchor) {
+            return Err(Issue::new(
+                "upgrade-lost-anchor",
+                format!("升级丢了锚点 ^{anchor}：这不是升级，是换了一张卡"),
+            ));
+        }
+    }
+
+    Ok(Upgrade { text, anchors_before, anchors_after })
+}

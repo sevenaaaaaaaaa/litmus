@@ -3357,6 +3357,7 @@ dependencies = [
  "kernel-convert",
  "kernel-core",
  "kernel-deploy",
+ "kernel-soul",
  "libc",
  "litmus-mcp",
  "notify",
