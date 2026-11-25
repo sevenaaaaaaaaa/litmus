@@ -3275,7 +3275,8 @@ for line in sys.stdin:
         assert_eq!((a["has_key"].as_bool(), a["key_in_toml"].as_bool()), (Some(true), Some(false)));
         let (st, c) = call(&app, &t, "GET", "/secrets/recovery", "").await;
         assert_eq!(st, 200);
-        assert_eq!(c["code"].as_str().unwrap().chars().filter(|c| c.is_ascii_hexdigit()).count(), 64);
+        // 0.36 起解锁码是 128 位（32 个十六进制字符）
+        assert_eq!(c["code"].as_str().unwrap().chars().filter(|c| c.is_ascii_hexdigit()).count(), 32);
     }
 
     /// 逐题复习：按规则出题、打分排期、到期队列、改题删题；跨文档事实冲突能找出来、能标为不算

@@ -9,17 +9,43 @@ pub(super) fn account(root: &Path) -> Value {
         .ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(json!({}))
 }
 
+fn token_path(root: &Path) -> PathBuf {
+    root.join(".litmus/local/remote-token")
+}
+
+fn write_private(path: &Path, value: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or("没有父目录")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let tmp = parent.join(format!(".{}.tmp-{}", path.file_name().unwrap_or_default().to_string_lossy(), std::process::id()));
+    std::fs::write(&tmp, value).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| { let _ = std::fs::remove_file(&tmp); e.to_string() })
+}
+
+/// 登录 token 单独放一份（0600），不进加密凭证库：
+/// 凭证库锁着也照样能用账号密码登录、下次打开直接复用 token，不会退化成每次都要恢复码。
 pub(super) fn token(root: &Path) -> Option<String> {
-    kernel_core::secrets::get(root, SECRET)
+    if let Ok(s) = std::fs::read_to_string(token_path(root)) {
+        let t = s.trim();
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+    // 旧安装：token 在加密凭证库里。读到就搬出来，之后不再依赖凭证库是否锁着。
+    let old = kernel_core::secrets::get(root, SECRET)?;
+    let _ = write_private(&token_path(root), &old);
+    Some(old)
 }
 
 pub(super) fn remember(root: &Path, server: &str, user: &str, token: &str) -> Result<bool, String> {
-    // 凭证库可能是在另一台设备上加密的：存不进去时不要挡住这次登录，
-    // 这次同步照常跑（token 只在内存里），账号/服务器照旧记下，下次再登录。
-    let saved = kernel_core::secrets::put(root, SECRET, token, "Litmus 远端登录，仅保存在此设备").is_ok();
-    std::fs::write(root.join(".litmus/local/remote.json"), serde_json::to_vec(&json!({"server":server, "user":user, "token_saved": saved})).unwrap())
+    write_private(&token_path(root), token)?;
+    std::fs::write(root.join(".litmus/local/remote.json"), serde_json::to_vec(&json!({"server":server, "user":user, "token_saved": true})).unwrap())
         .map_err(|e| e.to_string())?;
-    Ok(saved)
+    Ok(true)
 }
 
 pub(super) async fn status(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
@@ -39,9 +65,11 @@ pub(super) async fn disconnect(State(st): State<Arc<AppState>>, h: HeaderMap) ->
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
     if st.pull.lock().unwrap().active { return err(StatusCode::CONFLICT, "正在同步，请完成后再退出登录").into_response(); }
     let k = st.kernel.lock().unwrap();
+    // 旧副本可能在凭证库里：顺手清掉；锁着就跳过（文件里的那份才是现在用的）。
     let rows: Vec<Value> = secrets_load(&k.vault.root).into_iter()
         .filter(|r| r["name"].as_str() != Some(SECRET)).collect();
-    if let Err(e) = secrets_save(&k.vault.root, &rows) { return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(); }
+    let _ = secrets_save(&k.vault.root, &rows);
+    let _ = std::fs::remove_file(token_path(&k.vault.root));
     let path = k.vault.root.join(".litmus/local/remote.json");
     if let Err(e) = std::fs::remove_file(path) {
         if e.kind() != std::io::ErrorKind::NotFound { return err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(); }
@@ -200,9 +228,13 @@ mod tests {
         assert_eq!(account["server"], server);
         assert_eq!(account["user"], "alice");
         assert!(!account.to_string().contains("remote-test-token"));
-        let secrets = std::fs::read_to_string(dir.path().join(".litmus/local/secrets.json")).unwrap();
-        assert!(!secrets.contains("remote-test-token"));
-        assert!(!secrets.contains("correct"));
+        // token 存在独立的 0600 文件里，不进加密凭证库；凭证库文件此时可能根本不存在。
+        let token_path = dir.path().join(".litmus/local/remote-token");
+        assert!(std::fs::read_to_string(&token_path).unwrap().contains("remote-test-token"));
+        if let Ok(secrets) = std::fs::read_to_string(dir.path().join(".litmus/local/secrets.json")) {
+            assert!(!secrets.contains("remote-test-token"));
+            assert!(!secrets.contains("correct"));
+        }
 
         // A fresh AppState models reopening the app; no password is sent again.
         let mut reopened = Arc::try_unwrap(build_state(Vault::open(dir.path()).unwrap()).unwrap()).ok().unwrap();
@@ -276,3 +308,29 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[test]
+    fn token_lives_outside_the_vault_and_survives_a_locked_vault() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join(".litmus/local")).unwrap();
+        assert!(token(d.path()).is_none());
+        assert!(remember(d.path(), "https://s", "u", "tok123").unwrap());
+        let p = token_path(d.path());
+        assert!(p.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        assert_eq!(token(d.path()).as_deref(), Some("tok123"));
+        assert_eq!(account(d.path())["token_saved"], json!(true));
+        // 凭证库锁着（另一台设备的密文）也读得到 token：它不在库里。
+        std::fs::write(d.path().join(".litmus/local/secrets.json"), r#"{"v":2,"enc":"aes-256-gcm","kid":"x","nonce":"000000000000000000000000","data":"00"}"#).unwrap();
+        assert_eq!(token(d.path()).as_deref(), Some("tok123"));
+    }
+}
+

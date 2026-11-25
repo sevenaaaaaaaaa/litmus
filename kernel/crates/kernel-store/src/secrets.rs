@@ -276,8 +276,7 @@ fn fresh_key(kid: &str) -> Result<[u8; 32], String> {
     let material = hex::encode(seed);
     store_material(kid, &material)?;
     forget_cached();
-    // 落一张解锁卡：用户第一次开通就有一份能带走的备份，不用以后再来这里找。
-    let _ = write_card_for(kid, &material, None);
+    // 不默认生成解锁卡/不默认要求恢复码：需要带走钥匙时，用户在「凭证库」里手动保存。
     Ok(key)
 }
 
@@ -518,7 +517,8 @@ mod tests {
         assert_eq!(code.split('-').count(), 8, "{code}");
         assert_eq!(state(root).bits, 128);
         let kid = open_kid(&read(root)).unwrap();
-        assert!(e.cards.path().join(format!("Litmus-解锁码-{kid}.pdf")).exists());
+        // 首次开通不再默认写解锁卡（要用时在「凭证库」里手动保存）
+        assert!(!e.cards.path().join(format!("Litmus-解锁码-{kid}.pdf")).exists());
         // 另一台设备：钥匙没了，锁着
         for f in std::fs::read_dir(e.keys.path()).unwrap() { std::fs::remove_file(f.unwrap().path()).unwrap(); }
         forget_cached();
