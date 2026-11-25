@@ -397,6 +397,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/secrets", get(secrets_list).post(secrets_put).delete(secrets_delete))
         .route("/secrets/recovery", get(secrets_recovery))
         .route("/secrets/unlock", post(secrets_unlock))
+        .route("/secrets/card", post(secrets_card))
+        .route("/secrets/upgrade128", post(secrets_upgrade128))
         .route("/doc", get(get_doc).put(put_doc).delete(delete_doc))
         .route("/asset", post(post_asset))
         .route("/sync", post(sync))
@@ -2259,21 +2261,30 @@ async fn secrets_recovery(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl
     match kernel_core::secrets::recovery_code(&root) {
         Ok(code) => {
             audit_log(&root.join(".litmus/local"), "secrets-recovery-shown", &json!({}));
-            Json(json!({ "code": code })).into_response()
+            let bits = kernel_core::secrets::state(&root).bits;
+            Json(json!({ "code": code, "bits": bits })).into_response()
         }
         Err(e) => err(StatusCode::CONFLICT, e).into_response(),
     }
 }
 
-/// POST /secrets/unlock {code}：用另一台设备的恢复码解开；POST /secrets/reset：锁着又没恢复码时清空重来
+/// POST /secrets/unlock {code} 或 {file_b64,name}：用解锁码/解锁卡解开；
+/// POST /secrets/reset：锁着又没解锁码时清空重来
 async fn secrets_unlock(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) {
         return e.into_response();
     }
+    use base64::Engine;
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
     let r = if req.get("reset").and_then(|v| v.as_bool()).unwrap_or(false) {
         kernel_core::secrets::reset(&root).map(|_| 0)
+    } else if let Some(b64) = req.get("file_b64").and_then(|v| v.as_str()) {
+        let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("unlock-card");
+        match base64::engine::general_purpose::STANDARD.decode(b64) {
+            Ok(bytes) => kernel_core::secrets::unlock_with_file(&root, name, &bytes),
+            Err(_) => Err("文件不是合法的 base64".into()),
+        }
     } else {
         kernel_core::secrets::unlock(&root, req.get("code").and_then(|v| v.as_str()).unwrap_or(""))
     };
@@ -2288,6 +2299,32 @@ async fn secrets_unlock(State(st): State<Arc<AppState>>, h: HeaderMap, body: Byt
             }
             Json(json!({ "ok": true, "count": n })).into_response()
         }
+        Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+/// POST /secrets/card {dir?}：把 128 位解锁码写成本地卡片（PNG/PDF/TXT），返回路径
+async fn secrets_card(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    let dir = req.get("dir").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).map(std::path::PathBuf::from);
+    match kernel_core::secrets::write_card(&root, dir.as_deref()) {
+        Ok(card) => Json(json!({ "ok": true, "card": card })).into_response(),
+        Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+/// POST /secrets/upgrade128：旧库的 256 位恢复码升级成 128 位解锁码（留备份，失败回滚）
+async fn secrets_upgrade128(State(st): State<Arc<AppState>>, h: HeaderMap) -> impl IntoResponse {
+    if let Err(e) = check_token(&st, &h) {
+        return e.into_response();
+    }
+    let root = { st.kernel.lock().unwrap().vault.root.clone() };
+    match kernel_core::secrets::upgrade_to_128(&root) {
+        Ok(code) => Json(json!({ "ok": true, "code": code })).into_response(),
         Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
@@ -8550,11 +8587,22 @@ async fn desktop_pull(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes
 async fn desktop_account_unlock(State(st): State<Arc<AppState>>, h: HeaderMap, body: Bytes) -> impl IntoResponse {
     if let Err(e) = check_token(&st, &h) { return e.into_response(); }
     if let Err(e) = desktop_guard(&st) { return e.into_response(); }
+    use base64::Engine;
     let req: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
     let code = req.get("code").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-    if code.is_empty() { return err(StatusCode::BAD_REQUEST, "需要恢复码").into_response(); }
+    let file = req.get("file_b64").and_then(|v| v.as_str());
+    if code.is_empty() && file.is_none() { return err(StatusCode::BAD_REQUEST, "需要解锁码或解锁卡").into_response(); }
     let root = { st.kernel.lock().unwrap().vault.root.clone() };
-    match kernel_core::secrets::unlock(&root, &code) {
+    let r = if let Some(b64) = file {
+        let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("unlock-card");
+        match base64::engine::general_purpose::STANDARD.decode(b64) {
+            Ok(bytes) => kernel_core::secrets::unlock_with_file(&root, name, &bytes),
+            Err(_) => Err("文件不是合法的 base64".into()),
+        }
+    } else {
+        kernel_core::secrets::unlock(&root, &code)
+    };
+    match r {
         Ok(n) => Json(json!({"ok": true, "unlocked": n})).into_response(),
         Err(e) => err(StatusCode::BAD_REQUEST, e).into_response(),
     }

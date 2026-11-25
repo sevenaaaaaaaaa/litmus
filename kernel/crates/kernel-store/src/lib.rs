@@ -3,6 +3,7 @@
 //! 真相区（Notes/ Assets/ litmus.toml）用户可直改；sidecar（.litmus/local/）可随时删除重建。
 
 pub mod secrets;
+pub mod secrets_card;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;

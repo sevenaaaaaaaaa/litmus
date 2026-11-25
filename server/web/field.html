@@ -5054,6 +5054,9 @@ async function openUpdate(){
 }
 
 
+/* 读文件成 base64（解锁卡上传用） */
+function fileB64(file){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => { const s = String(r.result || ''); res(s.includes(',') ? s.slice(s.indexOf(',') + 1) : s); }; r.onerror = () => rej(r.error || new Error('读不了这个文件')); r.readAsDataURL(file); }); }
+
 /* ═══════════ F4 凭证库（只在本机；0.22 起加密存放，钥匙在系统钥匙串或用户目录） ═══════════ */
 async function openSecrets(){
   const box = openPanel('凭证库', '<span class="thinking"><i></i><i></i><i></i> 正在读取</span>');
@@ -5061,9 +5064,17 @@ async function openSecrets(){
   const list = r.secrets || [], sst = r.state || {};
   /* 锁着：这份凭证库是在另一台设备上加密的 */
   if (sst.locked){
-    box.innerHTML = '<p style="margin-top:0"><b>凭证库锁着</b></p><p class="hint">这份凭证库是在另一台设备上加密的（或者这台设备上的钥匙丢了），这里打不开。在原来那台设备的 /凭证 里点「恢复码」，把那串字填在下面；没有的话可以清空重来（旧文件会留一份备份）。</p>' +
-      '<label for="sc-code">恢复码</label><input type="text" id="sc-code" placeholder="xxxx-xxxx-…（64 个字符）" autocomplete="off"><div class="acts"><button class="btn pri" id="sc-unlock">解开</button><button class="btn" id="sc-reset">清空重来</button><span id="sc-msg"></span></div>';
-    $('sc-unlock').onclick = async () => { const m = $('sc-msg'); try { const x = await api('/secrets/unlock', {method:'POST', json:{code:$('sc-code').value}}); toast('解开了：' + x.count + ' 条凭证'); openSecrets(); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
+    box.innerHTML = '<p style="margin-top:0"><b>凭证库锁着</b></p><p class="hint">换设备后第一次打开才会问。上传在原来那台设备保存的<b>解锁卡</b>（PDF / PNG / TXT），或粘贴 128 位解锁码。<b>解开一次，这台设备就记住，以后登录不再问。</b>没有的话可以清空重来（旧文件会留一份备份）。</p>' +
+      '<div class="acts"><input type="file" id="sc-file" accept=".pdf,.png,.jpg,.jpeg,.txt,application/pdf,image/*" style="max-width:240px"><button class="btn pri" id="sc-up">上传解锁卡</button></div>' +
+      '<label for="sc-code">或粘贴解锁码</label><input type="text" id="sc-code" placeholder="XXXX-XXXX-…（32 个字符，128 位；旧码 64 个字符也认）" autocomplete="off"><div class="acts"><button class="btn" id="sc-unlock">用这串码解开</button><button class="btn" id="sc-reset">清空重来</button><span id="sc-msg"></span></div>';
+    $('sc-up').onclick = async () => {
+      const m = $('sc-msg'), f = ($('sc-file') && $('sc-file').files[0]);
+      if (!f) { m.className = 'bad'; m.textContent = '先选一份解锁卡文件'; return; }
+      m.className = ''; m.textContent = '正在识别…';
+      try { const b64 = await fileB64(f); const x = await api('/secrets/unlock', {method:'POST', json:{file_b64:b64, name:f.name}}); toast('解开了：' + x.count + ' 条凭证；这台设备已记住，下次不再问'); openSecrets(); }
+      catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); }
+    };
+    $('sc-unlock').onclick = async () => { const m = $('sc-msg'); try { const x = await api('/secrets/unlock', {method:'POST', json:{code:$('sc-code').value}}); toast('解开了：' + x.count + ' 条凭证；这台设备已记住，下次不再问'); openSecrets(); } catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); } };
     $('sc-reset').onclick = async e => { const b = e.currentTarget; if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次：清空'; b.classList.add('danger'); return; } try { await api('/secrets/unlock', {method:'POST', json:{reset:true}}); toast('清空了，重新填吧'); openSecrets(); } catch(x){ toast(esc(x.message || x), true); } };
     return;
   }
@@ -5072,8 +5083,24 @@ async function openSecrets(){
   box.innerHTML = '<p class="hint" style="margin-top:0">放 API 密钥、服务器口令这类东西，Agent 和插件按名字取用。只存在这台设备，不同步、不进 git；加密存放' + (where ? '，' + where : '') + '，库文件夹或备份被拿走也打不开。</p>' +
     (list.length ? list.map((s, i) => '<div class="row"><div class="grow"><span>' + esc(s.name) + '</span><small data-v="' + i + '">' + esc(mask(s.value)) + (s.note ? ' · ' + esc(s.note) : '') + '</small></div><button class="btn" data-show="' + i + '">显示</button><button class="btn" data-copy="' + i + '">复制</button><button class="btn" data-del="' + i + '">删除</button></div>').join('') : '<p class="empty">还没有凭证。</p>') +
     '<label for="sc-n">新增或更新（同名会覆盖）</label><input type="text" id="sc-n" placeholder="名字，比如 openai" autocomplete="off"><input type="password" id="sc-v" placeholder="值" autocomplete="new-password" style="margin-top:8px"><input type="text" id="sc-note" placeholder="备注（可选）" style="margin-top:8px"><div class="acts"><button class="btn pri" id="sc-go">保存</button><span id="sc-msg"></span></div>';
-  box.insertAdjacentHTML('beforeend', '<details class="more"><summary>换设备、恢复备份时用的恢复码</summary><p class="hint">在新设备上恢复了这个库（或它的备份）以后，凭证库要用恢复码解开。恢复码等于钥匙本身，像密码一样保管。</p><div class="acts"><button class="btn" id="sc-rec">显示恢复码</button><code id="sc-code-v" style="font:400 var(--fs-2) var(--f-mono);word-break:break-all"></code></div></details>');
-  $('sc-rec').onclick = async () => { try { const x = await api('/secrets/recovery'); $('sc-code-v').textContent = x.code; } catch(e){ toast(esc(e.message || e), true); } };
+  box.insertAdjacentHTML('beforeend', '<details class="more"><summary>解锁码与解锁卡（换设备时用）</summary>' +
+    '<p class="hint">这台设备已经解锁并记住了，<b>下次打开不会再问</b>。换设备时把解锁卡传过去，在新设备上上传即可；也可以直接粘贴那串码。解锁码等于钥匙本身，像密码一样保管。</p>' +
+    (sst.bits === 256 ? '<p class="hint" style="color:var(--litmus)">现在还是旧的 256 位恢复码（64 个字符）。升级成 128 位后更好抄、也能做成二维码卡；升级会换一把钥匙，<b>其它设备要重新解一次</b>。</p><div class="acts"><button class="btn" id="sc-up128">升级为 128 位解锁码</button><span id="sc-up128-msg"></span></div>' : '') +
+    '<div class="acts"><button class="btn" id="sc-rec">显示解锁码</button><button class="btn pri" id="sc-card">保存解锁卡（PNG / PDF / TXT）</button><span id="sc-card-msg"></span></div>' +
+    '<code id="sc-code-v" style="font:400 var(--fs-2) var(--f-mono);word-break:break-all"></code></details>');
+  $('sc-rec').onclick = async () => { try { const x = await api('/secrets/recovery'); $('sc-code-v').textContent = x.code + '（' + x.bits + ' 位）'; } catch(e){ toast(esc(e.message || e), true); } };
+  $('sc-card').onclick = async () => {
+    const m = $('sc-card-msg'); m.className = ''; m.textContent = '正在写…';
+    try { const x = await api('/secrets/card', {method:'POST', json:{}}); m.textContent = '已保存：' + x.card.txt + ' · ' + x.card.png + ' · ' + x.card.pdf; $('sc-code-v').textContent = x.card.code; toast('解锁卡已保存到本地'); }
+    catch(e){ m.className = 'bad'; m.textContent = e.message || String(e); }
+  };
+  if ($('sc-up128')) $('sc-up128').onclick = async e => {
+    const b = e.currentTarget, m = $('sc-up128-msg');
+    if (b.dataset.sure !== '1'){ b.dataset.sure = '1'; b.textContent = '再点一次：升级并换钥匙'; b.classList.add('danger'); m.className = 'hint'; m.textContent = '其它设备上的旧码会失效，需要重新解一次'; return; }
+    b.disabled = true;
+    try { const x = await api('/secrets/upgrade128', {method:'POST'}); toast('已升级为 128 位；新的解锁卡也已写到本地'); openSecrets(); }
+    catch(err){ m.className = 'bad'; m.textContent = err.message || String(err); b.disabled = false; }
+  };
   box.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const i = +b.dataset.show, sm = box.querySelector('[data-v="' + i + '"]'), s = list[i]; const on = b.textContent === '显示'; sm.textContent = (on ? s.value : mask(s.value)) + (s.note ? ' · ' + s.note : ''); b.textContent = on ? '隐藏' : '显示'; });
   box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(list[+b.dataset.copy].value); toast('已复制 <b>' + esc(list[+b.dataset.copy].name) + '</b>'); } catch(e){ toast('复制失败：先点「显示」再手动复制', true); } });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
@@ -5131,14 +5158,21 @@ async function openAccount(){
       (account.connected ? '' : '<label for="ac-pass">密码</label><input id="ac-pass" name="password" type="password" autocomplete="current-password" required>') +
       '<label for="ac-days">同步范围</label><select id="ac-days" class="sel"><option value="90" selected>最近 90 天</option><option value="0">全部</option><option value="30">最近 30 天</option><option value="7">最近 7 天</option></select>' +
       '<div class="acts"><button type="submit" class="btn pri" id="ac-go">' + (account.connected ? '获取最新内容' : '登录并同步') + '</button>' + (account.connected ? '<button type="button" class="btn" id="ac-out">退出登录</button>' : '') + '<button type="button" class="btn" id="ac-cancel" hidden>取消同步</button></div><p class="bad" id="ac-error" role="alert"></p></form>' +
-      (account.token_saved === false ? '<p class="hint" style="color:var(--litmus)">凭证库锁着：这次同步能用，但登录 token 没保存，下次打开要重新登录。输入原设备的恢复码可以解锁并保存。</p><div class="acts"><input id="ac-code" type="text" placeholder="恢复码" autocapitalize="none" spellcheck="false"><button type="button" class="btn" id="ac-unlock">解锁</button></div>' : '') +
+      (account.token_saved === false ? '<p class="hint" style="color:var(--litmus)">凭证库锁着：这次同步能用，但登录 token 没保存，下次打开要重新登录。上传原设备保存的解锁卡（PDF / PNG / TXT），或粘贴 128 位解锁码；解开一次就记住。</p><div class="acts"><input id="ac-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,application/pdf,image/*" style="max-width:220px"><button type="button" class="btn" id="ac-upload">上传解锁卡</button></div><div class="acts"><input id="ac-code" type="text" placeholder="XXXXXXXX-…（32 个字符）" autocapitalize="none" spellcheck="false"><button type="button" class="btn" id="ac-unlock">用这串码解锁</button></div>' : '') +
       '<p class="hint" id="ac-status" role="status" aria-live="polite"></p><p class="hint">只下载远端内容，本机编辑不会上传。同步在后台分批跑、随时可取消；已下载的笔记断网也能打开。退出登录会保留笔记。</p>';
     renderRemotePull(job);
     if ($('ac-unlock')) $('ac-unlock').onclick = async () => {
       const b = $('ac-unlock'), code = ($('ac-code').value || '').trim();
       if (!code) return;
       b.disabled = true;
-      try { await api('/desktop/account/unlock', {method:'POST', json:{code}}); toast('已解锁，请重新点「登录并同步」把登录保存下来'); b.textContent = '已解锁'; }
+      try { await api('/desktop/account/unlock', {method:'POST', json:{code}}); toast('已解锁并记住，请重新点「登录并同步」把登录保存下来'); b.textContent = '已解锁'; }
+      catch(e){ toast('<b>解锁失败</b>：' + esc(e.message || e), true); b.disabled = false; }
+    };
+    if ($('ac-upload')) $('ac-upload').onclick = async () => {
+      const b = $('ac-upload'), f = ($('ac-file') && $('ac-file').files[0]);
+      if (!f) { toast('先选一份解锁卡文件', true); return; }
+      b.disabled = true;
+      try { const b64 = await fileB64(f); await api('/desktop/account/unlock', {method:'POST', json:{file_b64:b64, name:f.name}}); toast('已从解锁卡解开并记住，请重新点「登录并同步」'); b.textContent = '已解锁'; }
       catch(e){ toast('<b>解锁失败</b>：' + esc(e.message || e), true); b.disabled = false; }
     };
     if ($('ac-cancel')) $('ac-cancel').onclick = async () => {
